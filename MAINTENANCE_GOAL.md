@@ -1,6 +1,6 @@
 # Goal: a public gateway that stays maintained
 
-Status: published and validated, including the free-only catalog migration and installed gateway. Repository: [pauljones0/freellmpool](https://github.com/pauljones0/freellmpool). Ongoing provider review is tracked in GitHub issues. Replacing earlier published history remains a separate action requiring confirmation.
+Status: published and validated, including clean GitHub history, the free-only catalog migration and the installed gateway. Repository: [pauljones0/freellmpool](https://github.com/pauljones0/freellmpool). Ongoing provider review is tracked in GitHub issues.
 
 Publish this maintained fork with a concise README and no credentials or personal runtime evidence in its published history. Automate model and price discovery, supported account/quota observations, policy-change detection, maintenance issues, and distribution of reviewed provider rules. Keep uncertain information explicit and preserve the gateway's no-charge boundary.
 
@@ -16,7 +16,7 @@ Publish this maintained fork with a concise README and no credentials or persona
 - [x] Keep remaining-quota observations separate from catalog prices, account attestations and nominal rate limits. Supported API/header observations cannot expand free eligibility or reset shared consumption.
 - [x] Deliver reviewed data-only policy updates from the trusted public repository, validate their schema/hash/version and endpoint boundaries, preserve exclusions, and retain the last valid policy on failure.
 - [x] Complete free-only publication and installed-state migration; validate public CI and maintenance, the installed gateway, active schedules and preserved quota records.
-- [ ] Replace earlier published history with the audited clean root if explicitly approved. Current-tree cleanup does not erase previous GitHub commits or retained artifacts.
+- [x] Replace earlier published history with the audited clean root after explicit approval. The repository was recreated at the same URL; prior Git history, issue records and available artifacts were backed up privately outside the repository.
 - [x] Document unsupported APIs, review boundaries, scheduling limitations, rollback and reproducible validation. Do not promise unlimited free capacity or perfect visibility into external usage.
 
 ## Design
