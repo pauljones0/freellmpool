@@ -1,0 +1,21 @@
+# freellmpool config — copy to ~/.config/freellmpool/config.toml
+#
+# Everything here is optional. Real environment variables always override these
+# values, so this file is just a convenient place to "set and forget".
+
+[keys]
+# Provider API keys (same names as the env vars). Filled in underneath the
+# environment, so an exported env var still wins.
+# GROQ_API_KEY = "gsk_..."
+# CEREBRAS_API_KEY = "csk-..."
+
+[aliases]
+# Map model names to a free target ("auto", a provider, or "provider/model").
+# Overrides the built-in defaults for these names.
+# "gpt-4o-mini" = "groq/llama-3.3-70b-versatile"
+# "my-fast-model" = "cerebras/llama3.1-8b"
+
+[settings]
+# cooldown_seconds = 60     # how long to deprioritize a 429'd provider
+# routing = "fair"          # fair provider balance; fast; quality (match difficulty→capability); legacy/model; model-fast
+# proxy_key = "secret"      # require this Bearer token on the proxy

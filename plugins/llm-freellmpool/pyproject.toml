@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling==1.32.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-freellmpool"
+version = "0.1.2"
+description = "Use free LLMs in Simon Willison's llm CLI via freellmpool — route across 15 cataloged providers with a keyless start when available."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "0xzr" }]
+keywords = ["llm", "datasette", "free", "openai", "freellmpool"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "llm",
+    "freellmpool>=0.12.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/0xzr/freellmpool"
+Repository = "https://github.com/0xzr/freellmpool/tree/main/plugins/llm-freellmpool"
+
+[project.entry-points.llm]
+freellmpool = "llm_freellmpool"
+
+[tool.hatch.build.targets.wheel]
+include = ["llm_freellmpool.py"]

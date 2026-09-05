@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free Groq API guide — fast inference, free models, limits, and pooling</title>
+<meta name="description" content="A practical guide to Groq's free API: why it's fast (LPU hardware), current GPT-OSS and Qwen routes, how to get a key, rate limits and lifecycle gotchas, and how to pool Groq with other free tiers.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/free-groq-api.html">
+<meta property="og:title" content="Free Groq API guide"><meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:25px;margin:0 0 6px;line-height:1.25}h2{font-size:20px;margin:34px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13px}code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}pre code{background:none;padding:0}
+ .lead{font-size:17px}table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13.5px;background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--bd)}th{color:var(--mut)}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}ul{padding-left:20px}
+</style>
+<meta property="og:url" content="https://0xzr.github.io/freellmpool/free-groq-api.html">
+<meta property="og:description" content="A practical guide to Groq&#x27;s free API: why it&#x27;s fast (LPU hardware), current GPT-OSS and Qwen routes, how to get a key, rate limits and lifecycle gotchas, and how to pool Groq with other free tiers.">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+<meta name="twitter:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+</head>
+<body><div class="wrap">
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › providers › Groq</p>
+<h1>Free Groq API: the fast one</h1>
+
+<p class="lead"><strong>Groq's free API is the one developers reach for when latency matters. It runs
+models on custom LPU hardware that streams tokens noticeably faster than typical GPU inference. The current
+freellmpool routes include OpenAI's GPT-OSS 20B/120B, Qwen 3.6 27B, Groq Compound, and a pin-only
+Qwen 3.8 27B Preview route. You get a key
+free at <a href="https://console.groq.com/keys">console.groq.com/keys</a> and call an OpenAI-compatible
+endpoint at <code>https://api.groq.com/openai/v1</code>. The main constraint is the free daily/minute rate
+limit, which is where pooling Groq with other tiers via
+<a href="https://github.com/0xzr/freellmpool">freellmpool</a> helps.</strong></p>
+
+<h2>What Groq's free tier is good for</h2>
+<p>Because generation is so fast, Groq is a great default for anything interactive: chat UIs, autocomplete,
+streaming agents, and tool-use loops where round-trip latency compounds. It's less suited to extremely long
+context windows or multimodal input — for big documents or vision, Gemini is a better free pick. Treat Groq
+as your low-latency workhorse and keep a higher-context provider in reserve.</p>
+
+<h2>Which free model to pick</h2>
+<table>
+<tr><th>Model</th><th>Use it for</th></tr>
+<tr><td><code>openai/gpt-oss-120b</code></td><td>Strong reasoning when you can spare the budget</td></tr>
+<tr><td><code>openai/gpt-oss-20b</code></td><td>Fast drafts, classification, and routing</td></tr>
+<tr><td><code>qwen/qwen3.6-27b</code></td><td>General chat and multilingual work</td></tr>
+<tr><td><code>qwen/qwen3.8-27b</code></td><td>Explicit pin for newer text/streaming work; Preview, not automatic</td></tr>
+<tr><td><code>groq/compound</code></td><td>Groq's compound system; lower free-plan daily limit</td></tr>
+</table>
+
+<h2>Get a key and call it</h2>
+<p>Sign in at <a href="https://console.groq.com/keys">console.groq.com/keys</a>, create a key, and use the
+OpenAI-compatible route — most OpenAI SDKs work by only changing the base URL:</p>
+<pre><code>curl https://api.groq.com/openai/v1/chat/completions \
+  -H "Authorization: Bearer $GROQ_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
+
+<h2>Limits and gotchas</h2>
+<ul>
+<li>Free usage is capped by <strong>requests/minute, requests/day, and tokens/minute</strong> per model —
+the per-minute token cap is often what you hit first on long outputs. Check Groq's current
+<a href="https://console.groq.com/docs/rate-limits">rate-limit table</a>; the values change.</li>
+<li><code>llama-3.1-8b-instant</code> and <code>llama-3.3-70b-versatile</code>
+were shut down for Free and Developer plans on August 16, 2026. Groq's
+<a href="https://console.groq.com/docs/deprecations">deprecation history</a> is authoritative.</li>
+<li><code>qwen/qwen3.8-27b</code> is a Groq Preview model on the Free plan (1,000 RPD and 2M TPD
+in the official table checked 2026-08-29). It passed exactly three sanitized chat completions and a
+separate streaming canary through freellmpool. The forced tool canary returned unsupported, so the route
+is enabled pin-only for explicit text use and is not advertised for automatic agent/tool routing.
+The <a href="evidence/groq-qwen3.8-27b-admission-2026-08-29.json">sanitized admission evidence</a>
+is retained in machine-readable form.</li>
+<li>Some models are reasoning/“thinking” models and burn extra output tokens — set a generous
+<code>max_tokens</code> or you'll get truncated answers.</li>
+</ul>
+
+<h2>Pool Groq with other free tiers</h2>
+<p>Groq's speed is great until you hit the minute/day cap mid-task. freellmpool keeps Groq as a preferred
+provider and transparently fails over to Gemini, NVIDIA and others on a 429, so a single limit
+doesn't stall you:</p>
+<pre><code>pip install freellmpool
+export GROQ_API_KEY=...                 # plus any other free keys
+freellmpool ask -p groq "..."           # pin Groq when you want its speed
+freellmpool ask "..."                   # or pool + fail over automatically
+FREELLMPOOL_ROUTING=fast freellmpool ask "..."   # prefer the lowest-latency tier</code></pre>
+<p>See also
+<a href="best-free-llm-api-gateway.html">best free LLM API gateway</a>, and
+<a href="use-multiple-free-llm-apis.html">using multiple free LLM APIs together</a>.</p>
+
+<h2>FAQ</h2>
+<h3>Is the Groq API free?</h3>
+<p>Yes. Create a key at console.groq.com/keys and call the OpenAI-compatible endpoint at
+api.groq.com/openai/v1. Free usage is rate-limited per minute and per day; verify current numbers in the
+console.</p>
+<h3>Why is Groq so fast?</h3>
+<p>Groq runs inference on its own LPU hardware designed for sequential token generation, which gives much
+higher tokens-per-second than typical GPU serving — useful for interactive and streaming workloads.</p>
+<h3>What's the best free Groq model?</h3>
+<p>Use <code>openai/gpt-oss-120b</code> for harder reasoning,
+<code>openai/gpt-oss-20b</code> for speed, <code>qwen/qwen3.6-27b</code>
+for a general automatic Qwen route, or explicitly pin the Preview
+<code>qwen/qwen3.8-27b</code> for its newer text/streaming capability. Its observed tool canary is
+unsupported, so keep tool loops on a verified route. Verify Groq's current model and rate-limit pages
+because availability changes.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, open source). Limits and model IDs change — check Groq's docs. Updated 2026-08-29.</p>
+</div><script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "freellmpool", "item": "https://0xzr.github.io/freellmpool/"}, {"@type": "ListItem", "position": 2, "name": "Free Groq API guide", "item": "https://0xzr.github.io/freellmpool/free-groq-api.html"}]}</script>
+</body></html>

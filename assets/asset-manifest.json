@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "renderer": "rsvg-convert version 2.58.0",
+  "fontconfig": "fontconfig version 2.15.0",
+  "fonts": {
+    "DejaVuSans.ttf": "ae7b7855e115a5966d8b1b3f80f254ccc117ec86f9965e202ee2940453837280",
+    "DejaVuSans-Bold.ttf": "5c1247acef7f2b8522a31742c76d6adcb5569bacc0be7ceaa4dc39dd252ce895",
+    "DejaVuSansMono.ttf": "c805f9436dbc268644c1d9584f01a601a653e028e08fd74b9b949f6cf8304d88",
+    "DejaVuSansMono-Bold.ttf": "3a3c502eeff669a231549e80df9f7c49de109bafe303170409e905d0b31a38fe"
+  },
+  "assets": {
+    "demo": {
+      "svg_sha256": "6c505f1e7bed3fe7ce0b4e740406eabd062b874bda893b9bf4e8964b8b1faa7a",
+      "png_sha256": "89638639d23a461f20d3c632e237ac0e71b27df9983c789b5d71073d6144777f"
+    },
+    "social-preview": {
+      "svg_sha256": "570914256a7588c9ac120cb9d5965cc12e1e977f73203c5e175f68a08922ce15",
+      "png_sha256": "c257818e44fac3dc579179a99b003fffffd8732956e693ed186c63183a31fcb4"
+    },
+    "tokenmax-results": {
+      "svg_sha256": "cd3fdc5c2b41750f4f79eb7a06c4f41ef915f4199c873e65fa86016561101f4d",
+      "png_sha256": "521b21ae9fe5d5a3e4b4e3aed9b15628701031ed794b82c0080b1b00883bd2bd"
+    }
+  }
+}

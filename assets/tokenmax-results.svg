@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-labelledby="title desc">
+  <title id="title">freellmpool tokenmax launch card</title>
+  <desc id="desc">Static launch card showing 140 enabled chat routes, 15 cataloged providers, zero-dollar gateway software, conditional keyless start, and automatic failover.</desc>
+  <defs>
+    <style>
+      .bg { fill: #f7fafc; }
+      .ink { fill: #102033; font-family: "DejaVu Sans"; }
+      .muted { fill: #5e718d; }
+      .card { fill: #ffffff; stroke: #d8e1ee; stroke-width: 2; }
+      .metric { font-size: 76px; font-weight: 800; }
+      .label { font-size: 25px; font-weight: 700; }
+      .small { font-size: 24px; }
+      .tiny { font-size: 20px; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="630"/>
+  <text class="ink" x="70" y="88" style="font-size:44px;font-weight:800">freellmpool tokenmax</text>
+  <text class="ink muted small" x="70" y="128">A local OpenAI-compatible pool over legitimate free tiers.</text>
+
+  <rect class="card" x="70" y="178" width="320" height="220" rx="18"/>
+  <text class="ink metric" x="104" y="292">140</text>
+  <text class="ink label" x="108" y="340">enabled chat routes</text>
+  <text class="ink muted tiny" x="108" y="374">140 cataloged chat models</text>
+
+  <rect class="card" x="440" y="178" width="320" height="220" rx="18"/>
+  <text class="ink metric" x="474" y="292">15</text>
+  <text class="ink label" x="478" y="340">cataloged providers</text>
+  <text class="ink muted tiny" x="478" y="374">OVHcloud, Groq, NVIDIA...</text>
+
+  <rect class="card" x="810" y="178" width="320" height="220" rx="18"/>
+  <text class="ink metric" x="844" y="292">$0</text>
+  <text class="ink label" x="848" y="340">keyless start</text>
+  <text class="ink muted tiny" x="848" y="374">when available</text>
+
+  <rect class="card" x="70" y="448" width="1060" height="104" rx="18"/>
+  <text class="ink small" x="108" y="512">tokenmax fans one prompt across free models and shows every answer side-by-side.</text>
+  <text class="ink muted tiny" x="108" y="542">Automatic failover on rate limits, timeouts, 5xx, empty replies, and transport errors.</text>
+</svg>

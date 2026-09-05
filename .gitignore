@@ -1,0 +1,98 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.json
+htmlcov/
+coverage/
+*.db
+*.log
+.env.local
+.env.*.local
+
+# BEADS / metaswarm runtime
+.beads/beads.db
+.beads/daemon.lock
+.beads/daemon.pid
+.beads/daemon.log
+.beads/temp/
+.beads/context/
+.beads/plans/
+.metaswarm/logs/
+.metaswarm/prompts/
+.metaswarm/specs/
+.metaswarm/handoffs/
+.metaswarm/deploy/
+
+# Secrets & local state — never commit these
+.env
+.env.*
+!.env.example
+*.key
+**/api_key
+.freellmpool/
+freellmpool-state/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local codegraph index (not part of the project)
+.codegraph/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+
+# Private copies, backups and runtime exports
+config.toml
+config.toml.*
+!config.toml.example
+keys.toml*
+accounts.json*
+account-observations.json*
+account_observations.json*
+*.key.*
+*.pem
+*.sqlite*
+*.db-*
+quota.json*
+stats.json*
+route_health.json*
+run_records.jsonl*
+conformance.json*
+discovery.json*
+public-discovery.json*
+evidence.json*
+maintenance-attention*
+maintenance-report.json*
+maintenance-baseline.json*
+policy-update-status.json*
+policy-update.json*
+policy-bundle.json*
+workflow-health.json*
+maintenance-proposals.json*
+public-baseline.json*
+public-report.json*
+public-evidence.json*
+/providers.toml*
+/artifacts/
+
+# Private working history remains local; export only public design documents
+/GOAL.md
+/AUDIT.md
+/audit/2026-09-05/
+/.beads/

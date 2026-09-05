@@ -1,0 +1,114 @@
+name: Provider evidence review
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+    inputs:
+      reset_baseline:
+        description: 'Establish a new baseline after reviewing corrupt history and outstanding issues'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: public-provider-maintenance
+  cancel-in-progress: false
+
+jobs:
+  public-evidence:
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install reviewed checkout
+        run: python -m pip install .
+      - name: Restore validated public baseline
+        if: inputs.reset_baseline != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_REPOSITORY: ${{ github.repository }}
+          MAINTENANCE_RUN_ID: ${{ github.run_id }}
+        run: >-
+          python -m scripts.fetch_maintenance_baseline
+          --repository "$MAINTENANCE_REPOSITORY"
+          --current-run-id "$MAINTENANCE_RUN_ID"
+          --output artifacts/public-baseline.json
+      - name: Check public models, prices and reviewed sources
+        id: collect
+        env:
+          MAINTENANCE_REVISION: ${{ github.sha }}
+        run: >-
+          python -m freellmpool.maintenance_cli
+          --public-only --refresh
+          --output artifacts/public-report.json
+          --baseline artifacts/public-baseline.json
+          --source-revision "$MAINTENANCE_REVISION"
+      - name: Upload validated report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: freellmpool-public-report
+          path: artifacts/public-report.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Retain public baseline
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: freellmpool-public-baseline
+          path: artifacts/public-baseline.json
+          if-no-files-found: error
+          retention-days: 90
+
+  maintenance-issues:
+    needs: public-evidence
+    if: always() && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Install reviewed checkout
+        run: python -m pip install .
+      - name: Download this run's public report
+        if: needs.public-evidence.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: freellmpool-public-report
+          path: artifacts/
+      - name: Synchronize owned maintenance issues
+        if: needs.public-evidence.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_REPOSITORY: ${{ github.repository }}
+          MAINTENANCE_REVISION: ${{ github.sha }}
+        run: >-
+          python -m scripts.sync_maintenance_issues
+          --repository "$MAINTENANCE_REPOSITORY"
+          --source-revision "$MAINTENANCE_REVISION"
+          --report artifacts/public-report.json
+      - name: Record a total workflow failure
+        if: always() && (needs.public-evidence.result != 'success' || failure())
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAINTENANCE_REPOSITORY: ${{ github.repository }}
+        run: >-
+          python -m scripts.sync_maintenance_issues
+          --repository "$MAINTENANCE_REPOSITORY" --workflow-failure

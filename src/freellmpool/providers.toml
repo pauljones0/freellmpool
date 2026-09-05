@@ -1,0 +1,281 @@
+# Curated free-provider bootstrap catalog. Runtime discovery and evidence
+# independently confirm eligibility; these rows do not grant access.
+# Keys are never stored here; only environment variable names are listed.
+# rpd is an advisory request hint (0 = unknown), not a spending limit.
+
+[[provider]]
+id = "llm7"
+label = "LLM7 (key optional)"
+adapter = "openai"
+base_url = "https://api.llm7.io/v1"
+key_env = "LLM7_API_KEY"
+key_optional = true
+models = [
+    { name = "codestral-latest", rpd = 0 },
+]
+
+[[provider]]
+id = "ovh"
+label = "OVHcloud AI Endpoints (keyless)"
+adapter = "openai"
+base_url = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+auth = "none"
+models = [
+    { name = "Meta-Llama-3_3-70B-Instruct", rpd = 0 },
+    { name = "Qwen3.5-397B-A17B", rpd = 0 },
+    { name = "gpt-oss-120b", rpd = 0 },
+    { name = "Mistral-Small-3.2-24B-Instruct-2506", rpd = 0 },
+    { name = "Mistral-Nemo-Instruct-2407", rpd = 0 },
+    { name = "Qwen3.6-27B", rpd = 0 },
+    { name = "Qwen3-32B", rpd = 0 },
+    { name = "Qwen3.5-9B", rpd = 0 },
+    { name = "Qwen2.5-VL-72B-Instruct", rpd = 0 },
+    { name = "Mistral-7B-Instruct-v0.3", rpd = 0 },
+    { name = "gpt-oss-20b", rpd = 0 },
+    { name = "Qwen3-Coder-30B-A3B-Instruct", rpd = 0 },
+]
+
+[[provider]]
+id = "kilo"
+label = "Kilo Gateway (keyless)"
+adapter = "openai"
+base_url = "https://api.kilo.ai/api/gateway"
+auth = "none"
+models = [
+    { name = "openrouter/free", rpd = 0 },
+    { name = "kilo-auto/free", rpd = 0 },
+    { name = "poolside/laguna-xs-2.1:free", rpd = 0 },
+    { name = "stepfun/step-3.7-flash:free", rpd = 0 },
+    { name = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", rpd = 0 },
+    { name = "nvidia/nemotron-3-super-120b-a12b:free", rpd = 0 },
+    { name = "nvidia/nemotron-3-ultra-550b-a55b:free", rpd = 0 },
+    { name = "cohere/north-mini-code:free", rpd = 0 },
+    { name = "dots-studio/dots-3-note-preview:free", rpd = 0 },
+    { name = "inclusionai/ling-3.0-flash-fin:free", rpd = 0 },
+    { name = "liquid/lfm-2.5-2.6b:free", rpd = 0 },
+    { name = "minimax/minimax-m2.7:free", rpd = 0 },
+    { name = "nvidia/nemotron-3.5-lightning:free", rpd = 0 },
+    { name = "poolside/laguna-s-2.1:free", rpd = 0 },
+    { name = "tencent/hy3:free", rpd = 0 },
+]
+
+[[provider]]
+id = "groq"
+label = "Groq"
+adapter = "openai"
+base_url = "https://api.groq.com/openai/v1"
+key_env = "GROQ_API_KEY"
+models = [
+    { name = "openai/gpt-oss-120b", rpd = 1000 },
+    { name = "openai/gpt-oss-20b", rpd = 1000 },
+    { name = "groq/compound", rpd = 250 },
+    { name = "qwen/qwen3.6-27b", rpd = 1000 },
+    { name = "qwen/qwen3.8-27b", rpd = 1000, context = 131042, auto = false },
+    { name = "groq/compound-mini", rpd = 250 },
+]
+
+[[provider]]
+id = "aion"
+label = "Aion Labs"
+adapter = "openai"
+base_url = "https://api.aionlabs.ai/v1"
+key_env = "AION_API_KEY"
+models = [
+    { name = "aion-labs/aion-2.0", rpd = 0, context = 131072 },
+    { name = "aion-labs/aion-3.0", rpd = 0, context = 131072 },
+    { name = "aion-labs/aion-3.0-mini", rpd = 0, context = 131072 },
+    { name = "aion-labs/aion-rp-llama-3.1-8b", rpd = 0, context = 32768 },
+]
+
+[[provider]]
+id = "modelscope"
+label = "ModelScope API Inference"
+adapter = "openai"
+base_url = "https://api-inference.modelscope.cn/v1"
+key_env = "MODELSCOPE_API_KEY"
+models = [
+    { name = "MiniMax/MiniMax-M3", rpd = 200 },
+    { name = "Qwen/Qwen3.5-27B", rpd = 200 },
+    { name = "Qwen/Qwen3.5-35B-A3B", rpd = 200 },
+    { name = "stepfun-ai/Step-3.7-Flash", rpd = 200 },
+    { name = "Tencent-Hunyuan/Hy3", rpd = 200 },
+    { name = "ZhipuAI/GLM-5.2", rpd = 200 },
+]
+
+[[provider]]
+id = "vercel"
+label = "Vercel AI Gateway"
+adapter = "openai"
+base_url = "https://ai-gateway.vercel.sh/v1"
+key_env = "AI_GATEWAY_API_KEY"
+models = [
+    { name = "poolside/laguna-s-2.1-free", rpd = 0 },
+]
+
+[[provider]]
+id = "nvidia"
+label = "NVIDIA NIM"
+adapter = "openai"
+base_url = "https://integrate.api.nvidia.com/v1"
+key_env = "NVIDIA_API_KEY"
+models = [
+    { name = "nvidia/nemotron-3-super-120b-a12b", rpd = 0 },
+    { name = "meta/llama-3.2-11b-vision-instruct", rpd = 0 },
+    { name = "meta/llama-3.2-90b-vision-instruct", rpd = 0 },
+    { name = "minimaxai/minimax-m3", rpd = 0 },
+    { name = "mistralai/mistral-nemotron", rpd = 0 },
+    { name = "nvidia/nemotron-3-nano-30b-a3b", rpd = 0 },
+    { name = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", rpd = 0 },
+    { name = "openai/gpt-oss-20b", rpd = 0 },
+    { name = "nvidia/nemotron-3-ultra-550b-a55b", rpd = 0 },
+    { name = "poolside/laguna-xs-2.1", rpd = 0 },
+]
+
+[[provider]]
+id = "openrouter"
+label = "OpenRouter (free models)"
+adapter = "openai"
+base_url = "https://openrouter.ai/api/v1"
+key_env = "OPENROUTER_API_KEY"
+models = [
+    { name = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", rpd = 1000 },
+    { name = "poolside/laguna-xs-2.1:free", rpd = 1000 },
+    { name = "google/gemma-4-26b-a4b-it:free", rpd = 1000 },
+    { name = "google/gemma-4-31b-it:free", rpd = 1000 },
+    { name = "nvidia/nemotron-3-super-120b-a12b:free", rpd = 1000 },
+    { name = "openrouter/free", rpd = 1000 },
+    { name = "nvidia/nemotron-3-ultra-550b-a55b:free", rpd = 1000 },
+    { name = "cohere/north-mini-code:free", rpd = 1000 },
+]
+
+[[provider]]
+id = "gemini"
+label = "Google Gemini"
+adapter = "gemini"
+base_url = "https://generativelanguage.googleapis.com/v1beta"
+key_env = "GEMINI_API_KEY"
+models = [
+    { name = "gemini-2.5-flash", rpd = 250 },
+]
+
+[[provider]]
+id = "cloudflare"
+label = "Cloudflare Workers AI"
+adapter = "cloudflare"
+base_url = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+key_env = "CLOUDFLARE_API_TOKEN"
+extra_env = ["CLOUDFLARE_ACCOUNT_ID"]
+models = [
+    { name = "@cf/meta/llama-3.3-70b-instruct-fp8-fast", rpd = 0 },
+    { name = "@cf/mistralai/mistral-small-3.1-24b-instruct", rpd = 0 },
+    { name = "@cf/openai/gpt-oss-120b", rpd = 0 },
+    { name = "@cf/google/gemma-2b-it-lora", rpd = 0 },
+    { name = "@cf/meta/llama-3.2-3b-instruct", rpd = 0 },
+    { name = "@cf/mistral/mistral-7b-instruct-v0.2-lora", rpd = 0 },
+    { name = "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", rpd = 0 },
+    { name = "@cf/meta/llama-3.1-8b-instruct-fp8", rpd = 0 },
+    { name = "@cf/meta/llama-3.2-1b-instruct", rpd = 0 },
+    { name = "@cf/zai-org/glm-4.7-flash", rpd = 0 },
+    { name = "@cf/ibm-granite/granite-4.0-h-micro", rpd = 0 },
+    { name = "@cf/qwen/qwen2.5-coder-32b-instruct", rpd = 0 },
+    { name = "@cf/nvidia/nemotron-3-120b-a12b", rpd = 0 },
+    { name = "@cf/aisingapore/gemma-sea-lion-v4-27b-it", rpd = 0 },
+    { name = "@cf/qwen/qwen3-30b-a3b-fp8", rpd = 0 },
+    { name = "@cf/qwen/qwen3.8-27b", rpd = 0, context = 262144 },
+    { name = "@cf/google/gemma-7b-it-lora", rpd = 0 },
+    { name = "@cf/google/gemma-4-26b-a4b-it", rpd = 0 },
+    { name = "@cf/openai/gpt-oss-20b", rpd = 0 },
+    { name = "@cf/meta/llama-4-scout-17b-16e-instruct", rpd = 0 },
+    { name = "@cf/qwen/qwq-32b", rpd = 0 },
+]
+
+[[provider]]
+id = "mistral"
+label = "Mistral"
+adapter = "openai"
+base_url = "https://api.mistral.ai/v1"
+key_env = "MISTRAL_API_KEY"
+models = [
+    { name = "mistral-small-latest", rpd = 0 },
+    { name = "codestral-latest", rpd = 0 },
+    { name = "mistral-medium-2505", rpd = 0, auto = false },
+    { name = "mistral-medium-2508", rpd = 0, auto = false },
+    { name = "mistral-medium-latest", rpd = 0 },
+    { name = "mistral-vibe-cli-with-tools", rpd = 0, auto = false },
+    { name = "codestral-2508", rpd = 0 },
+    { name = "mistral-code-latest", rpd = 0, auto = false },
+    { name = "mistral-code-fim-latest", rpd = 0, auto = false },
+    { name = "devstral-2512", rpd = 0, auto = false },
+    { name = "devstral-medium-latest", rpd = 0, auto = false },
+    { name = "devstral-latest", rpd = 0, auto = false },
+    { name = "mistral-code-agent-latest", rpd = 0, auto = false },
+    { name = "mistral-small-2603", rpd = 0 },
+    { name = "mistral-vibe-cli-fast", rpd = 0, auto = false },
+    { name = "magistral-small-latest", rpd = 0, auto = false },
+    { name = "magistral-medium-2509", rpd = 0, auto = false },
+    { name = "magistral-medium-latest", rpd = 0, auto = false },
+    { name = "mistral-large-2512", rpd = 0 },
+    { name = "mistral-large-latest", rpd = 0 },
+    { name = "ministral-3b-2512", rpd = 0 },
+    { name = "ministral-3b-latest", rpd = 0 },
+    { name = "ministral-8b-2512", rpd = 0 },
+    { name = "ministral-8b-latest", rpd = 0 },
+    { name = "ministral-14b-2512", rpd = 0 },
+    { name = "ministral-14b-latest", rpd = 0 },
+    { name = "mistral-medium-3-5", rpd = 0 },
+    { name = "mistral-medium-3", rpd = 0 },
+    { name = "mistral-vibe-cli-latest", rpd = 0, auto = false },
+    { name = "magistral-small-2509", rpd = 0, auto = false },
+    { name = "mistral-small-2506", rpd = 0, auto = false },
+]
+
+[[provider]]
+id = "cohere"
+label = "Cohere"
+adapter = "openai"
+base_url = "https://api.cohere.ai/compatibility/v1"
+key_env = "COHERE_API_KEY"
+models = [
+    { name = "command-r-plus-08-2024", rpd = 0 },
+    { name = "command-r-08-2024", rpd = 0 },
+    { name = "c4ai-aya-expanse-32b", rpd = 0 },
+    { name = "c4ai-aya-vision-32b", rpd = 0 },
+    { name = "command-a-03-2025", rpd = 0 },
+    { name = "command-a-plus-05-2026", rpd = 0 },
+    { name = "command-a-reasoning-08-2025", rpd = 0 },
+    { name = "command-a-vision-07-2025", rpd = 0 },
+    { name = "north-mini-code-1-0", rpd = 0 },
+    { name = "command-r7b-12-2024", rpd = 0 },
+    { name = "command-r7b-arabic-02-2025", rpd = 0 },
+    { name = "tiny-aya-earth", rpd = 0 },
+    { name = "tiny-aya-fire", rpd = 0 },
+    { name = "tiny-aya-global", rpd = 0 },
+    { name = "tiny-aya-water", rpd = 0 },
+    { name = "command-a-translate-08-2025", rpd = 0 },
+]
+
+[[provider]]
+id = "zhipu"
+label = "Z.ai / Zhipu GLM"
+adapter = "openai"
+base_url = "https://api.z.ai/api/paas/v4"
+key_env = "ZHIPU_API_KEY"
+models = [
+    { name = "glm-4.5-flash", rpd = 1000, auto = false },
+    { name = "glm-4.7-flash", rpd = 1000 },
+]
+
+[[provider]]
+id = "ollama"
+label = "Ollama Cloud"
+adapter = "openai"
+base_url = "https://ollama.com/v1"
+key_env = "OLLAMA_API_KEY"
+models = [
+    { name = "gpt-oss:120b", rpd = 0 },
+    { name = "gemma4:31b", rpd = 0 },
+    { name = "nemotron-3-super", rpd = 0 },
+    { name = "nemotron-3-ultra", rpd = 0 },
+    { name = "nemotron-3-nano:30b", rpd = 0 },
+    { name = "gpt-oss:20b", rpd = 0 },
+]

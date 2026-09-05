@@ -1,0 +1,2526 @@
+{
+  "schema": 1,
+  "reviewed_at": "2026-09-05T00:00:00+00:00",
+  "providers": [
+    {
+      "id": "llm7",
+      "display_name": "LLM7 (key optional)",
+      "region": "international",
+      "api_base_url": "https://api.llm7.io/v1",
+      "credential_env": "LLM7_API_KEY",
+      "discovery": {
+        "url": "https://api.llm7.io/v1/models",
+        "auth": "none",
+        "parser": "llm7",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "verified",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "codestral-latest",
+              "gpt-oss",
+              "minimax-m2.7",
+              "mistral-Nemo-Instruct-2407"
+            ]
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "rps",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip",
+          "scope_keys": [
+            "egress_ip_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 1,
+          "window_seconds": 1,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip",
+          "scope_keys": [
+            "egress_ip_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 10,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "rph",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip",
+          "scope_keys": [
+            "egress_ip_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 60,
+          "window_seconds": 3600,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "tokens_24h",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip",
+          "scope_keys": [
+            "egress_ip_ref"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "rolling",
+          "capacity": 500000,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ],
+          "accounting_note": "Conservative rolling 24-hour reservation; upstream documentation does not specify reset implementation."
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://docs.llm7.io/limits",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Anonymous: 1 request/second, 10/minute, 60/hour and 500000 total tokens per 24 hours. The free token tier is separate; Pro/top-ups are billable.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "a9644de28e5dd17ff7d374201fd24cb30499f2369607f6e05270a0245c0fbcb8"
+          }
+        },
+        {
+          "id": "models",
+          "url": "https://docs.llm7.io/guides/models",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Turbo models not marked usage_based_only are anonymous candidates; stream and tools capability are independent.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://llm7.io/",
+        "key_url": "https://token.llm7.io/",
+        "steps": [
+          "Anonymous access needs no account or key. The pool intentionally omits Authorization.",
+          "Optional free tokens have different limits; do not treat Pro or top-up balance as recurring free."
+        ],
+        "required_env": []
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "inference_auth": "none"
+    },
+    {
+      "id": "ovh",
+      "display_name": "OVHcloud AI Endpoints (keyless)",
+      "region": "international",
+      "api_base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+      "credential_env": null,
+      "discovery": {
+        "url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1/models",
+        "auth": "none",
+        "parser": "ovh",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "verified",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "anonymous_rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip_model",
+          "scope_keys": [
+            "egress_ip_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 2,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ],
+          "accounting_note": "Two requests/minute per IP+model observed in official endpoint headers during the saved September 5 audit; no daily allowance verified."
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Anonymous testing access has limited per-IP requests; authenticated Public Cloud billing is separate.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "0b7bfb8d1fe4e13ba38685e7a2bdb819060edbbe3371dcdca039db4033d81b9e"
+          }
+        },
+        {
+          "id": "pricing",
+          "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-billing",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Listed token prices describe billed usage and do not themselves negate the separately documented anonymous allowance.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/",
+        "key_url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/",
+        "steps": [
+          "Anonymous evaluation needs no account or key. Authenticated OVH usage is a separate billed service.",
+          "Keep the gateway Authorization header omitted for this provider."
+        ],
+        "required_env": []
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "inference_auth": "none"
+    },
+    {
+      "id": "kilo",
+      "display_name": "Kilo Gateway (keyless)",
+      "region": "international",
+      "api_base_url": "https://api.kilo.ai/api/gateway",
+      "credential_env": null,
+      "discovery": {
+        "url": "https://api.kilo.ai/api/gateway/models",
+        "auth": "none",
+        "parser": "kilo",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "zero_price",
+          "status": "verified",
+          "model_selector": {
+            "kind": "free_suffix",
+            "models": [
+              "kilo-auto/free",
+              "openrouter/free"
+            ],
+            "suffix": ":free"
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "anonymous_rph",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip",
+          "scope_keys": [
+            "egress_ip_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 200,
+          "window_seconds": 3600,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://kilo.ai/docs/gateway/authentication",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Anonymous free models are allowed; 200 requests/hour/IP applies across free requests, not once per model or API key.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "cf7d186534569f41009aa0e3f8a2f66216ef1daef3fc721226233db72874cde3"
+          }
+        },
+        {
+          "id": "pricing",
+          "url": "https://kilo.ai/docs/gateway/usage-and-billing",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Only currently zero-priced free routes belong to the anonymous grant; paid models and credits do not enlarge recurring free access.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://kilo.ai/",
+        "key_url": "https://app.kilo.ai/",
+        "steps": [
+          "Anonymous free models need no Kilo account or API key.",
+          "Use exact free model routes and current zero-price metadata; paid routes are excluded."
+        ],
+        "required_env": []
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "inference_auth": "none"
+    },
+    {
+      "id": "opencode",
+      "display_name": "OpenCode Zen (keyless)",
+      "region": "international",
+      "api_base_url": "https://opencode.ai/zen/v1",
+      "credential_env": null,
+      "discovery": {
+        "url": "https://opencode.ai/zen/v1/models",
+        "auth": "none",
+        "parser": "opencode",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "zero_price",
+          "status": "verified",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "big-pickle",
+              "mimo-v2.5-free",
+              "ling-3-fin-free",
+              "nemotron-3-ultra-free",
+              "nemotron-3.5-lightning-free",
+              "muse-spark-1.3-contributor-free"
+            ]
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ],
+          "offer_duration": "temporary",
+          "pricing": {
+            "input": "0",
+            "output": "0"
+          }
+        }
+      ],
+      "limits": [
+        {
+          "id": "anonymous_daily",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "ip",
+          "scope_keys": [
+            "egress_ip_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "unknown",
+          "capacity": null,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://opencode.ai/docs/zen",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Selected Zen routes are temporarily free; Go is a paid subscription, not an additional recurring free API grant. Recheck model availability and privacy terms.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "a14707b4becd3616e88047e80adca20c9317e0d55ad7352006787152450adaa2"
+          }
+        },
+        {
+          "id": "limiter",
+          "url": "https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Open-source limiter groups anonymous IP traffic; deployed numeric quotas are not published. Source implementation is not proof of current deployment configuration.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://opencode.ai/zen",
+        "key_url": "https://opencode.ai/zen",
+        "steps": [
+          "Anonymous free Zen routes need no key. Free model offers can end.",
+          "Go and Zen paid balances are separate. Paid Zen auto-reload must not be enabled by this setup.",
+          "Some free routes have training or confidentiality restrictions; review Zen terms before sending private code."
+        ],
+        "required_env": []
+      },
+      "restrictions": [
+        "Temporary promotional free routes; no promise of permanent availability.",
+        "Responses-only routes require separate Responses conformance.",
+        "Provider confidentiality and training restrictions apply."
+      ],
+      "default_enabled": true,
+      "inference_auth": "none"
+    },
+    {
+      "id": "groq",
+      "display_name": "Groq",
+      "region": "international",
+      "api_base_url": "https://api.groq.com/openai/v1",
+      "credential_env": "GROQ_API_KEY",
+      "discovery": {
+        "url": "https://api.groq.com/openai/v1/models",
+        "auth": "bearer",
+        "parser": "groq",
+        "pagination": "none",
+        "supports_public": false,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": "free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ],
+          "model_capacities": {
+            "canopylabs/orpheus-arabic-saudi": 10,
+            "canopylabs/orpheus-v1-english": 10,
+            "groq/compound": 30,
+            "groq/compound-mini": 30,
+            "meta-llama/llama-prompt-guard-2-22m": 30,
+            "meta-llama/llama-prompt-guard-2-86m": 30,
+            "openai/gpt-oss-120b": 30,
+            "openai/gpt-oss-20b": 30,
+            "openai/gpt-oss-safeguard-20b": 30,
+            "qwen/qwen3.6-27b": 30,
+            "qwen/qwen3.8-27b": 30,
+            "whisper-large-v3": 20,
+            "whisper-large-v3-turbo": 20
+          }
+        },
+        {
+          "id": "tpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ],
+          "model_capacities": {
+            "canopylabs/orpheus-arabic-saudi": 1200,
+            "canopylabs/orpheus-v1-english": 1200,
+            "groq/compound": 70000,
+            "groq/compound-mini": 70000,
+            "meta-llama/llama-prompt-guard-2-22m": 15000,
+            "meta-llama/llama-prompt-guard-2-86m": 15000,
+            "openai/gpt-oss-120b": 8000,
+            "openai/gpt-oss-20b": 8000,
+            "openai/gpt-oss-safeguard-20b": 8000,
+            "qwen/qwen3.6-27b": 8000,
+            "qwen/qwen3.8-27b": 8000
+          }
+        },
+        {
+          "id": "rpd",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "unknown",
+          "capacity": null,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ],
+          "model_capacities": {
+            "canopylabs/orpheus-arabic-saudi": 100,
+            "canopylabs/orpheus-v1-english": 100,
+            "groq/compound": 250,
+            "groq/compound-mini": 250,
+            "meta-llama/llama-prompt-guard-2-22m": 14400,
+            "meta-llama/llama-prompt-guard-2-86m": 14400,
+            "openai/gpt-oss-120b": 1000,
+            "openai/gpt-oss-20b": 1000,
+            "openai/gpt-oss-safeguard-20b": 1000,
+            "qwen/qwen3.6-27b": 1000,
+            "qwen/qwen3.8-27b": 1000,
+            "whisper-large-v3": 2000,
+            "whisper-large-v3-turbo": 2000
+          }
+        },
+        {
+          "id": "tpd",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "unknown",
+          "capacity": null,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ],
+          "model_capacities": {
+            "canopylabs/orpheus-arabic-saudi": 3600,
+            "canopylabs/orpheus-v1-english": 3600,
+            "meta-llama/llama-prompt-guard-2-22m": 500000,
+            "meta-llama/llama-prompt-guard-2-86m": 500000,
+            "openai/gpt-oss-120b": 200000,
+            "openai/gpt-oss-20b": 200000,
+            "openai/gpt-oss-safeguard-20b": 200000,
+            "qwen/qwen3.6-27b": 200000,
+            "qwen/qwen3.8-27b": 200000
+          }
+        },
+        {
+          "id": "ash",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "audio_seconds",
+          "algorithm": "unknown",
+          "capacity": 7200,
+          "window_seconds": 3600,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ],
+          "model_ids": [
+            "whisper-large-v3",
+            "whisper-large-v3-turbo"
+          ]
+        },
+        {
+          "id": "asd",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "audio_seconds",
+          "algorithm": "unknown",
+          "capacity": 28800,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ],
+          "model_ids": [
+            "whisper-large-v3",
+            "whisper-large-v3-turbo"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://console.groq.com/docs/billing-faqs",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "The Free organization plan is distinct from the billable Developer plan. Adding a payment method upgrades to Developer; paid balances do not preserve a free request price.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "4cdb46e1f700505cd5dc99ab3a60a7fae4a146577fae60d5dbdd87bc1bc5d761"
+          }
+        },
+        {
+          "id": "limits",
+          "url": "https://console.groq.com/docs/rate-limits",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Limits apply by organization and model. Request headers are daily requests; token headers are tokens/minute. Exact limits are account-specific; daily reset timezone is undocumented.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "5edf57f7c054b4aea19eb45743268acae75204ab31e9ce9c0b959b735fcae9b8"
+          }
+        },
+        {
+          "id": "speech_billing",
+          "url": "https://console.groq.com/docs/speech-to-text",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Speech-to-text has a 10-second minimum billed length; reserve this floor conservatively with the audio quota.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "f42c3b879fa705a8af1142cee6660275747c6880e71af06edac98740b476806e"
+          }
+        }
+      ],
+      "setup": {
+        "signup_url": "https://console.groq.com/",
+        "key_url": "https://console.groq.com/keys",
+        "steps": [
+          "Create an API key in your Free-plan organization.",
+          "Confirm the organization is still Free in Billing; Developer-plan requests are billed.",
+          "Copy the organization model limits from the console; never multiply one account allowance by its number of keys."
+        ],
+        "required_env": [
+          "GROQ_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "header_semantics": {
+        "x-ratelimit-remaining-requests": "rpd",
+        "x-ratelimit-remaining-tokens": "tpm",
+        "x-ratelimit-reset-requests": "duration",
+        "x-ratelimit-reset-tokens": "duration"
+      },
+      "model_costs": {
+        "whisper-large-v3": {
+          "minimum_audio_seconds": 10,
+          "evidence_ids": [
+            "speech_billing"
+          ]
+        },
+        "whisper-large-v3-turbo": {
+          "minimum_audio_seconds": 10,
+          "evidence_ids": [
+            "speech_billing"
+          ]
+        }
+      }
+    },
+    {
+      "id": "aion",
+      "display_name": "Aion Labs",
+      "region": "international",
+      "api_base_url": "https://api.aionlabs.ai/v1",
+      "credential_env": "AION_API_KEY",
+      "discovery": {
+        "url": "https://api.aionlabs.ai/v1/models",
+        "auth": "bearer",
+        "parser": "aion",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {},
+        "auth_note": "September 5 credentialless GET returned the same catalog schema. Listing cannot validate the inference key or account tier."
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": "free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 15,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "tpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "rolling",
+          "capacity": 20000,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "tpd",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "unknown",
+          "capacity": 20000,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://www.aionlabs.ai/docs/rate-limits/",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Free tier: 15 RPM, 20000 TPM and 20000 daily tokens. Any credit top-up moves to a paid tier; larger paid limits are not larger free allowances.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "07b9d03ca08356fa51bb006f99be1aaacd469ec663bb341f6597b286604bf32b"
+          }
+        }
+      ],
+      "setup": {
+        "signup_url": "https://www.aionlabs.ai/",
+        "key_url": "https://www.aionlabs.ai/",
+        "steps": [
+          "Create an account and an API key through the Aion console.",
+          "Confirm the account has the Free tier and has not been upgraded by a credit top-up."
+        ],
+        "required_env": [
+          "AION_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true
+    },
+    {
+      "id": "modelscope",
+      "display_name": "ModelScope API Inference",
+      "region": "international",
+      "api_base_url": "https://api-inference.modelscope.ai/v1",
+      "credential_env": "MODELSCOPE_API_KEY",
+      "discovery": {
+        "url": "https://api-inference.modelscope.ai/v1/models",
+        "auth": "bearer",
+        "parser": "modelscope",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {},
+        "auth_note": "September 5 credentialless GET returned the same catalog schema. Listing cannot validate the inference key or account tier."
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": "bound_free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "daily_account",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "unknown",
+          "capacity": 2000,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "daily_model",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "unknown",
+          "capacity": 200,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ],
+          "maximum_documented": 200,
+          "capacity_note": "Conservative documented upper ceiling, not guaranteed availability; response remaining/model limits may tighten it."
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://modelscope.ai/learn/434362",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "International ModelScope editor guide: bind Alibaba Cloud account; 2000 shared daily requests, dynamic at most 200/model/day. ModelScope-hosted API inference is distinct from paid third-party providers.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "modelscope_article_v1",
+            "sha256": "878ed760e09e6d74e7464bf56b77e4ad36f9bdeecb47fe440db2c84b22c7c60a"
+          },
+          "maintenance_note": "Hash complete embedded article Content/ContentEn, titles and publication status; ignore views/likes. Never renew from a page title alone."
+        },
+        {
+          "id": "limits",
+          "url": "https://modelscope.cn/docs/model-service/API-Inference/limits",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Daily shared and model remaining headers are documented. Mainland real-name requirements must not be assumed for the international account. Reset timezone is not established.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://modelscope.ai/register",
+        "key_url": "https://modelscope.ai/my/myaccesstoken",
+        "steps": [
+          "Register at the international ModelScope site and verify email.",
+          "Bind your Alibaba Cloud account at https://modelscope.ai/my/settings/account.",
+          "Create an access token and choose API Inference models with ModelScope as the serving provider.",
+          "Do not substitute the mainland .cn endpoint or paid DashScope models automatically."
+        ],
+        "required_env": [
+          "MODELSCOPE_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "header_semantics": {
+        "modelscope-ratelimit-requests-remaining": "daily_account",
+        "modelscope-ratelimit-model-requests-remaining": "daily_model"
+      }
+    },
+    {
+      "id": "vercel",
+      "display_name": "Vercel AI Gateway",
+      "region": "international",
+      "api_base_url": "https://ai-gateway.vercel.sh/v1",
+      "credential_env": "AI_GATEWAY_API_KEY",
+      "discovery": {
+        "url": "https://ai-gateway.vercel.sh/v1/models",
+        "auth": "bearer",
+        "parser": "vercel",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "zero_price",
+          "kind": "zero_price",
+          "status": "verified",
+          "model_selector": {
+            "kind": "zero_price",
+            "models": []
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://vercel.com/docs/ai-gateway/pricing",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Only zero-priced routes qualify; model pricing is checked independently for every operation and chargeable add-ons are excluded.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "e92520981da3bd37d35e1a8cedf4d5c778d3ff102c03d4c7405b6f8d2ddba1d3"
+          }
+        },
+        {
+          "id": "catalog",
+          "url": "https://ai-gateway.vercel.sh/v1/models",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Public catalog lists prices per token and modality/capability metadata. Zero price must cover every relevant operation.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://vercel.com/signup",
+        "key_url": "https://vercel.com/dashboards/ai-gateway",
+        "steps": [
+          "Create an AI Gateway API key for the intended team.",
+          "Use only models with verified zero prices for every operation.",
+          "Keep chargeable add-ons and provider fallback unavailable for the free profile."
+        ],
+        "required_env": [
+          "AI_GATEWAY_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true
+    },
+    {
+      "id": "nvidia",
+      "display_name": "NVIDIA NIM",
+      "region": "international",
+      "api_base_url": "https://integrate.api.nvidia.com/v1",
+      "credential_env": "NVIDIA_API_KEY",
+      "discovery": {
+        "url": "https://integrate.api.nvidia.com/v1/models",
+        "auth": "bearer",
+        "parser": "nvidia",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {},
+        "auth_note": "September 5 credentialless GET returned the same catalog schema. Listing cannot validate the inference key or account tier."
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": "developer_prototyping",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Developer Program members receive free hosted NIM endpoints for prototyping, development, testing and research. Production licensing is separate. Current official hosted documentation does not establish a universal numeric request quota.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "discourse_first_post_v1",
+            "sha256": "b3aff51b462e9610cee68ce7cf76bf295ba05448258f56c63eb1541e0a54ebda"
+          }
+        }
+      ],
+      "setup": {
+        "signup_url": "https://build.nvidia.com/",
+        "key_url": "https://build.nvidia.com/",
+        "steps": [
+          "Join NVIDIA Developer Program.",
+          "Open a hosted NIM model and use Get API Key for the API catalog.",
+          "Use this grant only within its prototyping/research/development terms. Numeric account quotas remain unknown until provider evidence supplies them."
+        ],
+        "required_env": [
+          "NVIDIA_API_KEY"
+        ]
+      },
+      "restrictions": [
+        "Prototyping, development, testing and research; production use requires separate licensing."
+      ],
+      "default_enabled": true
+    },
+    {
+      "id": "openrouter",
+      "display_name": "OpenRouter (free models)",
+      "region": "international",
+      "api_base_url": "https://openrouter.ai/api/v1",
+      "credential_env": "OPENROUTER_API_KEY",
+      "discovery": {
+        "url": "https://openrouter.ai/api/v1/models",
+        "auth": "bearer",
+        "parser": "openrouter",
+        "pagination": "links",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "zero_price",
+          "status": "verified",
+          "model_selector": {
+            "kind": "free_suffix",
+            "models": [
+              "openrouter/free"
+            ],
+            "suffix": ":free"
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 20,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "rpd",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "unknown",
+          "capacity": 50,
+          "window_seconds": 86400,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ],
+          "account_tier_overrides": {
+            "lifetime_purchased_credits_at_least_10": 1000
+          }
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://openrouter.ai/docs/api_reference/limits.md",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Free models share 20 RPM and 50 RPD, or 1000 RPD after at least $10 lifetime purchased credits. GET /key monetary usage is not free-request usage; /credits requires a management key.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "d85e152516544ccbbcec5ba6d9279fd5021e347d88c093366aa2444af1d531cb"
+          }
+        },
+        {
+          "id": "pricing",
+          "url": "https://openrouter.ai/docs/guides/routing/provider-selection",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Free requests should use exact free variants and provider.max_price zero to prevent paid provider fallback; billable plug-ins remain excluded.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://openrouter.ai/",
+        "key_url": "https://openrouter.ai/settings/keys",
+        "steps": [
+          "Create an inference API key; management privileges are unnecessary.",
+          "At least $10 lifetime purchased credits raises the shared free-model daily request allowance to 1000; it does not make paid models free.",
+          "Use GET /key only for key metadata; its dollar usage is not the free request counter."
+        ],
+        "required_env": [
+          "OPENROUTER_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "hard_free_request": {
+        "provider": {
+          "max_price": {
+            "prompt": 0,
+            "completion": 0,
+            "request": 0,
+            "image": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "gemini",
+      "display_name": "Google Gemini",
+      "region": "international",
+      "api_base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "credential_env": "GEMINI_API_KEY",
+      "discovery": {
+        "url": "https://generativelanguage.googleapis.com/v1beta/models",
+        "auth": "x-goog-api-key",
+        "parser": "gemini",
+        "pagination": "gemini",
+        "supports_public": false,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {
+          "pageSize": 1000
+        }
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "gemini-3.8-flash",
+              "gemini-3.7-flash",
+              "gemini-3.6-flash",
+              "gemini-3.5-flash",
+              "gemini-3.5-flash-lite",
+              "gemini-3.1-flash-lite",
+              "gemini-3-flash-preview",
+              "gemini-2.5-pro",
+              "gemini-2.5-flash",
+              "gemini-2.5-flash-lite",
+              "gemini-robotics-er-2-preview",
+              "gemini-robotics-er-1.6-preview",
+              "gemma-4-26b-a4b-it",
+              "gemma-4-31b-it"
+            ]
+          },
+          "required_account_tier": "free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ],
+          "pricing": {
+            "input": "0",
+            "output": "0"
+          }
+        }
+      ],
+      "limits": [
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "project",
+          "scope_keys": [
+            "project_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ]
+        },
+        {
+          "id": "input_tpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "project",
+          "scope_keys": [
+            "project_ref",
+            "model_id"
+          ],
+          "metric": "input_tokens",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ]
+        },
+        {
+          "id": "rpd",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "project",
+          "scope_keys": [
+            "project_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "calendar_day",
+          "capacity": null,
+          "window_seconds": 86400,
+          "timezone": "America/Los_Angeles",
+          "anchor": null,
+          "evidence_ids": [
+            "limits"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://ai.google.dev/gemini-api/docs/pricing",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Only selected model operations have a free tier; paid project billing does not inherit free pricing. Models listing is not pricing or account entitlement.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "cc38e298ed4a02b1ea02a8f3f347d67a77c5f3cd16ab04c85c252d20fc6a6242"
+          }
+        },
+        {
+          "id": "limits",
+          "url": "https://ai.google.dev/gemini-api/docs/rate-limits",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Rate limits are per project, not key; input TPM and requests have separate limits. Daily requests reset at midnight America/Los_Angeles. Exact current limits appear in AI Studio.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "51fdf69c50039559ae75922b83e38031807dedbba164952a6f389bf8d137bffe"
+          }
+        },
+        {
+          "id": "auth",
+          "url": "https://ai.google.dev/gemini-api/docs/api-key",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "September 2026 standard API-key retirement requires current AI Studio authorization keys, bound to service accounts. Auth migration errors must not be labeled quota exhaustion.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://aistudio.google.com/",
+        "key_url": "https://aistudio.google.com/apikey",
+        "steps": [
+          "Create a current AI Studio authorization key for the intended project.",
+          "Confirm project billing is disabled for Free tier use; a paid key does not retain free-model pricing.",
+          "Check the project rate limits in AI Studio. Keys in one project share allowance."
+        ],
+        "required_env": [
+          "GEMINI_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true
+    },
+    {
+      "id": "cloudflare",
+      "display_name": "Cloudflare Workers AI",
+      "region": "international",
+      "api_base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+      "credential_env": "CLOUDFLARE_API_TOKEN",
+      "discovery": {
+        "url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search",
+        "auth": "bearer",
+        "parser": "cloudflare",
+        "pagination": "cloudflare",
+        "supports_public": false,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {
+          "per_page": 100,
+          "include_deprecated": "false"
+        }
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": [],
+            "exclude": [
+              "@cf/moonshotai/kimi-k2.6",
+              "@cf/moonshotai/kimi-k2.7-code",
+              "@cf/zai-org/glm-5.2",
+              "@cf/zai-org/glm-5.3",
+              "@cf/zai-org/glm-5.3-flash",
+              "@cf/deepseek-ai/deepseek-v4-flash-0731",
+              "@cf/deepseek-ai/deepseek-v4-pro-0813"
+            ]
+          },
+          "required_account_tier": "workers_free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "neurons_daily",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "neurons",
+          "algorithm": "calendar_day",
+          "capacity": 10000,
+          "window_seconds": 86400,
+          "timezone": "UTC",
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "text_rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 300,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Free Workers AI account: 10000 shared neurons/day reset midnight UTC; free plan hard rejects excess. Paid Workers accounts can bill overage, and specified frontier models require payment.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "8dd5a43fe2c1f725e07cecbe5121db4cf69863973618de122a62e355a92254d6"
+          }
+        },
+        {
+          "id": "catalog",
+          "url": "https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Account-specific model search requires Workers AI read/write permission and pagination. Model price conversion and paid-required exclusions need separate reviewed evidence.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://dash.cloudflare.com/sign-up",
+        "key_url": "https://dash.cloudflare.com/profile/api-tokens",
+        "steps": [
+          "Create an API token restricted to your account with Account / Workers AI / Read for catalog discovery.",
+          "Inference needs Account / Workers AI / Edit; do not grant DNS, zone or unrelated account permissions.",
+          "Copy the account ID. Confirm the account is on Workers Free; paid overage is excluded without provider-enforced no-charge protection."
+        ],
+        "required_env": [
+          "CLOUDFLARE_API_TOKEN",
+          "CLOUDFLARE_ACCOUNT_ID"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "paid_required_models": [
+        "@cf/moonshotai/kimi-k2.6",
+        "@cf/moonshotai/kimi-k2.7-code",
+        "@cf/zai-org/glm-5.2",
+        "@cf/zai-org/glm-5.3",
+        "@cf/zai-org/glm-5.3-flash",
+        "@cf/deepseek-ai/deepseek-v4-flash-0731",
+        "@cf/deepseek-ai/deepseek-v4-pro-0813"
+      ],
+      "blocked_models": [
+        "@cf/moonshotai/kimi-k2.6",
+        "@cf/moonshotai/kimi-k2.7-code",
+        "@cf/zai-org/glm-5.2",
+        "@cf/zai-org/glm-5.3",
+        "@cf/zai-org/glm-5.3-flash",
+        "@cf/deepseek-ai/deepseek-v4-flash-0731",
+        "@cf/deepseek-ai/deepseek-v4-pro-0813"
+      ],
+      "model_costs": {
+        "@cf/meta/llama-3.2-1b-instruct": {
+          "neurons_per_input_token": "0.002457",
+          "neurons_per_output_token": "0.018252",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.2-3b-instruct": {
+          "neurons_per_input_token": "0.004625",
+          "neurons_per_output_token": "0.030475",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.1-8b-instruct-fp8-fast": {
+          "neurons_per_input_token": "0.004119",
+          "neurons_per_output_token": "0.034868",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.2-11b-vision-instruct": {
+          "neurons_per_input_token": "0.00441",
+          "neurons_per_output_token": "0.061493",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.1-70b-instruct-fp8-fast": {
+          "neurons_per_input_token": "0.026668",
+          "neurons_per_output_token": "0.204805",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.3-70b-instruct-fp8-fast": {
+          "neurons_per_input_token": "0.026668",
+          "neurons_per_output_token": "0.204805",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b": {
+          "neurons_per_input_token": "0.04517",
+          "neurons_per_output_token": "0.443756",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/deepseek-ai/deepseek-v4-flash-0731": {
+          "neurons_per_input_token": "0.04",
+          "neurons_per_cached_input_token": "0.001273",
+          "neurons_per_output_token": "0.12",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/deepseek-ai/deepseek-v4-pro-0813": {
+          "neurons_per_input_token": "0.12",
+          "neurons_per_cached_input_token": "0.004",
+          "neurons_per_output_token": "0.36",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/mistral/mistral-7b-instruct-v0.1": {
+          "neurons_per_input_token": "0.01",
+          "neurons_per_output_token": "0.0173",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/mistralai/mistral-small-3.1-24b-instruct": {
+          "neurons_per_input_token": "0.031876",
+          "neurons_per_output_token": "0.050488",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.1-8b-instruct": {
+          "neurons_per_input_token": "0.025608",
+          "neurons_per_output_token": "0.075147",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.1-8b-instruct-fp8": {
+          "neurons_per_input_token": "0.013778",
+          "neurons_per_output_token": "0.026128",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3.1-8b-instruct-awq": {
+          "neurons_per_input_token": "0.011161",
+          "neurons_per_output_token": "0.024215",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3-8b-instruct": {
+          "neurons_per_input_token": "0.025608",
+          "neurons_per_output_token": "0.075147",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-3-8b-instruct-awq": {
+          "neurons_per_input_token": "0.011161",
+          "neurons_per_output_token": "0.024215",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-2-7b-chat-fp16": {
+          "neurons_per_input_token": "0.050505",
+          "neurons_per_output_token": "0.606061",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-guard-3-8b": {
+          "neurons_per_input_token": "0.044003",
+          "neurons_per_output_token": "0.00273",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/llama-4-scout-17b-16e-instruct": {
+          "neurons_per_input_token": "0.024545",
+          "neurons_per_output_token": "0.077273",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/google/gemma-3-12b-it": {
+          "neurons_per_input_token": "0.031371",
+          "neurons_per_output_token": "0.05056",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/qwen/qwq-32b": {
+          "neurons_per_input_token": "0.06",
+          "neurons_per_output_token": "0.090909",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/qwen/qwen2.5-coder-32b-instruct": {
+          "neurons_per_input_token": "0.06",
+          "neurons_per_output_token": "0.090909",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/qwen/qwen3-30b-a3b-fp8": {
+          "neurons_per_input_token": "0.004625",
+          "neurons_per_output_token": "0.030475",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/qwen/qwen3.8-27b": {
+          "neurons_per_input_token": "0.040909",
+          "neurons_per_output_token": "0.290909",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/openai/gpt-oss-120b": {
+          "neurons_per_input_token": "0.031818",
+          "neurons_per_output_token": "0.068182",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/openai/gpt-oss-20b": {
+          "neurons_per_input_token": "0.018182",
+          "neurons_per_output_token": "0.027273",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/aisingapore/gemma-sea-lion-v4-27b-it": {
+          "neurons_per_input_token": "0.031876",
+          "neurons_per_output_token": "0.050488",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/ibm-granite/granite-4.0-h-micro": {
+          "neurons_per_input_token": "0.001542",
+          "neurons_per_output_token": "0.010158",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/zai-org/glm-4.7-flash": {
+          "neurons_per_input_token": "0.0055",
+          "neurons_per_output_token": "0.0364",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/zai-org/glm-5.2": {
+          "neurons_per_input_token": "0.127273",
+          "neurons_per_cached_input_token": "0.023636",
+          "neurons_per_output_token": "0.4",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/zai-org/glm-5.3": {
+          "neurons_per_input_token": "0.127273",
+          "neurons_per_cached_input_token": "0.023636",
+          "neurons_per_output_token": "0.4",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/zai-org/glm-5.3-flash": {
+          "neurons_per_input_token": "0.013636",
+          "neurons_per_cached_input_token": "0.002727",
+          "neurons_per_output_token": "0.045455",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/nvidia/nemotron-3-120b-a12b": {
+          "neurons_per_input_token": "0.045455",
+          "neurons_per_output_token": "0.136364",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/moonshotai/kimi-k2.5": {
+          "neurons_per_input_token": "0.054545",
+          "neurons_per_cached_input_token": "0.009091",
+          "neurons_per_output_token": "0.272727",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/moonshotai/kimi-k2.6": {
+          "neurons_per_input_token": "0.086364",
+          "neurons_per_cached_input_token": "0.014545",
+          "neurons_per_output_token": "0.363636",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/moonshotai/kimi-k2.7-code": {
+          "neurons_per_input_token": "0.086364",
+          "neurons_per_cached_input_token": "0.017273",
+          "neurons_per_output_token": "0.363636",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/google/gemma-4-26b-a4b-it": {
+          "neurons_per_input_token": "0.009091",
+          "neurons_per_output_token": "0.027273",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/baai/bge-small-en-v1.5": {
+          "neurons_per_input_token": "0.001841",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/baai/bge-base-en-v1.5": {
+          "neurons_per_input_token": "0.006058",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/baai/bge-large-en-v1.5": {
+          "neurons_per_input_token": "0.018582",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/baai/bge-m3": {
+          "neurons_per_input_token": "0.001075",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/pfnet/plamo-embedding-1b": {
+          "neurons_per_input_token": "0.001689",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/qwen/qwen3-embedding-0.6b": {
+          "neurons_per_input_token": "0.001075",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/baai/bge-reranker-base": {
+          "neurons_per_input_token": "0.000283",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/meta/m2m100-1.2b": {
+          "neurons_per_input_token": "0.03105",
+          "neurons_per_output_token": "0.03105",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/ai4bharat/indictrans2-en-indic-1B": {
+          "neurons_per_input_token": "0.03105",
+          "neurons_per_output_token": "0.03105",
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        "@cf/moondream/moondream3.1-9B-A2B": {
+          "neurons_per_input_token": "0.027273",
+          "neurons_per_output_token": "0.090909",
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      }
+    },
+    {
+      "id": "mistral",
+      "display_name": "Mistral",
+      "region": "international",
+      "api_base_url": "https://api.mistral.ai/v1",
+      "credential_env": "MISTRAL_API_KEY",
+      "discovery": {
+        "url": "https://api.mistral.ai/v1/models",
+        "auth": "bearer",
+        "parser": "mistral",
+        "pagination": "none",
+        "supports_public": false,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": "free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "rps",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 1,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "tpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "monthly_tokens",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "total_tokens",
+          "algorithm": "calendar_month",
+          "capacity": null,
+          "window_seconds": null,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://docs.mistral.ai/admin/billing-usage/usage-limits",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Free mode includes monthly usage with limits shown per account/model. Pay-as-you-go extends usage and can bill overage; a balance top-up does not establish a larger free grant.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "dbf2e9b80f4534fecd703c899dc6099628103830e3272b9888cec464d335bd10"
+          }
+        },
+        {
+          "id": "limits",
+          "url": "https://docs.mistral.ai/api/endpoint/beta/admin/billing",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Optional admin-key GET /admin/rate-limit, /admin/spend-limit and /admin/usage expose limits/usage. An inference key need not have admin permissions; forbidden admin access leaves limits unknown.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://console.mistral.ai/",
+        "key_url": "https://console.mistral.ai/api-keys",
+        "steps": [
+          "Create a regular inference API key in your organization.",
+          "Confirm the organization remains in Free mode; review the Limits page for its monthly and model limits.",
+          "An admin API key is optional for read-only billing/limit discovery and is not required by this wizard."
+        ],
+        "required_env": [
+          "MISTRAL_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true
+    },
+    {
+      "id": "cohere",
+      "display_name": "Cohere",
+      "region": "international",
+      "api_base_url": "https://api.cohere.ai/compatibility/v1",
+      "credential_env": "COHERE_API_KEY",
+      "discovery": {
+        "url": "https://api.cohere.ai/v1/models",
+        "auth": "bearer",
+        "parser": "cohere",
+        "pagination": "cohere",
+        "supports_public": false,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {
+          "page_size": 1000
+        }
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "all",
+            "models": []
+          },
+          "required_account_tier": "trial",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "limits": [
+        {
+          "id": "monthly_calls",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "calendar_month",
+          "capacity": 1000,
+          "window_seconds": null,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        },
+        {
+          "id": "chat_rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "model",
+          "scope_keys": [
+            "account_ref",
+            "model_id"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": 20,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://docs.cohere.com/v2/docs/rate-limits",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Trial/evaluation keys have 1000 shared API calls/month and model-specific endpoint rates; production keys are paid even when their rate caps look similar. Trial is recurring monthly evaluation allowance, not a signup balance.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "2154ec228056b9faaba17f49250dd007202f1799280dd28f50a4143e74a6ab2b"
+          }
+        },
+        {
+          "id": "catalog",
+          "url": "https://docs.cohere.com/reference/list-models",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Native model listing supports page_size up to 1000, page_token and next_page_token; endpoints and deprecation metadata determine supported operations.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://dashboard.cohere.com/welcome/login",
+        "key_url": "https://dashboard.cohere.com/api-keys",
+        "steps": [
+          "Create a trial/evaluation key in the Cohere dashboard.",
+          "Do not replace it with a production key for the free profile.",
+          "The 1000 monthly API calls are shared across models and endpoints; use for evaluation/prototyping under Cohere terms."
+        ],
+        "required_env": [
+          "COHERE_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true
+    },
+    {
+      "id": "zhipu",
+      "display_name": "Z.ai / Zhipu GLM",
+      "region": "international",
+      "api_base_url": "https://api.z.ai/api/paas/v4",
+      "credential_env": "ZHIPU_API_KEY",
+      "discovery": {
+        "url": "https://api.z.ai/api/paas/v4/models",
+        "auth": "bearer",
+        "parser": "zhipu",
+        "pagination": "none",
+        "supports_public": false,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {},
+        "supplement_from_reviewed_grants": [
+          "free"
+        ]
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "zero_price",
+          "status": "verified",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "glm-4.7-flash",
+              "glm-4.5-flash",
+              "glm-4.6v-flash"
+            ]
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ],
+          "pricing": {
+            "input": "0",
+            "output": "0"
+          }
+        }
+      ],
+      "limits": [
+        {
+          "id": "rpm",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "requests",
+          "algorithm": "rolling",
+          "capacity": null,
+          "window_seconds": 60,
+          "timezone": null,
+          "anchor": null,
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://docs.z.ai/guides/overview/pricing.md",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Global GLM-4.7-Flash, GLM-4.5-Flash and GLM-4.6V-Flash have zero input/output price. FlashX and GLM-5.3-Flash are paid. Built-in web search costs $0.01/use.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "raw_body_v1",
+            "sha256": "dafd8349302daa4aaa4cac8a06098e5c254b9eebf563c7f89d160b9287fef2c2"
+          }
+        }
+      ],
+      "setup": {
+        "signup_url": "https://z.ai/",
+        "key_url": "https://z.ai/manage-apikey/apikey-list",
+        "steps": [
+          "Create a general global Z.ai API key.",
+          "Use the ordinary /api/paas/v4 endpoint; Coding Plan is a separate paid subscription.",
+          "Use the exact reviewed free Flash variants; disable built-in web search and paid add-ons."
+        ],
+        "required_env": [
+          "ZHIPU_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true
+    },
+    {
+      "id": "ollama",
+      "display_name": "Ollama Cloud",
+      "region": "international",
+      "api_base_url": "https://ollama.com/v1",
+      "credential_env": "OLLAMA_API_KEY",
+      "discovery": {
+        "url": "https://ollama.com/api/tags",
+        "auth": "bearer",
+        "parser": "ollama",
+        "pagination": "none",
+        "supports_public": true,
+        "catalog_ttl_seconds": 86400,
+        "max_pages": 100,
+        "headers": {},
+        "params": {}
+      },
+      "grants": [
+        {
+          "id": "free",
+          "kind": "recurring_credit",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "gemma4:31b",
+              "gpt-oss:120b",
+              "gpt-oss:20b",
+              "nemotron-3-super",
+              "nemotron-3-nano:30b",
+              "nemotron-3-ultra"
+            ]
+          },
+          "required_account_tier": "free_starter",
+          "requires_account_evidence": true,
+          "paid_overage_possible": true,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "chat"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ],
+          "required_account_conditions": {
+            "plan": "free_starter",
+            "paid_balance_zero": true,
+            "automatic_usage_billing": false
+          },
+          "boundary_note": "Conditional on current account evidence: personal Free starter with no extra purchased credits and no automatic usage billing; public listing does not verify these conditions."
+        }
+      ],
+      "limits": [
+        {
+          "id": "starter_monthly_credit",
+          "grant_ids": [
+            "free"
+          ],
+          "scope": "account",
+          "scope_keys": [
+            "account_ref"
+          ],
+          "metric": "micro_usd",
+          "algorithm": "anniversary_month",
+          "capacity": null,
+          "window_seconds": null,
+          "timezone": null,
+          "anchor": "signup_at",
+          "evidence_ids": [
+            "terms"
+          ]
+        }
+      ],
+      "evidence": [
+        {
+          "id": "terms",
+          "url": "https://ollama.com/pricing",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Free cloud tier has starter credits, one concurrent request and monthly resets on signup anniversary. Starter credit amount is not publicly quantified. Adding credits unlocks more models and can consume purchased balance after included usage.",
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "6523bb41738afc896a297260a9eb22e4399db2382267c15aa1bf248501b2492f"
+          }
+        },
+        {
+          "id": "models",
+          "url": "https://docs.ollama.com/cloud",
+          "checked_at": "2026-09-05T00:00:00+00:00",
+          "expires_at": "2026-09-12T00:00:00+00:00",
+          "claim": "Public cloud model list is not starter eligibility. Direct cloud IDs differ from local -cloud aliases. Model retirements and billing terms require independent review.",
+          "status": "verified"
+        }
+      ],
+      "setup": {
+        "signup_url": "https://ollama.com/signup",
+        "key_url": "https://ollama.com/settings/keys",
+        "steps": [
+          "Create an Ollama account and cloud API key.",
+          "Keep the account on the Free starter tier for this grant; paid add-on balance is not recurring free entitlement.",
+          "Record the signup date and current starter model allowance from the account page; public model listing does not supply them."
+        ],
+        "required_env": [
+          "OLLAMA_API_KEY"
+        ]
+      },
+      "restrictions": [],
+      "default_enabled": true,
+      "concurrency_limit": 1
+    }
+  ],
+  "tombstones": [
+    {
+      "id": "github",
+      "reason": "GitHub Models retired July 30, 2026.",
+      "source_url": "https://docs.github.com/en/github-models"
+    }
+  ]
+}

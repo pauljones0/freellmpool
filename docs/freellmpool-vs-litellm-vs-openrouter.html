@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freellmpool vs LiteLLM vs OpenRouter — which LLM gateway should you use?</title>
+<meta name="description" content="A practical comparison of freellmpool, LiteLLM, and OpenRouter for routing LLM requests: cost, free-tier pooling, install, keyless start when routes are available, interfaces (CLI/library/proxy/MCP), failover, and which to choose.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/freellmpool-vs-litellm-vs-openrouter.html">
+<meta property="og:title" content="freellmpool vs LiteLLM vs OpenRouter">
+<meta property="og:description" content="Which LLM gateway should you use? A practical, honest comparison.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:820px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:26px;margin:0 0 6px;line-height:1.25}h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}pre code{background:none;padding:0}
+ .lead{font-size:17px}table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:top}th{color:var(--mut)}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}ul{padding-left:20px}
+</style>
+<meta property="og:url" content="https://0xzr.github.io/freellmpool/freellmpool-vs-litellm-vs-openrouter.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+<meta name="twitter:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+</head>
+<body><div class="wrap">
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> › guide</p>
+<h1>freellmpool vs LiteLLM vs OpenRouter</h1>
+
+<p class="lead"><strong>All three put many LLM providers behind one interface, but they solve different
+problems. <a href="https://github.com/0xzr/freellmpool">freellmpool</a> pools providers' <em>free</em>
+tiers and can start keyless when routes are available; LiteLLM is a mature bring-your-own-keys SDK and proxy;
+OpenRouter is a hosted, pay-per-token aggregator with the widest model selection. Pick
+freellmpool to run on free tiers, LiteLLM to standardize calls across your own provider accounts, and
+OpenRouter when you want one paid bill for many frontier models.</strong></p>
+
+<h2>At a glance</h2>
+<table>
+<tr><th></th><th>freellmpool</th><th>LiteLLM</th><th>OpenRouter</th></tr>
+<tr><td>Core idea</td><td>Pool providers' <b>free</b> tiers</td><td>Standardize calls to <b>your</b> provider keys</td><td>Hosted paid aggregator</td></tr>
+<tr><td>Cost</td><td>Free</td><td>OSS; you pay providers</td><td>Pay per token (a few free models)</td></tr>
+<tr><td>Keyless start</td><td>Yes (keyless routes)</td><td>No</td><td>No</td></tr>
+<tr><td>Install</td><td><code>pip install</code></td><td><code>pip install</code></td><td>API key</td></tr>
+<tr><td>Interfaces</td><td>CLI, library, proxy, MCP</td><td>Library, proxy</td><td>API</td></tr>
+<tr><td>Failover</td><td>Yes</td><td>Yes (router)</td><td>Yes</td></tr>
+<tr><td>License</td><td>MIT (open source)</td><td>MIT (open source)</td><td>Proprietary service</td></tr>
+</table>
+
+<h2>freellmpool — for running on free tiers</h2>
+<p>freellmpool's niche is squeezing the hosted free tiers: it routes each request to a provider you have
+capacity on, fails over on a 429, and tracks per-day usage. It's the only one of the three with a keyless
+start path when routes are available and ships a first-class CLI and an MCP server. Best when you want free inference for
+drafting, classification, everyday coding, or running coding agents (Claude Code/Codex/Aider) for free.
+Trade-off: free-tier models are smaller than frontier models.</p>
+
+<h2>LiteLLM — for your own keys at scale</h2>
+<p>LiteLLM is the most mature of the three as a developer SDK and self-hosted proxy. If you already have
+provider accounts and want a battle-tested way to call 100+ models with one interface, plus budgets,
+logging, and team features, LiteLLM is the standard choice. It does not pool anyone's free tier for you.</p>
+
+<h2>OpenRouter — for the widest paid model selection</h2>
+<p>OpenRouter is a hosted aggregator: one account and bill for a huge catalog of models, with routing and
+fallbacks. Best when you want breadth of frontier models without managing many provider accounts, and
+you're fine paying per token. It has a few rate-limited free models but isn't a free-first tool.</p>
+
+<h2>Can you combine them?</h2>
+<p>Yes. OpenRouter is one of the providers freellmpool can pool, so OpenRouter's free models become part
+of freellmpool's failover set. And freellmpool's proxy is OpenAI-compatible, so anything that points at an
+OpenAI base URL — including LiteLLM-based apps — can point at freellmpool instead.</p>
+
+<pre><code>pip install freellmpool
+freellmpool ask "Explain the CAP theorem in one sentence."   # keyless when routes are available</code></pre>
+<p class="tag">Privacy note: freellmpool is not a privacy layer; prompts go to the selected upstream provider.
+See the <a href="https://github.com/0xzr/freellmpool/blob/main/FAQ.md">FAQ</a>.</p>
+<p>Related: <a href="best-free-llm-api-gateway.html">best free LLM API gateway</a> ·
+<a href="free-alternative-to-openrouter.html">free alternative to OpenRouter</a>.</p>
+
+<h2>FAQ</h2>
+<h3>Is freellmpool better than LiteLLM?</h3>
+<p>Neither is strictly better — they target different needs. freellmpool pools providers' free tiers and
+can start keyless when routes are available, ideal for free inference and a CLI workflow. LiteLLM is a mature SDK/proxy for calling
+many models with your own keys at scale. Use freellmpool for free-tier usage, LiteLLM for bring-your-own-key
+production routing.</p>
+<h3>What's the difference between freellmpool and OpenRouter?</h3>
+<p>OpenRouter is a hosted, pay-per-token aggregator; freellmpool is a local, open-source tool that pools
+the providers' own free tiers and can start keyless when routes are available. freellmpool can even include OpenRouter's
+free models in its pool.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open source). Updated 2026-06-03.</p>
+</div>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "freellmpool", "item": "https://0xzr.github.io/freellmpool/"}, {"@type": "ListItem", "position": 2, "name": "freellmpool vs LiteLLM vs OpenRouter", "item": "https://0xzr.github.io/freellmpool/freellmpool-vs-litellm-vs-openrouter.html"}]}</script>
+</body></html>

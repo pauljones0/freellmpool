@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Package-only line and branch coverage floors enforced independently by scripts/check_coverage.py.",
+  "thresholds": {
+    "lines": 80,
+    "branches": 70
+  },
+  "enforcement": {
+    "command": "pytest --cov=freellmpool --cov-branch --cov-report=term-missing --cov-report=json:.coverage.json && python scripts/check_coverage.py .coverage.json",
+    "blockPRCreation": true,
+    "blockTaskCompletion": true,
+    "description": "Orchestrator agents MUST generate package-only branch coverage and run the checker before marking any task complete or creating a PR. Lines and branches are evaluated separately."
+  }
+}

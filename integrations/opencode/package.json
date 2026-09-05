@@ -1,0 +1,31 @@
+{
+  "name": "opencode-freellmpool",
+  "version": "0.1.0",
+  "description": "OpenCode plugin for freellmpool: inspect the serving model, usage, and route long agent loops across strong free models.",
+  "private": false,
+  "type": "module",
+  "main": "freellmpool.js",
+  "exports": {
+    ".": "./freellmpool.js",
+    "./plugin/*": "./plugin/*",
+    "./tools/*": "./tools/*"
+  },
+  "keywords": ["opencode", "opencode-plugin", "freellmpool", "llm", "proxy"],
+  "license": "MIT",
+  "homepage": "https://github.com/0xzr/freellmpool/tree/main/integrations/opencode#readme",
+  "bugs": {
+    "url": "https://github.com/0xzr/freellmpool/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xzr/freellmpool.git",
+    "directory": "integrations/opencode"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.14.0"
+  },
+  "files": ["LICENSE", "README.md", "freellmpool.js", "plugin", "tools"]
+}
