@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import shlex
 import shutil
 import subprocess
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from .config import effective_env
-from .conformance import ConformanceStore
+from .conformance import FEATURES, ConformanceStore
 from .managed import ManagedPool
 from .router import Target
 
@@ -42,9 +43,34 @@ def cmd_update(args: argparse.Namespace) -> int:
     return 0
 
 
+def _verification_features(value: str) -> str:
+    selected = [item.strip() for item in value.split(",") if item.strip()]
+    if not selected:
+        raise argparse.ArgumentTypeError("choose at least one verification feature")
+    if len(selected) != len(set(selected)) or set(selected) - set(FEATURES):
+        raise argparse.ArgumentTypeError("choose unique verification features from: " + ", ".join(FEATURES))
+    return ",".join(selected)
+
+
+def _verification_timeout(value: str | float) -> float:
+    try:
+        seconds = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("verification timeout must be a positive finite number") from None
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise argparse.ArgumentTypeError("verification timeout must be a positive finite number")
+    return seconds
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     from .conformance import run_target_canaries
     from .maintenance import select_verification_targets
+    try:
+        features = tuple(_verification_features(args.features).split(","))
+        timeout = _verification_timeout(args.timeout)
+    except argparse.ArgumentTypeError as exc:
+        print(f"freellmpool verify: {exc}", file=sys.stderr)
+        return 2
     pool = ManagedPool.from_default_config()
     # ManagedPool always installs a store, unlike the optional legacy base.
     conformance = cast(ConformanceStore, pool.conformance)
@@ -55,11 +81,10 @@ def cmd_verify(args: argparse.Namespace) -> int:
     if not selected:
         print("No current free route is ready to verify. Run freellmpool status or setup.")
         return 3
-    features = tuple(item.strip() for item in args.features.split(",") if item.strip())
     rows: list[dict[str, Any]] = []
     for target in selected:
         results = run_target_canaries(target.provider, target.model, env=pool.env,
-                                      features=features, timeout=args.timeout,
+                                      features=features, timeout=timeout,
                                       call_fn=pool.probe_call, stream_fn=pool.probe_stream)
         for feature, result in results.items():
             conformance.record(target.provider, target.model, feature,
@@ -98,13 +123,37 @@ def cmd_setup_clients(args: argparse.Namespace) -> int:
     from .client_setup import install_client_setup
     result = install_client_setup()
     timers = install_maintenance()
-    if not args.no_start and shutil.which("systemctl"):
-        subprocess.run(["systemctl", "--user", "daemon-reload"], check=True)
-        subprocess.run(["systemctl", "--user", "enable", "--now", "freellmpool.service", *timers], check=True)
-    print("Free client profiles installed. Start with opencode-free or hermes-free.")
-    print("T3's OpenCode provider uses the free profile when T3 settings are present.")
+    manager = shutil.which("systemctl")
+    start = ["systemctl", "--user", "enable", "--now", "freellmpool.service", *timers]
+    started, failed = False, False
+    if not args.no_start and manager:
+        try:
+            subprocess.run(["systemctl", "--user", "daemon-reload"], check=True, capture_output=True, timeout=30)
+            subprocess.run(start, check=True, capture_output=True, timeout=30)
+            started = True
+        except (OSError, subprocess.SubprocessError):
+            failed = True
+    if result["wrappers"]:
+        print("Installed client launchers:")
+        for wrapper in result["wrappers"]:
+            print("  " + shlex.quote(wrapper))
+        if any(Path(wrapper).name == "opencode-free" for wrapper in result["wrappers"]):
+            print("T3's OpenCode provider uses the free profile when T3 settings are present.")
+    else:
+        print("No supported coding client was found. Install OpenCode or Hermes, then run freellmpool setup-clients.")
+    if started:
+        print("Gateway service and maintenance timer starts requested.")
+    else:
+        print("Gateway startup was not confirmed; some services may have started." if failed else
+              "Gateway files prepared; the gateway was not started by this command.")
+        print("To run the gateway in this terminal:")
+        print("Run: " + shlex.join([sys.executable, "-m", "freellmpool.client_setup", "service", "--root", result["root"]]))
+        if manager:
+            print("To start the user services: systemctl --user daemon-reload")
+            print(shlex.join(start))
+        print("Until scheduled maintenance is running, refresh checks with: freellmpool maintenance --refresh")
     print("Gateway: " + result["base_url"])
-    return 0
+    return 1 if failed else 0
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
@@ -137,8 +186,8 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     verify = sub.add_parser("verify", help="bounded free-only chat/tool/stream checks")
     verify.add_argument("--provider", action="append")
     verify.add_argument("--limit", type=int, choices=range(1, 33), default=4)
-    verify.add_argument("--features", default="chat,tools,streaming")
-    verify.add_argument("--timeout", type=float, default=30)
+    verify.add_argument("--features", type=_verification_features, default="chat,tools,streaming")
+    verify.add_argument("--timeout", type=_verification_timeout, default=30)
     verify.add_argument("--json", action="store_true")
     verify.set_defaults(func=cmd_verify)
     status = sub.add_parser("status", help="show free admission and allowance state")

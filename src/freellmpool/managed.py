@@ -36,6 +36,7 @@ from .free_policy import admit, credential_fingerprint, fresh, load_accounts, ti
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply, TranscribeReply
 from .observe import EventHook
+from .provider_registry import reviewed_limit_capacity
 from .quota import QuotaStore
 from .route_health import RouteHealthStore, default_route_health_path
 from .router import Pool, Target, _is_account_quota_exhaustion
@@ -80,6 +81,7 @@ class CallOptions(TypedDict, total=False):
 
 class AttemptState(TypedDict, total=False):
     reservation: str
+    reserved_amounts: dict[str, float]
     usage: JSON
 
 
@@ -120,6 +122,18 @@ class _AccountingError(ValueError):
     """Locally authored, credential-free diagnostics safe for the client."""
 
 
+def _automatic_tool_conflict(provider_id: str, model: str, grant: JSON) -> str:
+    # Compound enables server-side tools by default. Its documented allowlist
+    # does not establish empty-list semantics, so we cannot promise no tools.
+    # https://console.groq.com/docs/compound/built-in-tools
+    # GPT-OSS tools require an explicit tools entry and do not share this default.
+    if provider_id == "groq" and model in {"groq/compound", "groq/compound-mini"}:
+        prohibited = grant.get("prohibited_addons", [])
+        if "web_search" in prohibited or "paid_tools" in prohibited:
+            return "automatic built-in tools conflict with this grant's excluded add-ons; no verified tool-disable contract"
+    return ""
+
+
 class ManagedPool(Pool):
     """Strict-free default runtime; an exact model selection never bypasses policy."""
 
@@ -157,7 +171,11 @@ class ManagedPool(Pool):
     def _operator_rows(self, env: dict[str, str] | None = None) -> dict[tuple[str, str], Provider]:
         if self._catalog_override is not None:
             return {("chat", p.id): p for p in self._catalog_override}
-        path = Path((self.env if env is None else env).get("FREELLMPOOL_CONFIG") or Path.home() / ".config/freellmpool/providers.toml")
+        try:
+            path = Path((self.env if env is None else env).get("FREELLMPOOL_CONFIG") or
+                        Path.home() / ".config/freellmpool/providers.toml").expanduser()
+        except RuntimeError as exc:
+            raise ValueError("cannot resolve local catalog path") from exc
         if not path.exists():
             return {}
         from .catalog_validation import _raw_catalog_errors
@@ -177,11 +195,11 @@ class ManagedPool(Pool):
         registry = copy.deepcopy(self._registry_override) if self._registry_override is not None else load_registry(env=request_env)
         discovery = copy.deepcopy(self._discovery_override) if self._discovery_override is not None else load_discovery(request_env)
         accounts = copy.deepcopy(self._accounts_override) if self._accounts_override is not None else load_accounts(request_env)
-        raw = self._catalog_override if self._catalog_override is not None else load_catalog()
-        raw_by_id = {p.id: p for p in raw}
         try:
+            raw = self._catalog_override if self._catalog_override is not None else load_catalog()
+            raw_by_id = {p.id: p for p in raw}
             operator = self._operator_rows(request_env)
-        except (OSError, ValueError, TypeError):
+        except (OSError, ValueError, TypeError, RuntimeError):
             result = Snapshot("invalid-config", (), ({"id": "configuration", "reason": "invalid local restrictions; repair providers.toml", "eligible": 0},))
             with self._snapshot_lock:
                 self.providers = []
@@ -235,8 +253,10 @@ class ManagedPool(Pool):
                         local_reason = "provider disabled by local restrictions"
                     if restriction is not None and not restriction.enabled:
                         local_reason = "model disabled by local restrictions"
-                    if reason or local_reason or not allowed.allowed:
-                        exclusions[reason or local_reason or allowed.reason] += 1
+                    tool_reason = (_automatic_tool_conflict(pid, model_id, cast(JSON, allowed.grant))
+                                   if allowed.allowed else "")
+                    if reason or local_reason or tool_reason or not allowed.allowed:
+                        exclusions[reason or local_reason or tool_reason or allowed.reason] += 1
                         continue
                     try:
                         limits = self._limits(spec, cast(JSON, allowed.grant), model_id, account,
@@ -305,9 +325,7 @@ class ManagedPool(Pool):
             scope = rule.get("scope", "account")
             scope_root = f"{spec['id']}:ip" if scope in {"ip", "ip_model"} else root
             prefix = f"{scope_root}:model:{model}" if scope in {"model", "ip_model"} or "model_id" in rule.get("scope_keys", []) else scope_root
-            capacity = rule.get("model_capacities", {}).get(model, rule.get("capacity"))
-            if capacity is None:
-                capacity = rule.get("maximum_documented")
+            capacity = reviewed_limit_capacity(rule, model)
             if spec["id"] == "openrouter" and rule["id"] == "rpd":
                 credit = account.get("lifetime_purchased_credits", 0)
                 if isinstance(credit, (int, float)) and not isinstance(credit, bool) and math.isfinite(credit) and credit >= 10 and account_current:
@@ -426,19 +444,40 @@ class ManagedPool(Pool):
                 amounts[limit.unit] = 0
         return amounts
 
-    def _actual_cost(self, route: Route, body: object) -> dict[str, float]:
+    def _actual_cost(self, route: Route, body: object, reserved: Mapping[str, float]) -> dict[str, float]:
         usage = body.get("usage", {}) if isinstance(body, dict) else {}
         if not isinstance(usage, dict):
             return {"requests": 1}
-        prompt, completion = usage.get("prompt_tokens"), usage.get("completion_tokens")
-        if not isinstance(prompt, int) or isinstance(prompt, bool) or prompt < 0:
-            return {"requests": 1}
-        actual: dict[str, float] = {"requests": 1, "input_tokens": prompt}
-        if isinstance(completion, int) and not isinstance(completion, bool) and completion >= 0:
-            actual.update(output_tokens=completion, total_tokens=prompt + completion, tokens=prompt + completion)
+        # Reject malformed or unrepresentable counters without refunding the
+        # corresponding reservation. Aggregate totals can include server work
+        # absent from prompt/completion counts (for example, internal rounds).
+        counts = {key: value for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+                  if isinstance(value := usage.get(key), int) and not isinstance(value, bool)
+                  and 0 <= value <= 2**63 - 1}
+        prompt, completion = counts.get("prompt_tokens"), counts.get("completion_tokens")
+        actual: dict[str, float] = {"requests": 1}
+        if prompt is not None:
+            actual["input_tokens"] = prompt
+        if completion is not None:
+            actual["output_tokens"] = completion
+        if "total_tokens" in counts:
+            total = max(counts["total_tokens"], (prompt or 0) + (completion or 0))
+            actual.update(total_tokens=total, tokens=total)
+        elif "total_tokens" not in usage and prompt is not None and completion is not None:
+            actual.update(total_tokens=prompt + completion, tokens=prompt + completion)
+        else:
+            # Incomplete usage cannot justify a refund, but any known part
+            # above the estimate must still consume its allowance.
+            known_tokens = (prompt or 0) + (completion or 0)
+            for unit in ("total_tokens", "tokens"):
+                actual[unit] = max(reserved.get(unit, 0), known_tokens)
+        if prompt is not None or completion is not None:
             costs = route.policy.get("model_costs", {}).get(route.model, {})
             if "neurons_per_input_token" in costs and "neurons_per_output_token" in costs:
-                actual["neurons"] = math.ceil(Decimal(str(costs["neurons_per_input_token"])) * prompt + Decimal(str(costs["neurons_per_output_token"])) * completion)
+                neurons = math.ceil(Decimal(str(costs["neurons_per_input_token"])) * (prompt or 0) +
+                                    Decimal(str(costs["neurons_per_output_token"])) * (completion or 0))
+                actual["neurons"] = (neurons if prompt is not None and completion is not None
+                                     else max(reserved.get("neurons", 0), neurons))
         return actual
 
     def _headers(self, route: Route, headers: Mapping[str, object] | None, reservation: str | None = None) -> None:
@@ -488,14 +527,16 @@ class ManagedPool(Pool):
                 raise ValueError("billable built-in tools/service options are excluded")
             if any(tool.get("type") != "function" for tool in body.get("tools", []) if isinstance(tool, dict)):
                 raise ValueError("only caller-executed function tools are supported")
-            state["reservation"] = self.ledger.reserve(limits, self._cost(route, body),
+            state["reserved_amounts"] = self._cost(route, body)
+            state["reservation"] = self.ledger.reserve(limits, state["reserved_amounts"],
                                                       scopes=[route.account_scope, route.model_scope], ttl=timeout + 5)
             # A transport failure cannot prove the server stopped working. Keep
             # its concurrency lease until expiry and its full usage reservation.
             response = (client.default_post(url, headers, body, timeout, max_attempts=1)
                         if self._post is client.default_post else self._post(url, headers, body, timeout))
             self._headers(route, response.headers, state["reservation"])
-            self.ledger.settle(state["reservation"], self._actual_cost(route, response.body) if response.status == 200 else None)
+            self.ledger.settle(state["reservation"], self._actual_cost(route, response.body, state["reserved_amounts"])
+                               if response.status == 200 else None)
             return response
         return post
 
@@ -504,7 +545,8 @@ class ManagedPool(Pool):
             limits = self._recheck(route)
             if route.provider.id == "openrouter":
                 body = dict(body, provider={"max_price": {"prompt": 0, "completion": 0, "request": 0, "image": 0}})
-            state["reservation"] = self.ledger.reserve(limits, self._cost(route, body),
+            state["reserved_amounts"] = self._cost(route, body)
+            state["reservation"] = self.ledger.reserve(limits, state["reserved_amounts"],
                                                       scopes=[route.account_scope, route.model_scope], ttl=timeout + 5)
             opened = self._stream_post(url, headers, body, timeout)
             if len(opened) == 3:
@@ -537,6 +579,8 @@ class ManagedPool(Pool):
                        credential_ref=credential_fingerprint(route.provider.id, route.provider.api_key(route.env)))
         if not result.allowed or now >= route.metadata["catalog_expires_at"]:
             raise ValueError("free eligibility expired before dispatch")
+        if conflict := _automatic_tool_conflict(route.provider.id, route.model, cast(JSON, result.grant)):
+            raise ValueError(conflict)
         return self._limits(route.policy, route.grant, route.model, route.account,
                             credential_ref=credential_fingerprint(route.provider.id, route.provider.api_key(route.env)))
 
@@ -557,6 +601,7 @@ class ManagedPool(Pool):
                     raise _AccountingError("Audio allowance requires measurable PCM WAV input.") from None
                 minimum = route.policy.get("model_costs", {}).get(route.model, {}).get("minimum_audio_seconds", 0)
                 amounts["audio_seconds"] = max(math.ceil(duration), minimum)
+            state["reserved_amounts"] = amounts
             state["reservation"] = self.ledger.reserve(limits, amounts,
                                                       scopes=[route.account_scope, route.model_scope], ttl=call_timeout + 5)
             if self._transcribe_post is client.default_multipart_post:
@@ -564,7 +609,8 @@ class ManagedPool(Pool):
             else:
                 response = self._transcribe_post(url, headers, files, data, call_timeout)
             self._headers(route, response.headers, state["reservation"])
-            self.ledger.settle(state["reservation"], self._actual_cost(route, response.body) if response.status == 200 else None)
+            self.ledger.settle(state["reservation"], self._actual_cost(route, response.body, state["reserved_amounts"])
+                               if response.status == 200 else None)
             return response
         return multipart
 
@@ -719,7 +765,8 @@ class ManagedPool(Pool):
         finally:
             gen.close()
             if completed and state.get("reservation"):
-                self.ledger.settle(state["reservation"], self._actual_cost(route, {"usage": state.get("usage", {})}))
+                self.ledger.settle(state["reservation"], self._actual_cost(
+                    route, {"usage": state.get("usage", {})}, state["reserved_amounts"]))
 
     def chat(self, messages: list[JSON], **kwargs: Unpack[CallOptions]) -> Reply:
         return cast(Reply, self._run("chat", messages, **kwargs))

@@ -568,9 +568,11 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 return True
             # Constant-time compares so the key can't be recovered byte-by-byte
             # via response timing on a network-exposed proxy.
-            if hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {api_key}"):
+            # HTTP header values may contain non-ASCII bytes. Comparing Python
+            # strings raises for those inputs; byte comparisons fail normally.
+            if hmac.compare_digest(self.headers.get("Authorization", "").encode(), f"Bearer {api_key}".encode()):
                 return True
-            return hmac.compare_digest(self.headers.get("x-api-key", ""), api_key)
+            return hmac.compare_digest(self.headers.get("x-api-key", "").encode(), api_key.encode())
 
         def _boundary_allowed(self, *, json_body=False, multipart_body=False) -> bool:
             from .request_security import RequestBoundaryPolicy, validate_boundary

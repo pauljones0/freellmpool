@@ -8,6 +8,7 @@ import pytest
 
 from freellmpool import maintenance as m
 from freellmpool.free_policy import credential_fingerprint
+from freellmpool.provider_registry import policy_digest
 
 NOW = datetime(2026, 9, 5, 12, tzinfo=UTC)
 SHA = "a" * 40
@@ -276,7 +277,8 @@ def test_source_change_remains_pending_through_failed_check_then_matches_review(
     outage, second = m.build_public_report(spec, catalog(), baseline=first, evidence=failed, now=NOW)
     assert any(row["code"] == "source_changed" for row in outage["findings"])
     restored = copy.deepcopy(changed)
-    restored["providers"]["openrouter"]["terms"].update(status="unchanged", sha256="a" * 64)
+    restored["providers"]["openrouter"]["terms"].update(status="unchanged", sha256="a" * 64,
+        url=URL, hash_algorithm=algorithm, policy_sha256=policy_digest(spec["openrouter"]))
     recovered, _ = m.build_public_report(spec, catalog(), baseline=second, evidence=restored, now=NOW)
     assert recovered["findings"] == []
     assert report["findings"][0]["fingerprint"] in {row["fingerprint"] for row in recovered["resolutions"]}
@@ -372,7 +374,8 @@ def test_unreviewed_source_needs_baseline_instead_of_claiming_a_change():
     assert same["findings"] == report["findings"]
     spec = registry()
     spec["openrouter"]["evidence"][0]["source_hash"] = {"algorithm": "visible_text_v1", "sha256": "a" * 64}
-    evidence["providers"]["openrouter"]["terms"]["status"] = "unchanged"
+    evidence["providers"]["openrouter"]["terms"].update(status="unchanged", url=URL,
+        hash_algorithm="visible_text_v1", policy_sha256=policy_digest(spec["openrouter"]))
     reviewed, _ = m.build_public_report(spec, catalog(), evidence=evidence, baseline=second, now=NOW)
     assert reviewed["findings"] == []
     assert reviewed["resolutions"][0]["fingerprint"] == report["findings"][0]["fingerprint"]

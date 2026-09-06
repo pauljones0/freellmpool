@@ -146,7 +146,8 @@ def test_upsert_config_key_is_0600(tmp_path):
     p = upsert_config_key("GROQ_API_KEY", "secret", tmp_path / "config.toml")
     if hasattr(os, "fchmod"):
         assert stat.S_IMODE(p.stat().st_mode) == 0o600
-    assert 'GROQ_API_KEY = "secret"' in p.read_text()
+    import tomllib
+    assert tomllib.loads(p.read_text())["keys"]["GROQ_API_KEY"] == "secret"
 
 
 # --- benchmark: empty-error FAIL row doesn't crash render ---

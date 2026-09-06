@@ -13,7 +13,9 @@ import argparse
 import os
 import shlex
 import sys
+from collections.abc import Callable, Container, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict, cast
 
 from . import __version__
 from .config import (
@@ -58,6 +60,18 @@ from .routing_modes import PUBLIC_ROUTING_ALIASES, routing_override
 from .savings import format_saved
 from .task_quality import TASK_HINTS
 
+if TYPE_CHECKING:
+    from .capacity import ProviderCapacity
+    from .catalog import ExternalProvider
+    from .managed import ManagedPool
+    from .models import Provider
+
+
+class _ConformanceRow(TypedDict):
+    provider: str
+    model: str
+    features: dict[str, dict[str, str]]
+
 
 def _read_stdin() -> str:
     if sys.stdin is None or sys.stdin.isatty():
@@ -65,7 +79,7 @@ def _read_stdin() -> str:
     return sys.stdin.read()
 
 
-def _runtime_catalog():
+def _runtime_catalog() -> list[Provider]:
     """Built-in plus registered/entry-point providers, merged by provider id."""
 
     from .plugins import registered_providers
@@ -117,7 +131,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
         system = f"{system}\n{json_rule}" if system else json_rule
 
     pool = Pool.from_default_config()
-    pool_env = getattr(pool, "env", os.environ)
+    pool_env = dict(getattr(pool, "env", os.environ))
     mode_settings = settings(pool_env)
     has_routing_config = bool(pool_env.get("FREELLMPOOL_ROUTING") or mode_settings.get("routing"))
     wise = is_wise_enabled(pool_env, override=args.mode, settings=mode_settings)
@@ -260,7 +274,7 @@ def cmd_tokenmax(args: argparse.Namespace) -> int:
         msgs.append({"role": "system", "content": args.system})
     msgs.append({"role": "user", "content": prompt})
 
-    pool_env = getattr(pool, "env", os.environ)
+    pool_env = dict(getattr(pool, "env", os.environ))
     mode_settings = settings(pool_env)
     has_routing_config = bool(pool_env.get("FREELLMPOOL_ROUTING") or mode_settings.get("routing"))
     wise = is_wise_enabled(pool_env, override=args.mode, settings=mode_settings)
@@ -378,9 +392,9 @@ def _strip_fences(text: str) -> str:
 def cmd_providers(args: argparse.Namespace) -> int:
     pool = Pool.from_default_config()
     if getattr(pool, "managed", False):
-        status = pool.managed_status()
-        print(f"Strict free gateway: {len(status['providers'])} providers, {status['eligible_routes']} eligible routes\n")
-        for row in status["providers"]:
+        managed_status = cast("ManagedPool", pool).managed_status()
+        print(f"Strict free gateway: {len(managed_status['providers'])} providers, {managed_status['eligible_routes']} eligible routes\n")
+        for row in managed_status["providers"]:
             print(f"  {row['id']:<14} {row['eligible']:>4} routes  {row['reason']}")
         print("\nRun `freellmpool setup` to connect free access, or `freellmpool update` to refresh models.")
         return 0
@@ -422,7 +436,7 @@ def cmd_models(args: argparse.Namespace) -> int:
     if getattr(pool, "managed", False):
         only = set(args.providers.split(",")) if args.providers else None
         rows = []
-        for route in pool.snapshot().routes:
+        for route in cast("ManagedPool", pool).snapshot().routes:
             if route.modality != "chat" or (only and route.provider.id not in only):
                 continue
             evidence = pool.conformance.evidence(route.provider, route.model) if pool.conformance else {}
@@ -611,7 +625,7 @@ def cmd_badge(args: argparse.Namespace) -> int:
     return 0
 
 
-def _format_capacity_row(row) -> str:
+def _format_capacity_row(row: ProviderCapacity) -> str:
     quota = "?" if row.quota_hint <= 0 else str(row.quota_hint)
     key = "keyless" if row.keyless else (row.key_env or "-")
     expiry = f" expires={row.expires_at}" if row.expires_at else ""
@@ -653,7 +667,7 @@ def cmd_keys_checklist(args: argparse.Namespace) -> int:
     return 0
 
 
-def _choose_provider(catalog, provider_id: str | None):
+def _choose_provider(catalog: Sequence[Provider], provider_id: str | None) -> Provider:
     providers = [p for p in catalog if p.key_env]
     if provider_id:
         needle = provider_id.lower()
@@ -686,7 +700,7 @@ def _yes(raw: str) -> bool:
     return raw.strip().lower() in {"y", "yes"}
 
 
-def _load_or_sync_external_catalog():
+def _load_or_sync_external_catalog() -> list[ExternalProvider]:
     from .catalog import load_external_catalog, sync_external_catalog
 
     external = load_external_catalog()
@@ -763,7 +777,7 @@ def _import_or_create_provider(provider_name: str, args: argparse.Namespace) -> 
         if not model and not args.yes:
             model = input("Default model id: ").strip()
     try:
-        local_id = create_user_provider_stub(name=provider_name, base_url=base_url, model=model)
+        local_id = create_user_provider_stub(name=provider_name, base_url=base_url, model=model or "")
     except ValueError as exc:
         print(f"Could not create provider: {exc}", file=sys.stderr)
         return None
@@ -795,11 +809,11 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
     from datetime import date
 
     from .config import load_catalog, load_config_file
+    from .credential_store import save_key_values
     from .key_inventory import (
         KeyRecord,
         append_inventory_record,
         default_config_path,
-        upsert_config_key,
     )
 
     if getattr(args, "provider_arg", None) and not args.provider:
@@ -818,6 +832,9 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
             return 3
         provider = _choose_provider(load_catalog(), local_id)
 
+    # _choose_provider only returns providers with a credential environment name.
+    key_env = provider.key_env
+    assert key_env is not None
     value = getattr(args, "value", None)
     if not value:
         value = getpass.getpass(f"Paste {provider.key_env}: ").strip()
@@ -846,15 +863,17 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
             print("Cancelled.")
             return 1
 
-    config_path = upsert_config_key(provider.key_env, value)
-    for env_var, extra_value in extra_values.items():
-        config_path = upsert_config_key(env_var, extra_value)
+    try:
+        config_path = save_key_values({key_env: value, **extra_values}, default_config_path())
+    except (OSError, ValueError):
+        print("Could not save credentials. Check config.toml syntax and permissions, then retry; existing contents were not replaced.", file=sys.stderr)
+        return 2
 
     written_names = [str(provider.key_env), *extra_values]
     inventory_path = append_inventory_record(
         KeyRecord(
             provider=provider.id,
-            env_var=provider.key_env,
+            env_var=key_env,
             label=args.label or "manual",
             created_at=date.today().isoformat(),
             commercial_allowed=args.commercial_allowed,
@@ -866,11 +885,9 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
     print(f"Wrote: {', '.join(written_names)}")
     print(f"Config: {config_path}")
     print(f"Inventory: {inventory_path}")
-    unlocked = sum(1 for model in provider.models if model.enabled)
-    suffix = "route" if unlocked == 1 else "routes"
-    print(f"Unlocked {unlocked} enabled model {suffix} for {provider.label}.")
+    print("Saving credentials does not establish free eligibility. Check admission before using the pool.")
     print("Next command:")
-    print("  freellmpool providers health -p " + provider.id)
+    print("  freellmpool status")
     return 0
 
 
@@ -879,7 +896,7 @@ def cmd_capacity_status(args: argparse.Namespace) -> int:
     from .catalog import load_external_catalog, match_local_provider, sync_external_catalog
     from .key_inventory import load_inventory
 
-    external = []
+    external: list[ExternalProvider] = []
     cache_note = None
     if args.refresh:
         try:
@@ -1153,16 +1170,16 @@ def cmd_conformance_run(args: argparse.Namespace) -> int:
         )
         return 2
     pool = Pool.from_default_config(env=env)
-    managed = getattr(pool, "managed", False)
-    if managed:
-        pool.snapshot()
+    managed_pool = cast("ManagedPool", pool) if getattr(pool, "managed", False) else None
+    if managed_pool is not None:
+        managed_pool.snapshot()
         if args.include_disabled:
             print("freellmpool: disabled routes cannot bypass free admission; review policy and enable the route before probing", file=sys.stderr)
             return 2
         configured = pool.providers
     else:
         configured = configured_providers(catalog, env)
-    targets = []
+    targets: list[tuple[Provider, str]] = []
     if args.include_disabled:
         if not args.provider or not args.model or args.providers or args.all_models:
             print(
@@ -1170,25 +1187,25 @@ def cmd_conformance_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        provider = next((item for item in configured if item.id == args.provider), None)
-        model = (
-            next((item for item in provider.models if item.name == args.model), None)
-            if provider is not None
+        disabled_provider = next((item for item in configured if item.id == args.provider), None)
+        disabled_model = (
+            next((item for item in disabled_provider.models if item.name == args.model), None)
+            if disabled_provider is not None
             else None
         )
-        if model is None:
+        if disabled_provider is None or disabled_model is None:
             print(
                 "freellmpool: exact disabled canary target is missing or not configured",
                 file=sys.stderr,
             )
             return 3
-        if model.enabled:
+        if disabled_model.enabled:
             print(
                 "freellmpool: --include-disabled is only for a model that is off by default",
                 file=sys.stderr,
             )
             return 2
-        targets = [(provider, model.name)]
+        targets = [(disabled_provider, disabled_model.name)]
     else:
         if args.provider:
             print(
@@ -1214,26 +1231,27 @@ def cmd_conformance_run(args: argparse.Namespace) -> int:
         print("freellmpool: no configured provider/model matched the conformance filters", file=sys.stderr)
         return 3
 
-    store = pool.conformance if managed and pool.conformance is not None else ConformanceStore()
-    rows = []
-    for provider, model in targets:
+    store = pool.conformance if managed_pool is not None and pool.conformance is not None else ConformanceStore()
+    rows: list[_ConformanceRow] = []
+    for provider, model_id in targets:
         results = run_target_canaries(
             provider,
-            model,
+            model_id,
             env=env,
             features=features,
             timeout=args.timeout,
-            **({"call_fn": pool.probe_call, "stream_fn": pool.probe_stream} if managed else {}),
+            call_fn=managed_pool.probe_call if managed_pool is not None else None,
+            stream_fn=managed_pool.probe_stream if managed_pool is not None else None,
         )
         for feature, result in results.items():
             store.record(
                 provider,
-                model,
+                model_id,
                 feature,
                 status=result["status"],
                 classification=result["classification"],
             )
-        rows.append({"provider": provider.id, "model": model, "features": results})
+        rows.append({"provider": provider.id, "model": model_id, "features": results})
     if args.json:
         print(json.dumps(rows, separators=(",", ":"), sort_keys=True))
     else:
@@ -1244,7 +1262,7 @@ def cmd_conformance_run(args: argparse.Namespace) -> int:
     return 0
 
 
-def _conformance_env(catalog) -> dict[str, str]:
+def _conformance_env(catalog: Sequence[Provider]) -> dict[str, str]:
     """Merge a bounded workflow secret map, restricted to catalog-declared names."""
 
     import json
@@ -1300,7 +1318,7 @@ def cmd_conformance_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _in_table(name: str, table) -> bool:
+def _in_table(name: str, table: Container[str]) -> bool:
     from .capability import normalize_model_name
 
     return normalize_model_name(name) in table
@@ -1574,7 +1592,8 @@ def _run_tailnet_serve(
         or None
     )
 
-    bind_host = status.ipv4  # type: ignore[assignment]  # safe: usable=True
+    bind_host = status.ipv4
+    assert bind_host is not None  # TailnetStatus.usable requires an IPv4 address.
 
     # Non-Tailnet LAN binds need --allow-lan; even Tailnet binds need
     # auth unless --allow-no-auth is passed. assert_bind_safe enforces
@@ -1880,7 +1899,10 @@ def cmd_playground(args: argparse.Namespace) -> int:
     import urllib.request
 
     class _NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, req, fp, code, msg, headers, newurl):
+        def redirect_request(
+            self, req: urllib.request.Request, fp: object, code: int,
+            msg: str, headers: object, newurl: str,
+        ) -> None:
             return None
 
     base = f"http://127.0.0.1:{args.port}"
@@ -2994,8 +3016,9 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging_from_env()  # honor FREELLMPOOL_LOG=<level> for the CLI/proxy
     parser = build_parser()
     args = parser.parse_args(argv)
+    handler: Callable[[argparse.Namespace], int] = args.func
     try:
-        return args.func(args)
+        return handler(args)
     except (EOFError, KeyboardInterrupt):
         # No input on a non-TTY/piped stdin (or Ctrl-D/Ctrl-C at a prompt) —
         # exit cleanly instead of dumping a traceback.

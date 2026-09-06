@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import tomllib
+
+import pytest
 
 from freellmpool.key_inventory import (
     KeyRecord,
@@ -56,7 +59,7 @@ def test_upsert_config_key_creates_new_file(tmp_path):
 
     upsert_config_key("GROQ_API_KEY", "secret", path)
 
-    assert path.read_text() == '[keys]\nGROQ_API_KEY = "secret"\n'
+    assert tomllib.loads(path.read_text()) == {"keys": {"GROQ_API_KEY": "secret"}}
     if hasattr(os, "fchmod"):
         assert oct(path.stat().st_mode & 0o777) == "0o600"
 
@@ -75,11 +78,10 @@ def test_upsert_config_key_updates_keys_without_touching_other_tables(tmp_path):
     upsert_config_key("GROQ_API_KEY", "new", path)
     upsert_config_key("CEREBRAS_API_KEY", "second", path)
 
-    text = path.read_text()
-    assert '[settings]\ndefault_provider = "groq"' in text
-    assert 'GROQ_API_KEY = "new"' in text
-    assert 'CEREBRAS_API_KEY = "second"' in text
-    assert text.count("GROQ_API_KEY") == 1
+    assert tomllib.loads(path.read_text()) == {
+        "settings": {"default_provider": "groq"},
+        "keys": {"GROQ_API_KEY": "new", "CEREBRAS_API_KEY": "second"},
+    }
 
 
 def test_append_inventory_record_deduplicates_provider_env_pair(tmp_path):
@@ -102,3 +104,29 @@ def test_key_record_safe_notes_redacts_secrets():
 
     assert record.safe_notes() == redact_secrets(notes)
     assert "sk-abcdefghijk" not in record.safe_notes()
+
+
+def test_key_update_preserves_all_toml_types(tmp_path):
+    path = tmp_path / "config.toml"
+    original = 'title = "my pool 🚀\\u007f"\n[settings]\n"🚀" = "launch"\nmodels = ["one", "two"]\n[settings.nested]\nenabled = false\n[keys]\nOLD = "old"\n'
+    path.write_text(original)
+    expected = tomllib.loads(original)
+    expected["keys"]["NEW"] = "new"
+    upsert_config_key("NEW", "new", path)
+    assert tomllib.loads(path.read_text()) == expected
+
+
+def test_key_update_refuses_to_destroy_corrupt_configuration(tmp_path):
+    path = tmp_path / "config.toml"
+    original = '[keys]\nOLD = "unterminated'
+    path.write_text(original)
+    with pytest.raises(ValueError):
+        upsert_config_key("NEW", "new", path)
+    assert path.read_text() == original
+
+
+def test_key_writer_handles_platforms_without_fchmod(tmp_path, monkeypatch):
+    monkeypatch.delattr(os, "fchmod")
+    path = tmp_path / "config.toml"
+    upsert_config_key("NEW", "new", path)
+    assert tomllib.loads(path.read_text()) == {"keys": {"NEW": "new"}}

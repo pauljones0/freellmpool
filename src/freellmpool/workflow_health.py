@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from .free_policy import timestamp
+from .http_read import ACCEPT_ENCODING, bounded_response_bytes
 from .maintenance import _now, _read, _write, state_directory
 
 REPOSITORY = "pauljones0/freellmpool"
@@ -46,14 +47,10 @@ def load_workflow_status(env: Mapping[str, str], *, now: datetime | None = None)
 
 
 def _get(client: httpx.Client, url: str, *, params: dict[str, str | int] | None = None) -> JSON:
-    with client.stream("GET", url, params=params, headers={"Accept": "application/vnd.github+json"}) as response:
+    with client.stream("GET", url, params=params, headers={"Accept": "application/vnd.github+json", "Accept-Encoding": ACCEPT_ENCODING}) as response:
         if response.status_code != 200:
             raise ValueError("Workflow observation unavailable")
-        content = bytearray()
-        for chunk in response.iter_bytes():
-            content.extend(chunk)
-            if len(content) > _MAX_BYTES:
-                raise ValueError("Workflow response exceeds bound")
+        content = bounded_response_bytes(response, _MAX_BYTES)
         import json
         result = json.loads(content)
         if not isinstance(result, dict):

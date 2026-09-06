@@ -15,4 +15,7 @@ python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else "Python 3
 bootstrap_venv=${XDG_DATA_HOME:-"$HOME/.local/share"}/freellmpool/venv
 python3 -m venv "$bootstrap_venv"
 "$bootstrap_venv/bin/python" -m pip install "$bootstrap_source"
+"$bootstrap_venv/bin/python" -m freellmpool.client_setup install-command --binary "$bootstrap_venv/bin/freellmpool"
+PATH="$HOME/.local/bin:$PATH"
+export PATH
 exec "$bootstrap_venv/bin/freellmpool" setup "$@"

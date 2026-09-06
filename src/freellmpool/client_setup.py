@@ -45,7 +45,10 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
     fd, name = tempfile.mkstemp(prefix="." + path.name + ".", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            os.fchmod(handle.fileno(), mode)
+            if hasattr(os, "fchmod"):
+                os.fchmod(handle.fileno(), mode)
+            else:
+                os.chmod(name, mode)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
@@ -195,6 +198,16 @@ def _write_with_backup(path: Path, content: str, *, mode: int = 0o600) -> None:
     atomic_write(path, content, mode=mode)
 
 
+def install_command_launcher(binary: Path, *, bin_dir: Path | None = None) -> Path:
+    """Expose a private-venv installation without requiring shell activation."""
+    binary = binary.expanduser().resolve()
+    launcher = (bin_dir or Path.home() / ".local/bin") / "freellmpool"
+    if not binary.is_file() or not os.access(binary, os.X_OK) or binary == launcher.absolute():
+        raise ValueError("the installed freellmpool executable is missing or invalid")
+    _write_with_backup(launcher, "#!/bin/sh\nexec " + shlex.quote(str(binary)) + ' "$@"\n', mode=0o755)
+    return launcher
+
+
 def install_client_setup(
     *, root: Path | None = None, bin_dir: Path | None = None,
     unit_dir: Path | None = None, t3_settings: Path | None = None,
@@ -267,11 +280,19 @@ def install_client_setup(
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("install", "launch", "service"))
+    parser.add_argument("action", choices=("install", "install-command", "launch", "service"))
     parser.add_argument("--root", type=Path, default=Path.home() / ".config/freellmpool/clients")
     parser.add_argument("--client", choices=("opencode", "hermes"))
     parser.add_argument("--binary")
     args, remainder = parser.parse_known_args(argv)
+    if args.action == "install-command":
+        if not args.binary:
+            parser.error("install-command requires --binary")
+        launcher = install_command_launcher(Path(args.binary))
+        print("Resume setup: " + shlex.join([str(launcher), "setup", "--resume"]))
+        if str(launcher.parent) not in os.environ.get("PATH", "").split(os.pathsep):
+            print("To use the short command in this terminal: export PATH=" + shlex.quote(str(launcher.parent)) + ':"$PATH"')
+        return 0
     if args.action == "install":
         print(json.dumps(install_client_setup(root=args.root), indent=2))
         return 0

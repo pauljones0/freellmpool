@@ -24,6 +24,7 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import httpx
 
 from .free_policy import model_matches_grant, timestamp
+from .http_read import ACCEPT_ENCODING, bounded_response_bytes
 from .provider_registry import evidence_path, load_registry, policy_digest
 
 _MAX_RESPONSE_BYTES = 16 * 1024 * 1024
@@ -432,7 +433,7 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
         url = url.replace("{account_id}", account_id)
     if not _same_origin(url, url):
         return {**result, "status": "unsupported", "note": "Unsupported catalog URL."}
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING}
     # Public listing checks deliberately omit credentials. Inference entitlement
     # and actual key validity remain separate even when an API ignores bad keys.
     authenticated = bool(key and not public_only and not public and spec["auth"] != "none")
@@ -452,17 +453,15 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
                 if url in seen or not _same_origin(url, origin):
                     raise ValueError("Unsafe or repeated pagination URL")
                 seen.add(url)
-                response = client.get(url, headers=headers)
-                if response.status_code in {401, 403}:
-                    return {**result, "status": "auth_failed", "note": f"HTTP {response.status_code}: authentication, permissions or account verification failed; listing did not establish entitlement."}
-                if response.status_code == 429:
-                    return {**result, "status": "rate_limited", "note": "Listing rate limited; prior evidence age is unchanged."}
-                if 300 <= response.status_code < 400:
-                    raise ValueError("Catalog redirects are not followed")
-                response.raise_for_status()
-                if len(response.content) > _MAX_RESPONSE_BYTES:
-                    raise ValueError("Catalog response is too large")
-                body = response.json(object_pairs_hook=_unique_object)
+                with client.stream("GET", url, headers=headers) as response:
+                    if response.status_code in {401, 403}:
+                        return {**result, "status": "auth_failed", "note": f"HTTP {response.status_code}: authentication, permissions or account verification failed; listing did not establish entitlement."}
+                    if response.status_code == 429:
+                        return {**result, "status": "rate_limited", "note": "Listing rate limited; prior evidence age is unchanged."}
+                    if 300 <= response.status_code < 400:
+                        raise ValueError("Catalog redirects are not followed")
+                    response.raise_for_status()
+                    body = json.loads(bounded_response_bytes(response, _MAX_RESPONSE_BYTES), object_pairs_hook=_unique_object)
                 if not isinstance(body, dict):
                     raise ValueError("Malformed catalog document")
                 raw_rows = _raw_rows(provider["id"], body)
@@ -692,17 +691,18 @@ def check_public_sources(provider_ids: list[str] | None = None, *,
             try:
                 if not _same_origin(url, url):
                     raise ValueError("Unsupported evidence URL")
-                response = client.get(url, headers={"Accept": "text/html, application/json"}, timeout=8)
-                record["http_status"] = response.status_code
-                if response.status_code == 200 and len(response.content) <= _MAX_RESPONSE_BYTES:
-                    record["status"] = "ok"
-                    record["sha256"] = source_digest(response.content, response.headers.get("content-type", ""))
-                    record["raw_sha256"] = hashlib.sha256(response.content).hexdigest()
-                    record["hash_algorithm"] = "visible_text_v1"
-                    if urlsplit(url).hostname in {"modelscope.ai", "www.modelscope.ai"} and "/learn/" in url:
-                        record["article_sha256"] = source_digest(response.content, "text/html", "modelscope_article_v1")
-                    if url == "https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317":
-                        record["post_sha256"] = source_digest(response.content, "text/html", "discourse_first_post_v1")
+                with client.stream("GET", url, headers={"Accept": "text/html, application/json", "Accept-Encoding": ACCEPT_ENCODING}, timeout=8) as response:
+                    record["http_status"] = response.status_code
+                    if response.status_code == 200:
+                        content = bounded_response_bytes(response, _MAX_RESPONSE_BYTES)
+                        record["status"] = "ok"
+                        record["sha256"] = source_digest(content, response.headers.get("content-type", ""))
+                        record["raw_sha256"] = hashlib.sha256(content).hexdigest()
+                        record["hash_algorithm"] = "visible_text_v1"
+                        if urlsplit(url).hostname in {"modelscope.ai", "www.modelscope.ai"} and "/learn/" in url:
+                            record["article_sha256"] = source_digest(content, "text/html", "modelscope_article_v1")
+                        if url == "https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317":
+                            record["post_sha256"] = source_digest(content, "text/html", "discourse_first_post_v1")
             except (httpx.HTTPError, ValueError):
                 pass
             records.append(record)

@@ -15,7 +15,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from .toml_utils import dump_simple_toml, toml_escape
+from .credential_store import save_key_values
+from .toml_utils import toml_escape
 
 _SECRET_PATTERNS = [
     re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}\b"),
@@ -134,48 +135,9 @@ def default_config_path() -> Path:
     return Path.home() / ".config" / "freellmpool" / "config.toml"
 
 
-def _restrict_owner_read_write(fd: int) -> None:
-    """Best-effort 0600 permission narrowing for an open secret file descriptor."""
-    fchmod = getattr(os, "fchmod", None)
-    if not callable(fchmod):
-        return
-    try:
-        fchmod(fd, 0o600)
-    except OSError:
-        pass
-
-
 def upsert_config_key(env_var: str, value: str, path: Path | None = None) -> Path:
-    """Write one [keys] value to config.toml and return the path.
-
-    This small writer preserves existing top-level tables that we understand,
-    but does not preserve comments. It is used by the interactive CLI helper.
-    """
-    path = path or default_config_path()
-    data: dict[str, dict] = {}
-    try:
-        with path.open("rb") as fh:
-            raw = tomllib.load(fh)
-        data = {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
-    except (FileNotFoundError, OSError, tomllib.TOMLDecodeError):
-        data = {}
-    keys = dict(data.get("keys", {}))
-    keys[env_var] = value
-    data["keys"] = keys
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Open at 0o600 *before* writing, so the secret bytes never exist at a
-    # world-readable mode (closes the create-then-chmod TOCTOU window). fchmod
-    # also narrows an already-existing file, which O_CREAT's mode would not touch.
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        fh = os.fdopen(fd, "w", encoding="utf-8")  # takes ownership of fd
-    except BaseException:
-        os.close(fd)  # fdopen failed — close the raw fd ourselves
-        raise
-    with fh:  # closes fd on exit
-        _restrict_owner_read_write(fd)  # narrow an already-existing file too
-        fh.write(dump_simple_toml(data))
-    return path
+    """Atomically update a key using the same lossless writer as guided setup."""
+    return save_key_values({env_var: value}, path or default_config_path())
 
 
 def append_inventory_record(record: KeyRecord, path: Path | None = None) -> Path:

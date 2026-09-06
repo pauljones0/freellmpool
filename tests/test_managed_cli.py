@@ -2,6 +2,7 @@
 import argparse
 from pathlib import Path
 
+import pytest
 from test_managed_runtime import make_pool
 
 from freellmpool import managed_cli
@@ -79,3 +80,24 @@ def test_maintenance_is_exposed_by_main_parser():
     args = parser.parse_args(["maintenance", "--refresh"])
     assert args.refresh
     assert args.func.__name__ == "cmd_maintenance"
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--features", ""], ["--features", " , "], ["--features", "chat,chat"],
+    ["--features", "typo"], ["--timeout", "nan"], ["--timeout", "inf"],
+    ["--timeout", "0"], ["--timeout", "-1"],
+])
+def test_verify_rejects_invalid_probe_options_before_loading_accounts(arguments):
+    parser = argparse.ArgumentParser()
+    managed_cli.add_commands(parser.add_subparsers())
+    with pytest.raises(SystemExit) as error:
+        parser.parse_args(["verify", *arguments])
+    assert error.value.code == 2
+
+
+def test_empty_verification_does_not_claim_success(tmp_path, monkeypatch, capsys):
+    pool = make_pool(tmp_path)
+    monkeypatch.setattr(managed_cli.ManagedPool, "from_default_config", lambda: pool)
+    args = argparse.Namespace(provider=None, limit=2, features="", timeout=5, json=False)
+    assert managed_cli.cmd_verify(args) == 2
+    assert "at least one" in capsys.readouterr().err

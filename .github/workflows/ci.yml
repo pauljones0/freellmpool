@@ -84,10 +84,12 @@ jobs:
       - name: Strict type check maintained gateway modules
         run: >-
           mypy --strict --follow-imports=silent
-          src/freellmpool/managed.py src/freellmpool/managed_cli.py
+          src/freellmpool/managed.py src/freellmpool/managed_cli.py src/freellmpool/cli.py
           src/freellmpool/allowances.py src/freellmpool/provider_registry.py
           src/freellmpool/free_policy.py src/freellmpool/discovery.py
           src/freellmpool/onboarding.py src/freellmpool/client_setup.py
+          src/freellmpool/credential_store.py
+          src/freellmpool/http_read.py
           src/freellmpool/request_security.py
           src/freellmpool/policy_updates.py src/freellmpool/account_observations.py
           src/freellmpool/limit_sources.py src/freellmpool/maintenance.py

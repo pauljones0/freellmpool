@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from .free_policy import credential_fingerprint, fresh, model_matches_grant, timestamp
+from .provider_registry import evidence_renewal_is_current, policy_digest, reviewed_limit_capacity
 
 if TYPE_CHECKING:
     from .conformance import ConformanceStore
@@ -354,6 +355,13 @@ def _catalog_summary(row: JSON) -> JSON:
             "model_count": len(row.get("models", [])) if isinstance(row.get("models", []), list) else 0}
 
 
+def _renewed_source(spec: JSON, source: JSON, overlay: JSON, now: datetime) -> JSON:
+    """Use renewal dates only when they remain bound to the active reviewed policy."""
+    if not evidence_renewal_is_current(source, overlay, policy_digest(spec), now.timestamp()):
+        return source
+    return overlay
+
+
 def build_public_report(registry: JSON, catalog: JSON, *, evidence: JSON | None = None,
                         proposals: JSON | None = None, baseline: JSON | None = None,
                         acknowledged: Iterable[str] = (), now: datetime | None = None,
@@ -431,7 +439,9 @@ def build_public_report(registry: JSON, catalog: JSON, *, evidence: JSON | None 
             sid = source["id"]
             overlay = (evidence or {}).get("providers", {}).get(pid, {}).get(sid, {})
             state = _status(overlay.get("last_status", overlay.get("status", "not_checked")))
-            verified = overlay if overlay.get("status") == "unchanged" else source
+            verified = _renewed_source(spec, source, overlay, current)
+            if state == "unchanged" and verified is source:
+                state = "not_checked"
             checked = _stamp(verified.get("checked_at"))
             expires = _stamp(verified.get("expires_at"))
             report["providers"][pid]["sources"].append({"id": sid, "status": state, "checked_at": checked, "expires_at": expires,
@@ -566,6 +576,41 @@ def _account_attention(pid: str, spec: JSON, grants: list[JSON], account: JSON, 
     return _finding(pid, "account_verification")
 
 
+def _limit_coverage(spec: JSON, catalog: JSON) -> list[JSON]:
+    """Describe reviewed capacities, independently of private account overrides.
+
+    A model map is only complete for the models actually assessed. Missing
+    catalogs must not turn an empty set into a claim of known allowances.
+    """
+    try:
+        model_ids = set(_models(catalog))
+    except ValueError:
+        # The report's catalog diagnostics own malformed input. Quota coverage
+        # must not hide those diagnostics by raising while rendering them.
+        catalog = {}
+        model_ids = set()
+    models = {model["id"]: model for model in catalog.get("models", [])}
+    rows = []
+    for rule in spec.get("limits", []):
+        applicable = model_ids
+        if rule.get("model_ids"):
+            applicable = applicable.intersection(rule["model_ids"])
+        if rule.get("grant_ids"):
+            grants = [grant for grant in spec.get("grants", []) if grant["id"] in rule["grant_ids"]]
+            applicable = {model for model in applicable if any(model_matches_grant(grant, models[model]) for grant in grants)}
+        unknown = sorted(model for model in applicable if reviewed_limit_capacity(rule, model) is None)
+        if applicable:
+            status = "partial" if unknown and len(unknown) < len(applicable) else "unknown" if unknown else "known"
+        elif model_ids:
+            status = "not_applicable"
+        elif reviewed_limit_capacity(rule, "") is not None:
+            status = "known"
+        else:
+            status = "unassessed" if rule.get("model_capacities") else "unknown"
+        rows.append({"id": rule["id"], "status": status, "unknown_models": unknown})
+    return rows
+
+
 def build_private_report(registry: JSON, catalog: JSON, *, accounts: JSON | None = None,
                          observations: JSON | None = None, conformance: JSON | None = None,
                          policy: JSON | None = None, workflow: JSON | None = None, env: Mapping[str, str] | None = None,
@@ -586,7 +631,8 @@ def build_private_report(registry: JSON, catalog: JSON, *, accounts: JSON | None
             "checked_at": _stamp(observation.get("checked_at")), "expires_at": _stamp(observation.get("expires_at")),
             "last_attempt_at": _stamp(observation.get("last_attempt_at"))}
         provider["account_confirmation"] = {"checked_at": _stamp(account.get("verified_at")), "expires_at": _stamp(account.get("expires_at"))}
-        provider["unknown_limits"] = sum(rule.get("capacity") is None and not rule.get("maximum_documented") for rule in spec.get("limits", []))
+        provider["limit_coverage"] = _limit_coverage(spec, catalog.get("providers", {}).get(pid, {}))
+        provider["unknown_limits"] = sum(row["status"] in {"unknown", "partial", "unassessed"} for row in provider["limit_coverage"])
         grants = spec.get("grants", [])
         available_grants = [grant for grant in grants if grant.get("status") in {None, "verified", "conditional"}]
         configured = (bool(source_env.get(spec.get("credential_env", ""))) or spec.get("inference_auth") == "none")
@@ -688,6 +734,14 @@ def format_report(report: JSON) -> str:
     unknown = sum(row.get("unknown_limits", 0) for row in report.get("providers", {}).values())
     if unknown:
         lines.append(f"Quota rules with unknown nominal capacities: {unknown}; these are not unlimited allowances.")
+        for pid, provider in report.get("providers", {}).items():
+            gaps = [f"{row['id']} ({row['status']})" for row in provider.get("limit_coverage", [])
+                    if row["status"] in {"unknown", "partial", "unassessed"}]
+            if gaps:
+                lines.append(f"  {pid}: {', '.join(gaps)}")
+    missing = [pid for pid, provider in report.get("providers", {}).items() if provider.get("limit_coverage") == []]
+    if missing:
+        lines.append(f"No reviewed quota rules: {', '.join(missing)}; limits remain unknown.")
     lines.append("Recheck: freellmpool maintenance --refresh")
     return "\n".join(lines)
 
@@ -749,7 +803,7 @@ def status_report(env: dict[str, str], *, now: datetime | None = None) -> JSON:
         prior = _baseline(root / "maintenance-baseline.json", private=True)
     except ValueError:
         prior, invalid = None, True
-    report = build_private_report(load_registry(env=env), load_discovery(env),
+    report = build_private_report(load_registry(env=env, renew_evidence=False), load_discovery(env),
         accounts=load_accounts(env), observations=load_observations(env),
         conformance=ConformanceStore(default_conformance_path(env)).snapshot(),
         evidence=_read(evidence_path(env)), policy=load_policy_status(env), workflow=load_workflow_status(env, now=now),
@@ -797,13 +851,13 @@ def run_maintenance(env: dict[str, str], *, public_only: bool = False, baseline_
         workflow: JSON = {}
         if not public_only:
             policy = services["policy"](effective)
-        registry = _public_registry() if public_only else load_registry(env=effective)
+        registry = _public_registry() if public_only else load_registry(env=effective, renew_evidence=False)
         catalog = services["catalog"](effective, public_only=public_only,
             **({"path": root / "public-discovery.json"} if public_only else {}))
         evidence = services["evidence"](effective, **({"path": root / "public-evidence.json", "public_only": True} if public_only else {}))
-        # Reload successful local renewals before displaying expiry deadlines.
+        # Keep original policy fields for renewal digest validation in the report.
         if not public_only:
-            registry = load_registry(env=effective)
+            registry = load_registry(env=effective, renew_evidence=False)
             observations = services["accounts"](effective)
             if "workflow" in services:
                 workflow = services["workflow"](effective)

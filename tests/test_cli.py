@@ -16,6 +16,46 @@ def _legacy_catalog_entrypoint(monkeypatch):
     monkeypatch.setattr(Pool, "from_default_config", lambda **kwargs: pool)
 
 
+def test_key_add_reports_corrupt_config_without_overwriting_it(tmp_path, monkeypatch, capsys):
+    from freellmpool.cli import main
+
+    path = tmp_path / "config.toml"
+    original = '[keys]\nOLD = "unterminated'
+    path.write_text(original)
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(path))
+    assert main(["keys", "add", "groq", "--value", "synthetic-private", "--yes"]) == 2
+    assert path.read_text() == original
+    output = capsys.readouterr()
+    assert "Could not save credentials" in output.err
+    assert "synthetic-private" not in output.out + output.err
+
+
+def test_key_add_does_not_claim_saving_a_key_unlocks_free_routes(tmp_path, monkeypatch, capsys):
+    from freellmpool.cli import main
+
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(tmp_path / "config.toml"))
+    assert main(["keys", "add", "groq", "--value", "synthetic-private", "--yes"]) == 0
+    output = capsys.readouterr().out
+    assert "Unlocked" not in output
+    assert "free eligibility" in output
+    assert "freellmpool status" in output
+
+
+def test_manual_provider_creation_handles_empty_model_discovery(tmp_path, monkeypatch, capsys):
+    import argparse
+
+    from freellmpool import cli
+
+    path = tmp_path / "providers.toml"
+    monkeypatch.setenv("FREELLMPOOL_CONFIG", str(path))
+    monkeypatch.setattr(cli, "_load_or_sync_external_catalog", lambda: [])
+    monkeypatch.setattr("freellmpool.catalog.discover_openai_models", lambda *args, **kwargs: [])
+    args = argparse.Namespace(yes=True, base_url="https://fixture.example/v1", model=None, value=None)
+    assert cli._import_or_create_provider("fixture", args) is None
+    assert "model is required" in capsys.readouterr().err
+    assert not path.exists()
+
+
 def test_strip_plain_json():
     assert _strip_fences('{"a": 1}') == '{"a": 1}'
 
@@ -1103,8 +1143,8 @@ def test_cli_keys_add_cloudflare_prompts_for_account_id(tmp_path, monkeypatch, c
     assert cloudflare.is_configured(env)
     out = capsys.readouterr().out
     assert "CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID" in out
-    assert "Unlocked " in out
-    assert "freellmpool providers health -p cloudflare" in out
+    assert "free eligibility" in out
+    assert "freellmpool status" in out
     assert "python3 -m freellmpool" not in out
 
 

@@ -3,24 +3,24 @@
 from __future__ import annotations
 
 import argparse
-import contextlib
 import getpass
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
-import tomllib
 import webbrowser
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
-from datetime import UTC, date, datetime, time, timedelta
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
 from .client_setup import atomic_write
 from .config import effective_env
+from .credential_store import _secret
+from .credential_store import _write_lock as _write_lock
+from .credential_store import save_key_values as _save_key_values
 from .key_inventory import default_config_path, redact_secrets
 
 JSON = dict[str, Any]  # Validated catalog, account, and persisted progress schemas.
@@ -40,13 +40,6 @@ _STATUS_TEXT = {
     "partial": "The catalog check was incomplete. Your key is saved; maintenance can retry.",
     "error": "The check could not complete. Your key is saved; follow the diagnostic and retry this provider.",
 }
-
-
-def _secret(value: str) -> str:
-    value = value.strip()
-    if not value or len(value) > 16384 or any(ord(char) < 32 or ord(char) == 127 for char in value):
-        raise ValueError("enter one non-empty credential line without control characters")
-    return value
 
 
 def read_clipboard() -> str:
@@ -74,59 +67,9 @@ def _hidden_input(prompt: str) -> str:
     return getpass.getpass(prompt)
 
 
-def _toml_value(value: object) -> str:
-    if isinstance(value, str):
-        return json.dumps(value, ensure_ascii=True)
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, (datetime, date, time)):
-        return value.isoformat()
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    if isinstance(value, dict):
-        return "{ " + ", ".join(json.dumps(str(key)) + " = " + _toml_value(item) for key, item in value.items()) + " }"
-    raise ValueError("unsupported existing TOML value; configuration was not changed")
-
-
-@contextlib.contextmanager
-def _write_lock(path: Path) -> Iterator[None]:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd = os.open(path.with_name(path.name + ".lock"), os.O_CREAT | os.O_RDWR, 0o600)
-    try:
-        try:
-            import fcntl
-        except ImportError:  # Windows still gets atomic replacement.
-            pass
-        else:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-        yield
-    finally:
-        os.close(fd)
-
-
 def save_key_values(values: dict[str, str], path: Path | None = None) -> Path:
-    """Atomically merge keys while preserving all existing TOML value types."""
-    validated = {}
-    for name, value in values.items():
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
-            raise ValueError("invalid credential environment name")
-        validated[name] = _secret(value)
-    path = path or default_config_path()
-    with _write_lock(path):
-        try:
-            data = tomllib.loads(path.read_text()) if path.exists() else {}
-        except (ValueError, UnicodeError):
-            raise ValueError("existing credential configuration is invalid; it was not changed") from None
-        if not isinstance(data.get("keys", {}), dict):
-            raise ValueError("existing keys table is invalid; it was not changed")
-        data.setdefault("keys", {}).update(validated)
-        rendered = "\n".join(json.dumps(key) + " = " + _toml_value(value) for key, value in data.items()) + "\n"
-        # Validate generated syntax before replacing the original credential file.
-        tomllib.loads(rendered)
-        atomic_write(path, rendered)
-    return path
+    """Save setup credentials through the shared atomic configuration writer."""
+    return _save_key_values(values, path or default_config_path())
 
 
 def _progress_path(env: Mapping[str, str]) -> Path:
@@ -148,22 +91,78 @@ def _safe_note(value: object, secrets_to_hide: Iterable[str]) -> str:
 
 def _account_current(provider_id: str, grants: Sequence[JSON], env: dict[str, str],
                      key_env: str | None = None) -> bool:
-    required = [grant for grant in grants if grant.get("requires_account_evidence") or grant.get("required_account_conditions")]
-    if not required:
-        return True
-    from .free_policy import credential_fingerprint, fresh, load_accounts
+    from .free_policy import _valid_account, credential_fingerprint, default_accounts_path, fresh
 
-    current = load_accounts(env).get(provider_id, {})
+    try:
+        current = _read_account_document(default_accounts_path(env))["providers"].get(provider_id, {})
+    except ValueError:
+        return False
+    if not _valid_account(current):
+        return False
     credential_ref = credential_fingerprint(provider_id, env.get(key_env) if key_env else None)
-    now = datetime.now(UTC)
-    current_is_fresh = fresh(current.get("verified_at"), current.get("expires_at"), now.timestamp())
-    tiers = list(dict.fromkeys(str(grant.get("required_account_tier") or "free") for grant in required))
-    matching_current = [grant for grant in required if str(grant.get("required_account_tier") or "free") == current.get("tier")]
-    conditions_match = any(
-        all(current.get(key) == value and type(current.get(key)) is type(value) for key, value in grant.get("required_account_conditions", {}).items())
-        for grant in matching_current
-    )
-    return bool(current_is_fresh and current.get("tier") in tiers and conditions_match and current.get("credential_ref") == credential_ref)
+    current_is_fresh = fresh(current.get("verified_at"), current.get("expires_at"), datetime.now(UTC).timestamp())
+    for grant in grants:
+        if grant.get("requires_account_evidence") and (
+            not current_is_fresh or current.get("tier") not in _grant_tiers(grant)
+            or current.get("credential_ref") != credential_ref
+        ):
+            continue
+        conditions = grant.get("required_account_conditions", {})
+        if not isinstance(conditions, Mapping):
+            continue
+        if conditions:
+            matches = current_is_fresh
+            for key, expected in conditions.items():
+                value = current.get(key, current.get("tier") if key == "plan" else None)
+                matches = matches and (value is expected if isinstance(expected, bool) else value == expected)
+            if not matches:
+                continue
+        return True
+    return not grants
+
+
+def _grant_tiers(grant: JSON) -> list[str]:
+    raw = grant.get("required_account_tier", "free")
+    values = [raw] if isinstance(raw, str) else raw
+    return list(dict.fromkeys(values)) if isinstance(values, list) and all(isinstance(tier, str) and tier for tier in values) else []
+
+
+def _read_account_document(path: Path) -> JSON:
+    try:
+        if path.exists() and path.stat().st_size > 2_000_000:
+            raise ValueError
+        document = json.loads(path.read_text()) if path.exists() else {"schema": 1, "providers": {}}
+        if (not isinstance(document, dict) or type(document.get("schema")) is not int or document["schema"] != 1
+                or not isinstance(document.get("providers"), dict)):
+            raise ValueError
+        return cast(JSON, document)
+    except (OSError, ValueError, UnicodeError):
+        raise ValueError("existing account file is invalid; preserve and repair it before continuing setup") from None
+
+
+def _save_account_confirmation(provider_id: str, details: JSON, env: dict[str, str]) -> None:
+    """Repair one account under its writer lock, preserving actual exclusions."""
+    from .free_policy import _account_lock, _valid_account, default_accounts_path
+
+    path = default_accounts_path(env)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with _account_lock(path):
+        document = _read_account_document(path)
+        previous = document["providers"].get(provider_id, {})
+        if not isinstance(previous, dict):
+            raise ValueError("existing account record is invalid; preserve and repair it before continuing setup")
+        # Invalid billing fields can be replaced by the new confirmation. Invalid
+        # exclusions are ambiguous operator intent and must not be silently erased.
+        if any(not _valid_account({field: previous[field]}) for field in ("disabled", "disabled_models", "manual_models") if field in previous):
+            raise ValueError("existing account exclusions are invalid; preserve and repair them before continuing setup")
+        if "account_ref" in previous and not _valid_account({"account_ref": previous["account_ref"]}):
+            raise ValueError("existing quota identity is invalid; preserve and repair it before continuing setup")
+        repaired = {field: value for field, value in previous.items() if _valid_account({field: value})}
+        repaired.update(details)
+        if not _valid_account(repaired):
+            raise ValueError("account confirmation is invalid; account file was not changed")
+        document["providers"][provider_id] = repaired
+        atomic_write(path, json.dumps(document, indent=2) + "\n")
 
 
 def _attest_account(provider_id: str, grants: Sequence[JSON], env: dict[str, str],
@@ -171,28 +170,40 @@ def _attest_account(provider_id: str, grants: Sequence[JSON], env: dict[str, str
                     key_env: str | None = None) -> str:
     if _account_current(provider_id, grants, env, key_env):
         return "continue"
-    from .free_policy import credential_fingerprint, save_account
+    from .free_policy import credential_fingerprint
 
     required = [grant for grant in grants if grant.get("requires_account_evidence") or grant.get("required_account_conditions")]
-    tiers = list(dict.fromkeys(str(grant.get("required_account_tier") or "free") for grant in required))
+    if len(required) < len(grants):
+        # An account-independent grant needs no new billing claim, but malformed
+        # metadata still blocks admission and must not be marked resumably done.
+        (account_saver or _save_account_confirmation)(provider_id, {}, env)
+        output("Account metadata repaired; existing exclusions and quota identity were preserved.")
+        return "continue"
+    options = [(tier, grant) for grant in required for tier in _grant_tiers(grant)]
+    if not options:
+        output("No supported account confirmation is available for this grant. It remains unverified.")
+        return "s"
     now = datetime.now(UTC)
     credential_ref = credential_fingerprint(provider_id, env.get(key_env) if key_env else None)
     output("Account check: confirm the actual plan shown in your provider dashboard.")
-    for index, tier in enumerate(tiers, 1):
-        output(f"  {index}. {tier}")
+    for index, (tier, grant) in enumerate(options, 1):
+        label = tier
+        if sum(other_tier == tier for other_tier, _ in options) > 1:
+            label += " — " + ", ".join(name.replace("_", " ") + ": " + str(value)
+                                       for name, value in grant.get("required_account_conditions", {}).items())
+        output(f"  {index}. {label}")
     answer = input_fn("Plan number (Enter confirms 1), s=leave unverified, q=quit: ").strip().lower()
     if answer in {"s", "q"}:
         return answer
     try:
-        tier = tiers[int(answer or "1") - 1]
+        tier, selected = options[int(answer or "1") - 1]
         if int(answer or "1") < 1:
             raise IndexError
     except (ValueError, IndexError):
         output("Plan was not confirmed. It remains unverified.")
         return "s"
-    details: JSON = {"tier": tier, "account_ref": "primary", "verified_at": now.isoformat(), "expires_at": (now + timedelta(days=30)).isoformat(), "evidence_source": "operator", "credential_ref": credential_ref}
-    selected = [grant for grant in required if str(grant.get("required_account_tier") or "free") == tier]
-    conditions = selected[0].get("required_account_conditions", {})
+    details: JSON = {"tier": tier, "verified_at": now.isoformat(), "expires_at": (now + timedelta(days=30)).isoformat(), "evidence_source": "operator", "credential_ref": credential_ref}
+    conditions = selected.get("required_account_conditions", {})
     if conditions:
         output("This free allowance requires every condition below:")
         for name, value in conditions.items():
@@ -202,10 +213,10 @@ def _attest_account(provider_id: str, grants: Sequence[JSON], env: dict[str, str
         if answer != "CONFIRM":
             return "s"
         details.update(conditions)
-    if any(grant.get("paid_overage_possible") and not grant.get("hard_free_boundary") for grant in selected):
+    if selected.get("paid_overage_possible") and not selected.get("hard_free_boundary"):
         answer = input_fn("Only if paid overage is disabled/capped on this account, type FREE-ONLY; otherwise Enter: ").strip()
         details["no_paid_overage"] = answer == "FREE-ONLY"
-    (account_saver or save_account)(provider_id, details, env)
+    (account_saver or _save_account_confirmation)(provider_id, details, env)
     return "continue"
 
 
@@ -254,14 +265,14 @@ def run_onboarding(
     open_url: BrowserOpener = webbrowser.open,
 ) -> int:
     """Save/check credentials. Inference is optional and separately policy-gated."""
+    env = dict(os.environ if env is None else env)
+    credentials = effective_env(env)
     if registry is None:
         from .provider_registry import load_registry
-        registry = load_registry()
+        registry = load_registry(credentials)
     if check is None:
         from .discovery import check_provider
         check = check_provider
-    env = dict(os.environ if env is None else env)
-    credentials = effective_env(env)
     progress_path = progress_path or _progress_path(env)
     try:
         state = json.loads(progress_path.read_text()) if progress_path.exists() else {"schema": 1, "providers": {}}
@@ -273,7 +284,7 @@ def run_onboarding(
     for provider_id, entry in registry.items():
         if provider is not None and provider_id != provider:
             continue
-        grants = [grant for grant in entry.get("grants", []) if grant.get("kind") in _RECURRING and grant.get("status") != "excluded"]
+        grants = [grant for grant in entry.get("grants", []) if grant.get("kind") in _RECURRING and grant.get("status") in {"verified", "conditional"}]
         if grants:
             selected.append((provider_id, entry, grants))
     if not selected:
@@ -405,7 +416,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if not args.provider:
             parser.error("key input requires --provider")
         from .provider_registry import load_registry
-        record = load_registry().get(args.provider)
+        record = load_registry(effective_env()).get(args.provider)
         if not record or not record.get("credential_env"):
             parser.error("this provider has no supported credential field")
         value = read_clipboard() if args.clipboard else _secret(sys.stdin.read(16385))

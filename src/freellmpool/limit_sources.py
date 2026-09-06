@@ -18,6 +18,8 @@ from typing import Any
 
 import httpx
 
+from .http_read import ACCEPT_ENCODING, bounded_response_bytes
+
 JSON = dict[str, Any]
 _URL = "https://console.groq.com/docs/rate-limits"
 _MAX_BYTES = 2 * 1024 * 1024
@@ -184,14 +186,10 @@ def collect_proposals(registry: Mapping[str, Mapping[str, Any]]) -> JSON:
             continue
         row.update(source_url=_URL, parser="groq_free_rows_v1")
         try:
-            with _client() as client, client.stream("GET", _URL, headers={"Accept": "text/html"}) as response:
+            with _client() as client, client.stream("GET", _URL, headers={"Accept": "text/html", "Accept-Encoding": ACCEPT_ENCODING}) as response:
                 if response.status_code != 200:
                     raise httpx.HTTPStatusError("Public source failed", request=response.request, response=response)
-                body = bytearray()
-                for chunk in response.iter_bytes():
-                    body.extend(chunk)
-                    if len(body) > _MAX_BYTES:
-                        raise ValueError("Public source exceeded budget")
+                body = bounded_response_bytes(response, _MAX_BYTES)
             row["source_sha256"] = hashlib.sha256(body).hexdigest()
             observed = parse_groq_free_limits(body.decode("utf-8"))
             row.update(status="ok", proposals=_proposals(registry[pid], observed), model_count=len(observed),

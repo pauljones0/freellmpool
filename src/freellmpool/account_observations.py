@@ -23,6 +23,7 @@ from uuid import UUID
 import httpx
 
 from .free_policy import credential_fingerprint
+from .http_read import ACCEPT_ENCODING, bounded_response_bytes
 from .provider_registry import load_registry
 
 JSON = dict[str, Any]
@@ -441,18 +442,14 @@ def _write(path: Path, snapshot: JSON) -> None:
 
 
 def _read_endpoint(client: httpx.Client, endpoint: _Endpoint, headers: dict[str, str]) -> tuple[str, Any]:
-    with client.stream(endpoint.method, endpoint.url, headers=headers) as response:
+    with client.stream(endpoint.method, endpoint.url, headers={**headers, "Accept-Encoding": ACCEPT_ENCODING}) as response:
         if response.status_code in (401, 403):
             return "auth_failed", None
         if response.status_code == 429:
             return "rate_limited", None
         if response.status_code != 200:
             return "error", None
-        data = bytearray()
-        for chunk in response.iter_bytes():
-            data.extend(chunk)
-            if len(data) > _MAX_BYTES:
-                raise ValueError("Account response exceeded budget")
+        data = bounded_response_bytes(response, _MAX_BYTES)
         return "ok", json.loads(data, object_pairs_hook=_unique, parse_constant=_invalid_constant)
 
 

@@ -20,6 +20,7 @@ import httpx
 
 from ._version import __version__
 from .client_setup import atomic_write
+from .http_read import ACCEPT_ENCODING, bounded_response_bytes
 
 JSON = dict[str, Any]
 DEFAULT_REPOSITORY = "pauljones0/freellmpool"
@@ -274,15 +275,10 @@ def load_policy_status(env: Mapping[str, str]) -> JSON:
 
 
 def _fetch(client: httpx.Client, url: str) -> bytes:
-    with client.stream("GET", url, headers={"Accept": "application/json"}, follow_redirects=False) as response:
+    with client.stream("GET", url, headers={"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING}, follow_redirects=False) as response:
         if response.status_code != 200:
             raise ValueError(f"policy source HTTP {response.status_code}")
-        data = bytearray()
-        for chunk in response.iter_bytes():
-            data.extend(chunk)
-            if len(data) > _MAX_BYTES:
-                raise ValueError("policy response exceeds size limit")
-        return bytes(data)
+        return bounded_response_bytes(response, _MAX_BYTES)
 
 
 def refresh_policy(env: Mapping[str, str], *, client: httpx.Client | None = None,

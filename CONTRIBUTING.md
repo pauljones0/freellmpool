@@ -6,7 +6,7 @@ providers** and **keeping the existing catalog accurate** as free tiers drift.
 ## Dev setup
 
 ```bash
-git clone https://github.com/0xzr/freellmpool
+git clone https://github.com/pauljones0/freellmpool.git
 cd freellmpool
 python -m venv .venv && source .venv/bin/activate
 python -m pip install --upgrade pip

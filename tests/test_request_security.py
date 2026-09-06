@@ -101,6 +101,8 @@ def test_socket_requests_enforce_host_origin_media_and_auth(providers, env, quot
         assert request({**headers, "Content-Type": "text/plain"}) == 415
         if key:
             assert request({"Content-Type": "application/json"}) == 401
+            assert request({"Content-Type": "application/json", "Authorization": "Bearer caf\u00e9"}) == 401
+            assert request({"Content-Type": "application/json", "x-api-key": "caf\u00e9"}) == 401
         assert not post.calls
         assert request({**headers, "Origin": f"http://127.0.0.1:{port}"}) == 200
         assert len(post.calls) == 1
@@ -108,3 +110,9 @@ def test_socket_requests_enforce_host_origin_media_and_auth(providers, env, quot
         server.shutdown()
         server.server_close()
         thread.join(2)
+
+
+def test_explicit_port_zero_is_not_normalized_to_http_default():
+    policy = RequestBoundaryPolicy.for_address("127.0.0.1", 80)
+    rejection = validate_boundary(_headers(Host="localhost:0"), policy)
+    assert rejection is not None and rejection.status == 400

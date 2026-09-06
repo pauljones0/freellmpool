@@ -31,7 +31,7 @@ def _authority(value: str) -> tuple[str, int] | None:
             hostname = str(ipaddress.IPv6Address(hostname))
         elif not re.fullmatch(r"[a-z0-9.-]+", hostname) or hostname.endswith("."):
             return None
-        port = parsed.port or 80
+        port = parsed.port if parsed.port is not None else 80
         if not 1 <= port <= 65535:
             return None
         return hostname, port
