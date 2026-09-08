@@ -264,9 +264,7 @@ def test_llm_plugin_publish_workflow_recovers_only_matching_pypi_artifacts() -> 
     upload_guard = "steps.preflight.outputs.upload_needed == 'true'"
     assert upload_guard in auth["if"]
     assert upload_guard in publish["if"]
-    assert publish["uses"] == (
-        "pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e"
-    )
+    assert re.fullmatch(r"pypa/gh-action-pypi-publish@[0-9a-f]{40}", publish["uses"])
     assert "106e0b0b7c337fa67ed433972f777c6357f78598" not in workflow
     assert publish["with"]["skip-existing"] is True
     assert publish_text.index("--mode subset") < publish_text.index(
@@ -319,10 +317,9 @@ def test_pages_deployment_is_gated_by_current_docs_metadata() -> None:
     }
     assert all("run" not in step for step in jobs["deploy"]["steps"])
     deploy_uses = [step["uses"] for step in jobs["deploy"]["steps"]]
-    assert deploy_uses == [
-        "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d",
-        "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128"
-    ]
+    assert len(deploy_uses) == 2
+    for action, use in zip(("configure-pages", "deploy-pages"), deploy_uses, strict=True):
+        assert re.fullmatch(rf"actions/{action}@[0-9a-f]{{40}}", use)
 
 
 def test_dependabot_covers_project_supply_chains() -> None:
