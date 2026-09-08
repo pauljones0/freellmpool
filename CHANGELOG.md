@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.14.1] — source maintenance
+
+- Review provider source baselines and current model removals; exclude application-only Spark from the generic gateway and correct the free Ling model ID.
+- Remove an unsupported ModelScope evidence claim backed only by a JavaScript shell.
+- Keep dependency tests compatible with reviewed, pinned tool and Action updates.
+- Policy revision 4 requires source client 0.14.1 because an evidence identity was removed.
+
 ## [0.14.0] — source fork
 
 - Managed routing admits only reviewed free routes with a hard no-charge boundary.

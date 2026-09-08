@@ -71,4 +71,4 @@ Changes to free eligibility or limits need authoritative evidence and regression
 
 This MIT-licensed fork builds on [0xzr/freellmpool](https://github.com/0xzr/freellmpool) and its 0.13.0 compatibility baseline. Original attribution is retained in [LICENSE](LICENSE).
 
-Install this repository to obtain the maintained gateway, source version 0.14.0. This fork does not claim a new PyPI, npm, MCP Registry or container release. Historical release assets, the [legacy guide](docs/legacy-0.13-guide.md), and [Spanish guide](README.es.md) describe earlier compatibility behavior; their catalog counts are not current capacity.
+Install this repository to obtain the maintained gateway, source version 0.14.1. This fork does not claim a new PyPI, npm, MCP Registry or container release. Historical release assets, the [legacy guide](docs/legacy-0.13-guide.md), and [Spanish guide](README.es.md) describe earlier compatibility behavior; their catalog counts are not current capacity.

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "reviewed_at": "2026-09-05T00:00:00+00:00",
+  "reviewed_at": "2026-09-08T00:00:00+00:00",
   "providers": [
     {
       "id": "llm7",
@@ -28,7 +28,6 @@
             "kind": "allowlist",
             "models": [
               "codestral-latest",
-              "gpt-oss",
               "minimax-m2.7",
               "mistral-Nemo-Instruct-2407"
             ]
@@ -146,10 +145,14 @@
         {
           "id": "models",
           "url": "https://docs.llm7.io/guides/models",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Turbo models not marked usage_based_only are anonymous candidates; stream and tools capability are independent.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "e5c09a1ccbc8dfa2a190a87d421d6ec51243b76acf7fb55c0d9c1fa3c05ac63a"
+          }
         }
       ],
       "setup": {
@@ -248,10 +251,14 @@
         {
           "id": "pricing",
           "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-billing",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Listed token prices describe billed usage and do not themselves negate the separately documented anonymous allowance.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "bcaf4e2bc2696b474cff6bc67229ddb62edbdea04be3e87679cd8593a5d724bd"
+          }
         }
       ],
       "setup": {
@@ -352,10 +359,14 @@
         {
           "id": "pricing",
           "url": "https://kilo.ai/docs/gateway/usage-and-billing",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Only currently zero-priced free routes belong to the anonymous grant; paid models and credits do not enlarge recurring free access.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "2ac457526b8551edc32f7506abe9df4240dc413bb8ba8d96fa98c2278ac25713"
+          }
         }
       ],
       "setup": {
@@ -398,10 +409,9 @@
             "models": [
               "big-pickle",
               "mimo-v2.5-free",
-              "ling-3-fin-free",
+              "ling-3.0-flash-fin-free",
               "nemotron-3-ultra-free",
-              "nemotron-3.5-lightning-free",
-              "muse-spark-1.3-contributor-free"
+              "nemotron-3.5-lightning-free"
             ]
           },
           "required_account_tier": null,
@@ -452,22 +462,26 @@
         {
           "id": "terms",
           "url": "https://opencode.ai/docs/zen",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Selected Zen routes are temporarily free; Go is a paid subscription, not an additional recurring free API grant. Recheck model availability and privacy terms.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "a14707b4becd3616e88047e80adca20c9317e0d55ad7352006787152450adaa2"
+            "sha256": "4237d02bdfab1a21e15dc37efaa66370fe3bb4725825c438f2babee56d689068"
           }
         },
         {
           "id": "limiter",
           "url": "https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Open-source limiter groups anonymous IP traffic; deployed numeric quotas are not published. Source implementation is not proof of current deployment configuration.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "e8e330ea51ef9d4e66b2390d8634399edd8acb8c94d78af6a6cb4738d92da2e7"
+          }
         }
       ],
       "setup": {
@@ -483,7 +497,8 @@
       "restrictions": [
         "Temporary promotional free routes; no promise of permanent availability.",
         "Responses-only routes require separate Responses conformance.",
-        "Provider confidentiality and training restrictions apply."
+        "Provider confidentiality and training restrictions apply.",
+        "Muse Spark contributor free routes require the OpenCode application session and are excluded from this generic gateway."
       ],
       "default_enabled": true,
       "inference_auth": "none"
@@ -1022,14 +1037,6 @@
             "sha256": "878ed760e09e6d74e7464bf56b77e4ad36f9bdeecb47fe440db2c84b22c7c60a"
           },
           "maintenance_note": "Hash complete embedded article Content/ContentEn, titles and publication status; ignore views/likes. Never renew from a page title alone."
-        },
-        {
-          "id": "limits",
-          "url": "https://modelscope.cn/docs/model-service/API-Inference/limits",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
-          "claim": "Daily shared and model remaining headers are documented. Mainland real-name requirements must not be assumed for the international account. Reset timezone is not established.",
-          "status": "verified"
         }
       ],
       "setup": {
@@ -1101,22 +1108,26 @@
         {
           "id": "terms",
           "url": "https://vercel.com/docs/ai-gateway/pricing",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Only zero-priced routes qualify; model pricing is checked independently for every operation and chargeable add-ons are excluded.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "e92520981da3bd37d35e1a8cedf4d5c778d3ff102c03d4c7405b6f8d2ddba1d3"
+            "sha256": "74fab43062ce10bc88309dbea0e8c70f2bd56bfdbeb24bf100f22c0747926a50"
           }
         },
         {
           "id": "catalog",
           "url": "https://ai-gateway.vercel.sh/v1/models",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Public catalog lists prices per token and modality/capability metadata. Zero price must cover every relevant operation.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "ba56a05771caedaaf7d050ef1646b56c515ce780e62b4956569622b46bcc4495"
+          }
         }
       ],
       "setup": {
@@ -1337,10 +1348,14 @@
         {
           "id": "pricing",
           "url": "https://openrouter.ai/docs/guides/routing/provider-selection",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Free requests should use exact free variants and provider.max_price zero to prevent paid provider fallback; billable plug-ins remain excluded.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "7e480b9a9f9798f415296b3d71ef48cb3a702e4634b34efd3295bbf56fde38fb"
+          }
         }
       ],
       "setup": {
@@ -1523,10 +1538,14 @@
         {
           "id": "auth",
           "url": "https://ai.google.dev/gemini-api/docs/api-key",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "September 2026 standard API-key retirement requires current AI Studio authorization keys, bound to service accounts. Auth migration errors must not be labeled quota exhaustion.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "258fa51217f5429c64650575e578d7aa97009450ee9ff93bdeaf89fc5dbdabc8"
+          }
         }
       ],
       "setup": {
@@ -1656,10 +1675,14 @@
         {
           "id": "catalog",
           "url": "https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Account-specific model search requires Workers AI read/write permission and pagination. Model price conversion and paid-required exclusions need separate reviewed evidence.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "8ccaf0f85da747f62678d58ef8aec7adc0af0b51f80129631c7799eaa624a19c"
+          }
         }
       ],
       "setup": {
@@ -2149,10 +2172,14 @@
         {
           "id": "limits",
           "url": "https://docs.mistral.ai/api/endpoint/beta/admin/billing",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Optional admin-key GET /admin/rate-limit, /admin/spend-limit and /admin/usage expose limits/usage. An inference key need not have admin permissions; forbidden admin access leaves limits unknown.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "ba7018c7a17a0fcdcacd30cd6c59aa294db371171b9646a282d2cbd19f9d461b"
+          }
         }
       ],
       "setup": {
@@ -2273,10 +2300,14 @@
         {
           "id": "catalog",
           "url": "https://docs.cohere.com/reference/list-models",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Native model listing supports page_size up to 1000, page_token and next_page_token; endpoints and deprecation metadata determine supported operations.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "d58a8515678381acf24f634bc2876231348d084d98e664c497a7b6dda7ec608f"
+          }
         }
       ],
       "setup": {
@@ -2493,10 +2524,14 @@
         {
           "id": "models",
           "url": "https://docs.ollama.com/cloud",
-          "checked_at": "2026-09-05T00:00:00+00:00",
-          "expires_at": "2026-09-12T00:00:00+00:00",
+          "checked_at": "2026-09-08T00:00:00+00:00",
+          "expires_at": "2026-09-15T00:00:00+00:00",
           "claim": "Public cloud model list is not starter eligibility. Direct cloud IDs differ from local -cloud aliases. Model retirements and billing terms require independent review.",
-          "status": "verified"
+          "status": "verified",
+          "source_hash": {
+            "algorithm": "visible_text_v1",
+            "sha256": "675c0d69c9810fe589ee85117d4b5fed9e3af80ce540da3795b96fbc6e00169e"
+          }
         }
       ],
       "setup": {

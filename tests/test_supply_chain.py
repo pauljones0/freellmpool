@@ -510,11 +510,9 @@ def test_security_tooling_extra_is_complete_and_pinned():
     extras = pyproject["project"]["optional-dependencies"]
 
     assert "pyyaml>=6.0,<7" in extras["dev"]
-    assert extras["security"] == [
-        "bandit==1.9.4",
-        "pip-audit==2.10.1",
-        "zizmor==1.29.0",
-    ]
+    assert len(extras["security"]) == 3
+    for name, requirement in zip(("bandit", "pip-audit", "zizmor"), extras["security"], strict=True):
+        assert re.fullmatch(rf"{name}==[0-9]+\.[0-9]+\.[0-9]+", requirement)
 
 
 def test_native_source_and_workflow_suppressions_are_rejected(tmp_path):

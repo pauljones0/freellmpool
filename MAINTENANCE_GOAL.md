@@ -87,7 +87,7 @@ findings are not silently acknowledged or mistaken for changed terms. Numeric
 quota proposals, changed prices and new models require review where they affect
 policy; fetching a page is not approval for more free access.
 
-The maintained source is version 0.14.0. Its catalog contains free candidates only;
+The maintained source is version 0.14.1. Its catalog contains free candidates only;
 setup omits providers without a reviewed free grant. No disabled account records,
 parked static model rows remain in the maintained flow. Read-only balance
 observations remain separate from route admission. Some reviewed providers use dynamic discovery without static

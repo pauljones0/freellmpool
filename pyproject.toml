@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "freellmpool"
-version = "0.14.0"
+version = "0.14.1"
 description = "A maintained LLM gateway for legitimate free allowances, shared quotas, and coding agents."
 readme = "README.md"
 license = "MIT"
