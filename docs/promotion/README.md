@@ -16,7 +16,7 @@ These facts describe the 0.13.0 GitHub and PyPI release.
 - Interfaces: CLI, Python library, OpenAI-compatible proxy, experimental
   Anthropic-compatible proxy path, and MCP server.
 - Audio: OpenAI-compatible speech-to-text through the transcription endpoint.
-- Released catalog: 15 cataloged providers, 140 enabled chat routes, 140
+- Released catalog: 15 cataloged providers, 139 enabled chat routes, 139
   cataloged chat models.
 - Strongest visual assets:
   - `assets/social-preview.png`

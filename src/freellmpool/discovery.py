@@ -699,7 +699,7 @@ def check_public_sources(provider_ids: list[str] | None = None, *,
                         record["sha256"] = source_digest(content, response.headers.get("content-type", ""))
                         record["raw_sha256"] = hashlib.sha256(content).hexdigest()
                         record["hash_algorithm"] = "visible_text_v1"
-                        if urlsplit(url).hostname in {"modelscope.ai", "www.modelscope.ai"} and "/learn/" in url:
+                        if urlsplit(url).hostname in {"modelscope.ai", "www.modelscope.ai"} and "/posts/" in url:
                             record["article_sha256"] = source_digest(content, "text/html", "modelscope_article_v1")
                         if url == "https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317":
                             record["post_sha256"] = source_digest(content, "text/html", "discourse_first_post_v1")
