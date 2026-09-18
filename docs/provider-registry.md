@@ -24,7 +24,7 @@ A conditional grant needs current local account evidence. A zero-price route sti
 | Cloudflare Workers AI | recurring_quota (conditional) — workers_free | 10000 neurons / calendar_day 86400s UTC / account; 300 requests / rolling 60s / account | [terms](https://developers.cloudflare.com/workers-ai/platform/pricing/), [catalog](https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/) |
 | Mistral | recurring_quota (conditional) — free | unknown requests / rolling 1s / account; unknown total_tokens / rolling 60s / model; unknown total_tokens / calendar_month / model | [terms](https://docs.mistral.ai/admin/billing-usage/usage-limits), [limits](https://docs.mistral.ai/api/endpoint/beta/admin/billing) |
 | Cohere | recurring_quota (conditional) — trial | 1000 requests / calendar_month / account; 20 requests / rolling 60s / model | [terms](https://docs.cohere.com/v2/docs/rate-limits), [catalog](https://docs.cohere.com/reference/list-models) |
-| Z.ai / Zhipu GLM | zero_price (verified) | unknown requests / rolling 60s / account | [terms](https://docs.z.ai/guides/overview/pricing) |
+| Z.ai / Zhipu GLM | zero_price (verified) | unknown requests / rolling 60s / account | [terms](https://docs.z.ai/guides/overview/pricing.md) |
 | Ollama Cloud | recurring_credit (conditional) — free_starter | unknown micro_usd / anniversary_month anchored to signup_at / account | [terms](https://ollama.com/pricing), [models](https://docs.ollama.com/cloud) |
 
 ## What the current evidence changes
