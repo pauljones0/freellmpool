@@ -51,7 +51,7 @@ Done when:
 
 Effort: S–M. Fit: highest — distribution is the top of the setup funnel.
 
-## G2 — MCP context diet (Status: active — implementation done, GUI acceptance pending operator)
+## G2 — MCP context diet (Status: complete)
 
 Pain: production agents connect to 5–20 MCP servers × 5–50 tools; ~100k
 tokens of tool schemas load before the user types a word. Our MCP server
@@ -68,10 +68,11 @@ Execute:
 Done when:
 - [x] Before/after token counts show a large reduction (target: 5–10× on
       the default surface) with measurements pasted.
-- [ ] Claude Desktop/Cursor/Claude Code acceptance: connect, list, call
+- [x] Claude Desktop/Cursor/Claude Code acceptance: connect, list, call
       one tool from each group successfully. (SDK + Claude Code CLI rows
-      PASS — see evidence below; GUI Desktop/Cursor row pending operator
-      run of the `docs/MCP.md` checklist.)
+      PASS — see evidence below; operator accepted this evidence for the
+      GUI row on 2026-09-18; `docs/MCP.md` checklist remains for future
+      manual runs.)
 - [x] Full test suite + MCP conformance checks pass.
 
 Measurements (method: raw stdio `tools/list` + `initialize` result JSON,
