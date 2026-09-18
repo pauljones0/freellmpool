@@ -1128,7 +1128,7 @@
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "b8f74dc3aa54c6dd385c06000b9528d2653f00e3f4f6960c48afcb8b38dbc2c9"
+            "sha256": "0cc3b4bcf7382cbb0b25196d890e3602df2a25582f9edea691e9461eee8bf1b1"
           }
         }
       ],

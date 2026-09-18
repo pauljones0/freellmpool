@@ -35,6 +35,8 @@ renewed hash; hash equality alone renewed nothing.
 
 Policy revision 6 changes the ModelScope evidence URL identity, so retained public baselines holding the old URL deliberately fail validation (fail-closed). Local public state was backed up to public-baseline.before-policy-6.json and reset; the next clean run reports zero findings. After merging, run provider-evidence-review.yml once with reset_baseline=true, then close reviewed issues whose findings no longer fire. Absence after reset is not proof of recovery, so each closure references this review.
 
+Post-review renewal (revision 7): the reset run re-fired vercel catalog (#31) because Vercel added paid-only zai/glm-5.3-flashx ($0.37/$1.25 per M) between the review snapshot and the runner fetch. The addition is excluded from the zero-price grant automatically; the catalog hash is renewed with no claim or grant change and #31 resolves on the next run.
+
 # GitHub maintenance review — September 8, 2026
 
 Reviewed open issues #3–14 and #16–20, and dependency PRs #1, #2 and #15.
