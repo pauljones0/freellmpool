@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "revision": 4,
+  "revision": 5,
   "minimum_client_version": "0.14.1",
-  "registry_sha256": "cd4ad9bc67a5e43a0ea1ac01309e5fc8ca8494324ed91ce38a8a254f1b75d787"
+  "registry_sha256": "8558a0e280ea6c77c73ec30c2fc83539604af0283312fb9a95848eb4518869ab"
 }
