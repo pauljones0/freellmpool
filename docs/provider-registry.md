@@ -1,6 +1,6 @@
 # Provider evidence and maintained discovery
 
-Reviewed September 5, 2026. The packaged registry contains 16 audited provider groups. GitHub Models is retired. A provider or model listing is not proof of recurring free access.
+Reviewed September 18, 2026. The packaged registry contains 16 audited provider groups. GitHub Models is retired. A provider or model listing is not proof of recurring free access.
 
 The registry separates public service terms, model pricing, account entitlement, quota limits, and tested capabilities. The router must require each applicable item to remain fresh. Discovery updates only listing facts; it never renews entitlement, reviewed prices, rate-limit evidence, or tool conformance.
 
@@ -16,7 +16,7 @@ A conditional grant needs current local account evidence. A zero-price route sti
 | OpenCode Zen (keyless) | zero_price (verified) | unknown requests / unknown 86400s / ip | [terms](https://opencode.ai/docs/zen), [limiter](https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts) |
 | Groq | recurring_quota (conditional) — free | Model-specific RPM/RPD/TPM/TPD; Whisper audio-seconds/hour/day; unpublished model limits stay unknown | [terms](https://console.groq.com/docs/billing-faqs), [limits](https://console.groq.com/docs/rate-limits), [audio billing](https://console.groq.com/docs/speech-to-text) |
 | Aion Labs | recurring_quota (conditional) — free | 15 requests / rolling 60s / account; 20000 total_tokens / rolling 60s / account; 20000 total_tokens / unknown 86400s / account | [terms](https://www.aionlabs.ai/docs/rate-limits/) |
-| ModelScope API Inference | recurring_quota (conditional) — bound_free | Up to 2000 calls/day/account and 200/day/model; actual model quotas can be lower; reset timezone unknown | [terms](https://modelscope.ai/learn/434362), [limits](https://modelscope.cn/docs/model-service/API-Inference/limits) |
+| ModelScope API Inference | recurring_quota (conditional) — bound_free | Up to 2000 calls/day/account and 200/day/model; actual model quotas can be lower; reset timezone unknown | [terms](https://modelscope.ai/posts/434362) |
 | Vercel AI Gateway | zero_price (verified) | Verified zero input/output prices required | [terms](https://vercel.com/docs/ai-gateway/pricing), [catalog](https://ai-gateway.vercel.sh/v1/models) |
 | NVIDIA NIM | recurring_quota (conditional) — developer_prototyping | unknown requests / rolling 60s / account | [official Developer Program FAQ](https://forums.developer.nvidia.com/t/nvidia-nim-faq/300317) |
 | OpenRouter (free models) | zero_price (verified) | 20 requests / rolling 60s / account; 50 requests / unknown 86400s / account | [terms](https://openrouter.ai/docs/api_reference/limits.md), [pricing](https://openrouter.ai/docs/guides/routing/provider-selection) |

@@ -1,3 +1,40 @@
+# GitHub maintenance review — September 18, 2026
+
+Reviewed outstanding maintenance findings through issue #120 (policy revisions 5–6).
+Revision 5 renewed every evidence timestamp after the September 15–17 public runs;
+this review content-verified each changed source against its retained claim, then
+published revision 6 with the corrections below. Changed-page text was read for every
+renewed hash; hash equality alone renewed nothing.
+
+## Evidence dispositions
+
+| Provider evidence | Disposition |
+| --- | --- |
+| Cloudflare terms/catalog | Verified: 10,000 neurons/day free, reset 00:00 UTC, hard reject on excess, and the seven paid-required models, which exactly match the grant exclusions. Model search still requires a Workers AI read/write token with page/per_page pagination. |
+| Cohere terms/catalog | Verified: evaluation keys free with a 1,000-call monthly trial cap, production keys paid. Listing still supports page_size up to 1000 with page_token/next_page_token and endpoint/deprecation metadata. |
+| Gemini terms/limits/auth | Verified: per-model free/paid tier tables, per-project limits with midnight Pacific RPD reset and AI Studio as the numeric source. Standard API keys are now rejected (September 2026 migration live); authorization keys are bound to service accounts. Auth migration errors must not be labeled quota exhaustion. |
+| Groq limits | Verified: organization-level limits with request headers for RPD and token headers for TPM. See the qwen3.6 removal below. |
+| Kilo terms/pricing | Verified: anonymous :free access at 200 requests/hour/IP; :free routes have zero cost tracked but not billed; BYOK stays excluded. |
+| Mistral limits | Verified: admin-key GET /admin/rate-limit, /admin/spend-limit and usage endpoints; ordinary inference keys need not carry admin rights. |
+| Ollama terms/models | Verified: unquantified starter credits, one concurrent request, monthly reset from signup date; retirements and cloud/model-ID drift still require independent review. |
+| OpenCode terms/limiter | Verified: the limited-time free Zen routes match the allowlist (Big Pickle, MiMo-V2.5, ling-3.0-flash-fin, Nemotron 3 Ultra/3.5 Lightning). The limiter still counts IP-keyed daily/lifetime buckets with config-driven numerics; renewed twice as upstream kept moving. |
+| OpenRouter terms/pricing | Verified: 20 RPM with 50/1000 RPD tiers at the $10 credit threshold, /key monetary usage separate from free-request counters (/credits management-key requirement confirmed on the official endpoint reference). max_price-zero routing semantics unchanged; renewed to the current page text. |
+| OVH terms/pricing | Verified: anonymous 2 requests/minute per IP and model with separate authenticated billing. The Qwen3.8-27B catalog price change (#119) describes billed usage only; the recurring_quota grant ignores catalog prices and the anonymous allowance is intact. |
+| Vercel terms/catalog | Verified: free/paid credit tiers with separately charged add-ons; catalog still carries per-operation pricing and modality metadata. Newly added ling zero-price routes are genuinely zero and the parser still rejects unknown price dimensions. |
+| Zhipu terms | Verified: GLM-4.7-Flash, GLM-4.5-Flash and GLM-4.6V-Flash remain zero input/output; FlashX and GLM-5.3-Flash remain paid; web search remains $0.01/use. Renewed to the current raw body. |
+| ModelScope terms | The embedded article is byte-identical (same article hash) but moved from /learn/434362 to /posts/434362; the old URL now returns 301. Evidence URL updated to the canonical posts URL and the article-hash pattern in discovery.py follows it. |
+| NVIDIA terms | Unchanged hash; first-post extraction re-probed stable after one transient miss. |
+
+## Grant and limit changes
+
+- Groq's official free table replaced qwen/qwen3.6-27b with qwen/qwen3.8-27b (already covered with matching limits). The undocumented 3.6 capacities are removed from all four rules and the model is added to Groq blocked_models plus the grant exclusion, mirroring the Cloudflare paid-model pattern. Admission now denies it even with a free-tier account; the structured limit mapping validates cleanly again (#79).
+- Model catalog deltas (kilo, openrouter, modelscope, nvidia, vercel) are discovery-handled: removals are not pinned anywhere in the package and every newly added :free route was spot-checked at zero prompt/completion price before admission. glm-5.2:free returned to the kilo/openrouter catalogs after its September 8 removal; discovery re-admitted it automatically.
+- Transient failures (OVH terms check #120, one NVIDIA post extraction) succeeded on retry with unchanged content and needed no policy change.
+
+## Baseline migration
+
+Policy revision 6 changes the ModelScope evidence URL identity, so retained public baselines holding the old URL deliberately fail validation (fail-closed). Local public state was backed up to public-baseline.before-policy-6.json and reset; the next clean run reports zero findings. After merging, run provider-evidence-review.yml once with reset_baseline=true, then close reviewed issues whose findings no longer fire. Absence after reset is not proof of recovery, so each closure references this review.
+
 # GitHub maintenance review — September 8, 2026
 
 Reviewed open issues #3–14 and #16–20, and dependency PRs #1, #2 and #15.

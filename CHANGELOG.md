@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+- September 18 maintenance review (policy revision 6): content-verify every
+  renewed evidence source, move ModelScope evidence to its canonical /posts/
+  URL with the identical article hash, renew OpenRouter/Zhipu/OpenCode hashes
+  to current observed text, and block Groq qwen3.6-27b with its stale
+  capacities removed after it left the official free table.
+
 ## [0.14.1] — source maintenance
 
 - Review provider source baselines and current model removals; exclude application-only Spark from the generic gateway and correct the free Ling model ID.
