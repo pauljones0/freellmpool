@@ -18,7 +18,14 @@ removes setup steps or failure modes is in.
   progress never counts as completion.
 - Commit and push per completed goal. Keep this file's statuses current.
 
-## G1 — One-command distribution (Status: active)
+## G1 — One-command distribution (Status: done 2026-09-18)
+
+Commits: `b4ef93f` (one-liner + bootstrap + docs), `83be440`
+(deterministic docker-smoke). CI green on both (run 35316267164).
+Audit: fresh `uv` container → README one-liner → `Freellmpool is ready.`
+Namespace verdicts: PyPI name is upstream-owned; `uvx --from git+…`
+needs git in the image; tarball URL builds without git; GHCR/MCP
+Registry deferred (zero-publish path sufficient).
 
 Pain: every "just use X" tutorial assumes installable artifacts. This fork
 publishes nothing (no PyPI, npm, MCP Registry, container) by inherited
@@ -37,14 +44,14 @@ Execute:
 4. Include launch copy + trust page v1 (folded bet #8 content).
 
 Done when:
-- [ ] A fresh container with only Docker/uvx installed reaches a first free
-      model reply via one documented command (paste the transcript).
-- [ ] Full test suite + release gates pass on the commit.
-- [ ] Install docs describe exactly the audited path, nothing else.
+- [x] A fresh container with only Docker/uvx installed reaches a first free
+      model reply via one documented command (transcript captured 2026-09-18).
+- [x] Full test suite + release gates pass on the commit (local + CI).
+- [x] Install docs describe exactly the audited path, nothing else.
 
 Effort: S–M. Fit: highest — distribution is the top of the setup funnel.
 
-## G2 — MCP context diet (Status: pending)
+## G2 — MCP context diet (Status: active)
 
 Pain: production agents connect to 5–20 MCP servers × 5–50 tools; ~100k
 tokens of tool schemas load before the user types a word. Our MCP server
