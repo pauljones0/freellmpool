@@ -6,6 +6,8 @@ Free allowances are finite. Account eligibility, prices, model discovery and pro
 
 [FAQ](FAQ.md) · [Setup guide](integrations/setup/README.md) · [Maintenance](docs/maintenance.md)
 
+New here? Start with the [free $0 setup guide](docs/FREE_SETUP.md).
+
 ## Install and set up
 
 Fastest path — one command with [uv](https://docs.astral.sh/uv/) installed, no checkout:

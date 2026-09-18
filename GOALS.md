@@ -104,7 +104,7 @@ Acceptance evidence (2026-09-18):
 
 Effort: M. Fit: high — MCP is a flagship surface.
 
-## G3 — $0 setup guide (Status: pending)
+## G3 — $0 setup guide (Status: complete)
 
 Pain: juniors and students get blindsided by LLM bills; tutorials assume
 paid keys. There is no trusted "free from zero" path.
@@ -119,11 +119,177 @@ Execute:
 3. Set conservative defaults where the guide exposes knobs.
 
 Done when:
-- [ ] A fresh-persona run completes end to end in under 15 minutes
+- [x] A fresh-persona run completes end to end in under 15 minutes
       (transcript pasted, timed).
-- [ ] Every command in the guide is copy-paste verified; no step requires
+- [x] Every command in the guide is copy-paste verified; no step requires
       a paid key or paid account.
-- [ ] Docs checks pass.
+- [x] Docs checks pass.
+
+Guide: `docs/FREE_SETUP.md` (+ one link line in README, additions-only
+diff). Key = OpenRouter (registry grant `verified`, `requires_account_evidence:
+false`, zero-price — env-var-only, no wizard). Agent = opencode via loopback
+proxy (no proxy key needed on `127.0.0.1`; verified `NOKEY_OK`) + `verify`
+step for tools evidence (conformance expires after 7 days — the diagnosed
+cause of agent failures without it). Conservative pins: `--max-tokens 32`,
+`--timeout 60` (45 for probes), `verify --limit 20`, single `-p` pin,
+loopback proxy, `agent` alias. No CLI default changes.
+
+Verification (2026-09-18, fresh `python:3.12-slim` container, `/tmp/g3_verify.sh`):
+- Fence check: 11 sh fences, 32 lines, 0 missing (every guide command
+  executed verbatim; key placeholder filled from host config, never echoed).
+- External URLs: 5/5 HTTP 200 (uv docs/install, OpenRouter keys, opencode
+  installer, repo tarball). Installer serves the canonical
+  `anomalyco/opencode` repo (208k stars, updated 2026-09-18; project moved
+  off `sst/` — confirmed not a fork).
+- `status`: 48 keyless routes → 71 with OpenRouter key; `strict_free: true`
+  before and after; keyless + keyed live replies; `verify` recorded 2
+  `tools=pass` routes; `opencode run` → `AGENT_OK`.
+- Timed: `G3_ELAPSED_SECONDS=146` container-internal, 147s wall (< 900).
+- Gates: `check_docs.py` OK, `check-counts` OK, `quickstart-test.sh`
+  (+`LIVE=1` canary) OK, full suite + `ruff check` green.
+
+<details><summary>Timed transcript (key redacted, progress noise stripped)</summary>
+
+```
+=== G3 verify: container provisioning (scaffolding, not guide fences) ===
+downloading uv 0.12.16 x86_64-unknown-linux-gnu
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+To add $HOME/.local/bin to your PATH, either restart your shell or run:
+    source $HOME/.local/bin/env (sh, bash, zsh)
+    source $HOME/.local/bin/env.fish (fish)
+=== guide fences begin ===
+uv 0.12.16 (x86_64-unknown-linux-gnu)
+   Building freellmpool @ https://github.com/pauljones0/freellmpool/archive/refs/heads/main.tar.gz
+      Built freellmpool @ https://github.com/pauljones0/freellmpool/archive/refs/heads/main.tar.gz
+Installed 8 packages in 3ms
+freellmpool: first run - discovering free routes (one-time)...
+Freellmpool is ready to assist you!
+Strict free access: 48 eligible routes
+  llm7             3 routes  ready
+  ovh             18 routes  ready
+  kilo            22 routes  ready
+  opencode         5 routes  ready
+  groq             0 routes  API key or required account field missing
+  aion             0 routes  API key or required account field missing
+  modelscope       0 routes  API key or required account field missing
+  vercel           0 routes  API key or required account field missing
+  nvidia           0 routes  API key or required account field missing
+  openrouter       0 routes  API key or required account field missing
+  gemini           0 routes  API key or required account field missing
+  cloudflare       0 routes  API key or required account field missing
+  mistral          0 routes  API key or required account field missing
+  cohere           0 routes  API key or required account field missing
+  zhipu            0 routes  API key or required account field missing
+  ollama           0 routes  API key or required account field missing
+Inspect enforced budgets and unknown limits: freellmpool status --json
+Strict free access: 71 eligible routes
+  llm7             3 routes  ready
+  ovh             18 routes  ready
+  kilo            22 routes  ready
+  opencode         5 routes  ready
+  groq             0 routes  API key or required account field missing
+  aion             0 routes  API key or required account field missing
+  modelscope       0 routes  API key or required account field missing
+  vercel           0 routes  API key or required account field missing
+  nvidia           0 routes  API key or required account field missing
+  openrouter      23 routes  ready
+  gemini           0 routes  API key or required account field missing
+  cloudflare       0 routes  API key or required account field missing
+  mistral          0 routes  API key or required account field missing
+  cohere           0 routes  API key or required account field missing
+  zhipu            0 routes  API key or required account field missing
+  ollama           0 routes  API key or required account field missing
+Inspect enforced budgets and unknown limits: freellmpool status --json
+"strict_free": true
+That’s great—your free key works.
+
+Installing opencode version: 1.18.31
+Successfully added opencode to $PATH in /root/.bashrc
+                                 ▄     
+█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+█░░█ █░░█ █▀▀▀ █░░█ █░░░ █░░█ █░░█ █▀▀▀
+▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+OpenCode includes free models, to start:
+cd <project>  # Open directory
+opencode      # Run command
+For more information visit https://opencode.ai/docs
+Wire opencode to free models via freellmpool:
+  Terminal 1 — keep the proxy running:
+    freellmpool proxy --port 8080
+  Terminal 2 — configure and launch the client:
+    opencode.json:
+      {
+        "$schema": "https://opencode.ai/config.json",
+        "model": "freellmpool/agent",
+        "provider": {
+          "freellmpool": {
+            "name": "freellmpool (free pool)",
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {
+              "baseURL": "http://localhost:8080/v1",
+              "apiKey": "{env:FREELLMPOOL_PROXY_KEY}",
+              "headerTimeout": 600000,
+              "timeout": 600000,
+              "chunkTimeout": 120000
+            },
+            "models": {
+              "agent": {
+                "name": "Agent \u2014 strongest healthy tier"
+              },
+              "spread": {
+                "name": "Spread \u2014 maximum pool breadth"
+              },
+              "auto": {
+                "name": "Auto \u2014 proxy default routing"
+              },
+              "fast": {
+                "name": "Fast \u2014 lowest latency"
+              },
+              "quality": {
+                "name": "Quality \u2014 capability matched"
+              },
+              "fair": {
+                "name": "Fair \u2014 provider quota spread"
+              }
+            }
+          }
+        }
+      }
+  ℹ Use freellmpool/agent for long-running tool work: it stays on the strongest benchmark tier and spreads usage within that tier.
+  More tools + details: docs/INTEGRATIONS.md
+kilo/cohere/north-mini-code:free: chat=pass, tools=pass, streaming=pass
+kilo/deepseek/deepseek-v4-flash-0731:free: chat=pass, tools=pass, streaming=pass
+kilo/dots-studio/dots-3-note-preview:free: chat=pass, tools=unavailable, streaming=unavailable
+kilo/inclusionai/ling-3.0-flash-fin:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/inclusionai/ling-3.0-flash-sante:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/inclusionai/ling-3.0-flash-vl:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/kilo-auto/free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/liquid/lfm-2.5-2.6b:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nex-agi/nex-n2.5-mini:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nex-agi/nex-n2.5-pro:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nvidia/nemotron-3-super-120b-a12b:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nvidia/nemotron-3-ultra-550b-a55b:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nvidia/nemotron-3.5-content-safety:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/nvidia/nemotron-3.5-lightning:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/openrouter/free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/poolside/laguna-s-2.1:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/poolside/laguna-xs-2.1:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/qwen/qwen3.8-27b:free: chat=unavailable, tools=unavailable, streaming=unavailable
+kilo/stepfun/step-3.7-flash:free: chat=unavailable, tools=unavailable, streaming=unavailable
+{"object": "list", "data": [{"id": "auto", "object": "model", "owned_by": "freellmpool", "capabilities": {}, "verified_features": []}, {"id": "agent", "object": "model", "owned_by": "freellmpool", "ca
+
+> build · agent
+
+AGENT_OK
+=== guide fences end ===
+G3_ELAPSED_SECONDS=146
+```
+
+</details>
 
 Effort: S. Fit: high — this is the vision in document form.
 
