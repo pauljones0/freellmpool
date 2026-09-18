@@ -17,14 +17,15 @@ import json
 import os
 import threading
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, cast
 
 try:
     import fcntl  # POSIX advisory file locks
 except ImportError:  # pragma: no cover - non-POSIX (Windows)
-    fcntl = None
+    fcntl = None  # type: ignore[assignment]
 
 _LIVE_STORES: weakref.WeakSet[QuotaStore] = weakref.WeakSet()
 
@@ -81,7 +82,7 @@ class QuotaStore:
         self._pending_ops = 0
         self._flush_timer: threading.Timer | None = None
         self._reload_after_fork = False
-        self._data: dict = self._load()
+        self._data: dict[str, Any] = self._load()
         _LIVE_STORES.add(self)
         if self.flush_every > 1:
             atexit.register(self.flush)
@@ -99,14 +100,14 @@ class QuotaStore:
             self._data = self._load()
             self._reload_after_fork = False
 
-    def _load(self) -> dict:
+    def _load(self) -> dict[str, Any]:
         try:
             with self.path.open("r", encoding="utf-8") as fh:
-                return json.load(fh)
+                return cast(dict[str, Any], json.load(fh))
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
-    def _load_for_write(self) -> dict:
+    def _load_for_write(self) -> dict[str, Any]:
         """Load a writable object, quarantining a present corrupt file first."""
         try:
             with self.path.open("r", encoding="utf-8") as fh:
@@ -123,7 +124,7 @@ class QuotaStore:
         return {}
 
     @contextlib.contextmanager
-    def _file_lock(self):
+    def _file_lock(self) -> Iterator[None]:
         """Cross-process exclusive lock around a read-modify-write of the quota
         file, so a second process (proxy + CLI + MCP all share one file) can't
         clobber another's increments. No-op where flock is unavailable."""
@@ -156,14 +157,14 @@ class QuotaStore:
         finally:
             tmp.unlink(missing_ok=True)
 
-    def _today(self) -> dict:
+    def _today(self) -> dict[str, Any]:
         day = _utc_day(self._clock())
         bucket = self._data.get(day)
         if bucket is None:
             # New UTC day → drop stale buckets to keep the file small.
             self._data = {day: {}}
             bucket = self._data[day]
-        return bucket
+        return cast(dict[str, Any], bucket)
 
     @staticmethod
     def _key(provider_id: str, model: str) -> str:
@@ -187,7 +188,7 @@ class QuotaStore:
             self._pending_counts.setdefault(day, {})
             self._pending_counts[day][key] = int(self._pending_counts[day].get(key, 0)) + n
             self._pending_ops += 1
-            count = bucket[key]
+            count: int = bucket[key]
             if self._pending_ops >= self.flush_every:
                 self._flush_locked()
             if self._pending_counts:
@@ -202,7 +203,7 @@ class QuotaStore:
             bucket = self._today()
             key = self._key(provider_id, model)
             bucket[key] = int(bucket.get(key, 0)) + n
-            count = bucket[key]
+            count: int = bucket[key]
             try:
                 self._save()
             except OSError:

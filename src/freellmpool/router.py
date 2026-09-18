@@ -12,7 +12,7 @@ import os
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +20,7 @@ from . import client as _client
 from .cache import Cache
 from .capability import capability_table, fit_penalty, model_capability, prompt_difficulty
 from .client import (
+    HTTPResult,
     MultipartPostFn,
     PostFn,
     StreamPostFn,
@@ -45,13 +46,14 @@ from .errors import (
     NoProvidersConfigured,
     ProviderHTTPError,
 )
-from .metrics import Metrics, score_stat
+from .metrics import Metrics, Stat, score_stat
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
 from .quota import QuotaStore
 from .route_health import (
     FailureUpdate,
     HealthLease,
+    HealthRecord,
     RouteHealthStore,
     default_route_health_path,
     score_record,
@@ -321,7 +323,7 @@ class Pool:
         if self._stats_store is not None:
             self._stats_store.add(**deltas)
 
-    def stats_snapshot(self) -> dict:
+    def stats_snapshot(self) -> dict[str, int]:
         """A consistent copy of the session stats counters, read under the lock so
         readers (/status, MCP, CLI) never see a torn requests/tokens pair."""
         with self._stats_lock:
@@ -334,7 +336,9 @@ class Pool:
             if callable(flush):
                 flush()
 
-    def _chat_post_once(self, url: str, headers: dict, body: dict, timeout: float):
+    def _chat_post_once(
+        self, url: str, headers: dict[str, str], body: dict[str, Any], timeout: float
+    ) -> HTTPResult:
         """Use one built-in transport attempt while preserving injected post APIs."""
         if self._post is default_post:
             return default_post(url, headers, body, timeout, max_attempts=1)
@@ -357,14 +361,14 @@ class Pool:
                 result[provider_id] = max(result.get(provider_id, 0.0), remaining)
         return result
 
-    def lifetime_stats(self) -> dict:
+    def lifetime_stats(self) -> dict[str, Any]:
         """Persistent lifetime totals (+ first_seen), or the in-memory session
         totals if no persistent store is wired."""
         if self._stats_store is not None:
             return self._stats_store.snapshot()
         return {**self.stats_snapshot(), "first_seen": None}
 
-    def route_health_snapshot(self):
+    def route_health_snapshot(self) -> dict[str, HealthRecord]:
         """Persistent health rows for status surfaces, or an empty mapping."""
         return self.route_health.snapshot() if self.route_health is not None else {}
 
@@ -372,7 +376,7 @@ class Pool:
         """Persistent per-model circuit reset times for readiness surfaces."""
         return self.route_health.route_cooldowns() if self.route_health is not None else {}
 
-    def conformance_snapshot(self) -> dict:
+    def conformance_snapshot(self) -> dict[str, Any]:
         """Sanitized per-model protocol evidence for status/model surfaces."""
 
         return self.conformance.snapshot() if self.conformance is not None else {
@@ -847,10 +851,10 @@ class Pool:
         def over_of(t: Target) -> int:
             return 1 if (t.rpd > 0 and used_of(t) >= t.rpd) else 0
 
-        def stat_of(t: Target):
+        def stat_of(t: Target) -> Stat | None:
             return msnap.get(t.name)
 
-        def health_of(t: Target):
+        def health_of(t: Target) -> HealthRecord | None:
             return hsnap.get(t.name)
 
         def failing_of(t: Target) -> bool:
@@ -984,6 +988,7 @@ class Pool:
                 score_of(t),
             )
 
+        target_key: Callable[[Target], tuple[int | float, ...]]
         if mode == "fast":
 
             def provider_fast_key(provider_id: str) -> tuple[int, float, int]:
@@ -1037,8 +1042,8 @@ class Pool:
         max_tokens: int = 1024,
         temperature: float = 0.0,
         timeout: float = 90.0,
-        tools: list | None = None,
-        tool_choice=None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         routing: str | None = None,
         task: str | None = None,
     ) -> Reply:
@@ -1075,9 +1080,9 @@ class Pool:
         max_tokens: int = 1024,
         temperature: float = 0.0,
         timeout: float = 90.0,
-        tools: list | None = None,
-        tool_choice=None,
-        response_format=None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        response_format: dict[str, Any] | None = None,
         protocol: str | None = None,
         routing: str | None = None,
         task: str | None = None,
@@ -1422,7 +1427,7 @@ class Pool:
         timeout: float = 90.0,
         routing: str | None = None,
         task: str | None = None,
-    ):
+    ) -> Iterator[dict[str, Any] | str]:
         """Stream content deltas with token-level streaming.
 
         Yields a meta dict ``{"provider", "model"}`` first, then content-delta

@@ -23,6 +23,7 @@ import socket
 import tomllib
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from .models import Model, Provider
@@ -218,7 +219,7 @@ def known_aliases(env: dict[str, str] | None = None) -> list[str]:
     return list(_known_aliases_cached(_alias_cache_key(env)))
 
 
-def _alias_cache_key(env: dict[str, str]) -> tuple:
+def _alias_cache_key(env: dict[str, str]) -> tuple[tuple[Any, ...], tuple[tuple[str, str], ...]]:
     """Stable cache key for alias discovery.
 
     Only alias-related env vars and config-file path metadata affect
@@ -233,7 +234,7 @@ def _alias_cache_key(env: dict[str, str]) -> tuple:
 
 # LRU eviction is fine here: a dropped entry recomputes from env/config metadata.
 @lru_cache(maxsize=64)
-def _known_aliases_cached(cache_key: tuple) -> tuple[str, ...]:
+def _known_aliases_cached(cache_key: tuple[Any, ...]) -> tuple[str, ...]:
     config_sig, env_aliases = cache_key
     path_str = config_sig[0]
     aliases = set(_DEFAULT_ALIASES)
@@ -259,7 +260,7 @@ def _config_file_path(env: dict[str, str]) -> Path | None:
     return default if default.exists() else None
 
 
-def _path_signature(path: Path | None) -> tuple:
+def _path_signature(path: Path | None) -> tuple[Any, ...]:
     """Cache identity, including rewrites with unchanged filesystem timestamps."""
     if path is None:
         return ("", False, 0, 0, 0, 0, 0, 0)
@@ -287,7 +288,7 @@ def _path_signature(path: Path | None) -> tuple:
 
 
 @lru_cache(maxsize=128)
-def _read_toml_cached(signature: tuple) -> tuple[dict, tuple | None]:
+def _read_toml_cached(signature: tuple[Any, ...]) -> tuple[dict[str, Any], tuple[Any, ...] | None]:
     """Parse one immutable path/stat version, retaining sanitized error metadata."""
     path_str, exists, *_ = signature
     if not path_str or not exists:
@@ -315,7 +316,7 @@ def _read_toml_cached(signature: tuple) -> tuple[dict, tuple | None]:
         return {}, ("config_unreadable", None, None)
 
 
-def load_config_file(env: dict[str, str] | None = None) -> dict:
+def load_config_file(env: dict[str, str] | None = None) -> dict[str, Any]:
     """Load the optional config.toml. Returns {} if none exists.
 
     Recognized tables:
@@ -383,13 +384,13 @@ def effective_env(env: dict[str, str] | None = None) -> dict[str, str]:
     return merged
 
 
-def settings(env: dict[str, str] | None = None) -> dict:
+def settings(env: dict[str, str] | None = None) -> dict[str, Any]:
     """The ``[settings]`` table from config.toml (or {})."""
     value = load_config_file(env).get("settings", {})
     return value if isinstance(value, dict) else {}
 
 
-def _maybe_int(value, *, positive: bool = False) -> int | None:
+def _maybe_int(value: Any, *, positive: bool = False) -> int | None:
     """Best-effort int from possibly-bad input; None on failure (and, when
     ``positive``, on a non-positive value — so ``context = 0`` reads as unknown)."""
     try:
@@ -401,7 +402,7 @@ def _maybe_int(value, *, positive: bool = False) -> int | None:
     return n
 
 
-def _parse_rows(rows: list, *, allow_local: bool | None = None) -> list[Provider]:
+def _parse_rows(rows: list[Any], *, allow_local: bool | None = None) -> list[Provider]:
     """Parse provider rows tolerantly: a malformed row (missing id/base_url/name,
     bad int) is skipped, not fatal, so one typo in a user catalog can't brick the
     whole tool. The packaged catalog is valid, so this is a no-op for it."""
@@ -474,13 +475,13 @@ def _parse_rows(rows: list, *, allow_local: bool | None = None) -> list[Provider
     return providers
 
 
-def _parse_catalog(data: dict) -> list[Provider]:
+def _parse_catalog(data: dict[str, Any]) -> list[Provider]:
     return _parse_rows(data.get("provider", []))
 
 
 @lru_cache(maxsize=128)
 def _parsed_section_cached(
-    signature: tuple, section: str, allow_local: bool
+    signature: tuple[Any, ...], section: str, allow_local: bool
 ) -> tuple[Provider, ...]:
     data, error = _read_toml_cached(signature)
     if error is not None:

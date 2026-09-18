@@ -90,6 +90,8 @@ jobs:
           src/freellmpool/onboarding.py src/freellmpool/client_setup.py
           src/freellmpool/credential_store.py
           src/freellmpool/http_read.py
+          src/freellmpool/config.py src/freellmpool/quota.py
+          src/freellmpool/route_health.py src/freellmpool/router.py
           src/freellmpool/request_security.py
           src/freellmpool/policy_updates.py src/freellmpool/account_observations.py
           src/freellmpool/limit_sources.py src/freellmpool/maintenance.py

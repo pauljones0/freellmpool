@@ -10,21 +10,23 @@ import tempfile
 import threading
 import time
 import weakref
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 try:  # pragma: no cover - exercised on POSIX CI; fallback keeps Windows usable
     import fcntl
 except ImportError:  # pragma: no cover
-    fcntl = None
+    fcntl = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - imported only on Windows
     import msvcrt
 except ImportError:  # pragma: no cover
-    msvcrt = None
+    msvcrt = None  # type: ignore[assignment]
+
+_T = TypeVar("_T")
 
 _VERSION = 1
 _VALID_STATES = {"closed", "open", "half_open"}
@@ -232,7 +234,7 @@ class RouteHealthStore:
         """Acquire permission for a request, including a single half-open lease."""
         return self.allow_many((key,))
 
-    def allow_many(self, keys) -> bool:
+    def allow_many(self, keys: Iterable[str]) -> bool:
         """Atomically acquire all route/provider circuit leases or none of them."""
         return self.acquire_many(keys) is not None
 
@@ -245,7 +247,7 @@ class RouteHealthStore:
         """
         return HealthLease(self._clock(), dict(lease.generations))
 
-    def release_many(self, keys, *, lease: HealthLease | None) -> None:
+    def release_many(self, keys: Iterable[str], *, lease: HealthLease | None) -> None:
         """Release a half-open probe after local saturation without poisoning it."""
         requested = tuple(dict.fromkeys(key for key in keys if _valid_key(key)))
         if not requested:
@@ -278,7 +280,7 @@ class RouteHealthStore:
 
         self._update(mutate)
 
-    def acquire_many(self, keys) -> HealthLease | None:
+    def acquire_many(self, keys: Iterable[str]) -> HealthLease | None:
         """Acquire circuits and return ownership for conditional result updates."""
         requested = tuple(dict.fromkeys(key for key in keys if _valid_key(key)))
         if not requested:
@@ -330,7 +332,7 @@ class RouteHealthStore:
 
     def record_success_many(
         self,
-        keys,
+        keys: Iterable[str],
         latency_ms: float,
         *,
         lease: HealthLease | None = None,
@@ -459,7 +461,7 @@ class RouteHealthStore:
 
     def record_failures(
         self,
-        updates,
+        updates: Iterable[FailureUpdate],
         *,
         lease: HealthLease | None = None,
     ) -> None:
@@ -560,7 +562,9 @@ class RouteHealthStore:
             )
         )
 
-    def _update(self, mutator):
+    def _update(
+        self, mutator: Callable[[dict[str, dict[str, Any]], float], tuple[_T, bool]]
+    ) -> _T:
         now = self._clock()
         with self._thread_lock:
             try:
@@ -739,7 +743,7 @@ def _number(value: object) -> float | None:
     return result if math.isfinite(result) else None
 
 
-def _integer(value: object) -> int:
+def _integer(value: Any) -> int:
     if isinstance(value, bool):
         return 0
     try:
