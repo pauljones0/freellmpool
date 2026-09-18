@@ -11,7 +11,8 @@ where a prompt would route, and watch the free tokens add up:
       }
     }
 
-Tools exposed:
+Tools exposed (lean default: one `free_llm` router tool; every action below is
+reachable as `action`, with full per-action schemas on demand via action=help):
     free_llm_ask             ask a free model (routing-aware; tells you which model served)
     free_llm_panel           ask N free models in parallel and compare — a free second opinion
     free_llm_second_opinion  same panel behavior, exposed as its own agent-facing tool
@@ -25,6 +26,9 @@ Tools exposed:
     free_llm_models          list available provider/model ids
     free_llm_quota           today's per-provider usage + daily-limit headroom
     free_llm_stats           lifetime tokens served free + estimated cost avoided
+
+`freellmpool mcp --full-tools` lists the 13 legacy tools directly instead of the
+router; tools/call accepts the router AND all legacy names in both modes.
 
 Implemented on the standard library only — no MCP SDK required.
 """
@@ -82,20 +86,10 @@ _log = logging.getLogger(__name__)
 # calling agent learns HOW to invoke these tools — chiefly: call them directly instead
 # of shelling out to the CLI, which is what hides the live progress + banner from the user.
 _SERVER_INSTRUCTIONS = (
-    "freellmpool pools many free-tier LLMs behind these tools. Offload self-contained "
-    "subtasks (drafting, summarizing, classifying, quick lookups) to free models instead "
-    "of spending your own context/quota.\n\n"
-    "INVOKE THESE AS MCP TOOLS DIRECTLY. Do NOT shell out to the `freellmpool` CLI (e.g. "
-    "spawning `freellmpool mcp` or `freellmpool tokenmax` as a subprocess) to reach them — "
-    "that captures the output in your subprocess and hides the live progress, the rainbow "
-    "banner, and the answers from the user.\n\n"
-    "`tokenmax` streams live `notifications/progress` as each model in the swarm answers "
-    "(e.g. `🌈 TOKENMAXXING ▸ N/total models…`); call it directly so the client shows that to "
-    "the user in real time, and the result carries a rainbow banner plus each returned answer "
-    "for YOU "
-    "to synthesize. The flashing rainbow ANSI animation can only render on a real terminal "
-    "(not inside an MCP chat), so to let the HUMAN watch it pulse, tell them to run "
-    '`freellmpool tokenmax "<prompt>"` in their own terminal.'
+    "freellmpool pools free-tier LLMs behind one tool: free_llm. Offload self-contained "
+    "subtasks to free models instead of spending your own quota. Call it DIRECTLY as an "
+    "MCP tool, never via CLI shell-out. tokenmax streams live progress; for the flashing "
+    "rainbow tell the human to run `freellmpool tokenmax \"<prompt>\"` in a terminal."
 )
 
 TOOLS = [
@@ -428,6 +422,55 @@ TOOLS = [
     },
 ]
 
+# One-line action summaries for the lean router surface (progressive disclosure).
+# Keys must match the legacy tool names in TOOLS exactly; the `help` action and
+# the router description below are both rendered from this map.
+_LEAN_ACTIONS = {
+    "free_llm_ask": "ask one free model (tells you which model served)",
+    "free_llm_panel": "ask N free models in parallel and compare",
+    "free_llm_second_opinion": "second model checks an answer",
+    "free_llm_battle": "bounded multi-model comparison as Markdown",
+    "free_llm_recipe": "run a bundled multi-step recipe end-to-end",
+    "free_llm_roles": "list agent roles and recommended use",
+    "free_llm_tailnet_info": "Tailscale Tailnet connection instructions",
+    "free_llm_quota_wise": "local quota headroom advice (no bypass tips)",
+    "tokenmax": "fan one prompt to a model swarm; you synthesize",
+    "free_llm_route": "preview where a prompt would route, $0",
+    "free_llm_models": "list free provider/model ids",
+    "free_llm_quota": "today's usage + daily-limit headroom",
+    "free_llm_stats": "lifetime free tokens + cost avoided",
+}
+
+_ROUTER_DESCRIPTION = (
+    "All freellmpool free-model actions behind one tool: pass action + args. "
+    "Use action=help (optionally with args={name}) for full schemas. Actions: "
+    + "; ".join(f"{name}: {blurb}" for name, blurb in _LEAN_ACTIONS.items())
+)
+
+# Lean default surface: one router tool (~1/6th the context of TOOLS).
+# `freellmpool mcp --full-tools` serves the legacy TOOLS list instead.
+LEAN_TOOLS = [
+    {
+        "name": "free_llm",
+        "description": _ROUTER_DESCRIPTION,
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [*_LEAN_ACTIONS, "help"],
+                    "description": "Which action to run; 'help' shows full schemas.",
+                },
+                "args": {
+                    "type": "object",
+                    "description": "Per-action arguments (see action=help).",
+                },
+            },
+            "required": ["action"],
+        },
+    },
+]
+
 
 def _result(mid, result: dict) -> dict:
     return {"jsonrpc": "2.0", "id": mid, "result": result}
@@ -509,7 +552,49 @@ def _call_tool(pool: Pool, params: dict, notify=None) -> dict:
         return _text(_quota_summary(pool))
     if name == "free_llm_stats":
         return _text(_lifetime_summary(pool))
+    if name == "free_llm":
+        return _tool_router(pool, args, notify=notify)
     return _text(f"unknown tool: {name}", is_error=True)
+
+
+def _tool_router(pool: Pool, args: dict, notify=None) -> dict:
+    """Dispatch a lean `free_llm` call to the legacy action handler."""
+    action = args.get("action")
+    if not isinstance(action, str) or not action:
+        return _text("'action' is required", is_error=True)
+    if action == "help":
+        return _tool_help(args.get("args") if isinstance(args.get("args"), dict) else {})
+    if action not in _LEAN_ACTIONS:
+        valid = ", ".join([*_LEAN_ACTIONS, "help"])
+        return _text(f"unknown action: {action}. Valid actions: {valid}", is_error=True)
+    sub = args.get("args", {})
+    if not isinstance(sub, dict):
+        return _text("'args' must be an object", is_error=True)
+    return _call_tool(pool, {"name": action, "arguments": sub}, notify=notify)
+
+
+def _tool_help(args: dict) -> dict:
+    """On-demand schemas for progressive disclosure (action=help)."""
+    name = args.get("name")
+    if name is None:
+        lines = [f"{tool}: {_LEAN_ACTIONS[tool]}" for tool in _LEAN_ACTIONS]
+        return _text(
+            "free_llm actions (pass one as action with its args object):\n"
+            + "\n".join(lines)
+            + "\n\nCall action=help with args={name} for one action's full schema."
+        )
+    for tool in TOOLS:
+        if tool["name"] == name:
+            return _text(
+                json.dumps(
+                    {
+                        "name": tool["name"],
+                        "description": tool["description"],
+                        "inputSchema": tool["inputSchema"],
+                    }
+                )
+            )
+    return _text(f"unknown action: {name}", is_error=True)
 
 
 def _tool_ask(pool: Pool, args: dict) -> dict:
@@ -946,7 +1031,12 @@ def _make_notify(params: dict, send_notification):
 
 
 def handle_message(
-    pool: Pool, msg: dict, *, version: str = "0.0.0", send_notification=None
+    pool: Pool,
+    msg: dict,
+    *,
+    version: str = "0.0.0",
+    send_notification=None,
+    full_tools: bool = False,
 ) -> dict | None:
     """Handle one JSON-RPC message. Returns a response dict, or None for
     notifications (which get no reply). `send_notification`, if given, is a
@@ -983,7 +1073,7 @@ def handle_message(
         if method == "ping":
             return _result(mid, {})
         if method == "tools/list":
-            return _result(mid, {"tools": TOOLS})
+            return _result(mid, {"tools": TOOLS if full_tools else LEAN_TOOLS})
         if method == "tools/call":
             params = msg.get("params") or {}
             notify = _make_notify(params, send_notification)
@@ -994,7 +1084,7 @@ def handle_message(
         return _error(mid, -32603, "internal error")
 
 
-def serve_stdio(pool: Pool, version: str = "0.0.0") -> None:
+def serve_stdio(pool: Pool, version: str = "0.0.0", full_tools: bool = False) -> None:
     """Run the MCP server over stdio until stdin closes."""
     out = sys.stdout
     # A lock guards every write so progress notifications emitted from tokenmax's
@@ -1041,7 +1131,11 @@ def serve_stdio(pool: Pool, version: str = "0.0.0") -> None:
                     r
                     for r in (
                         handle_message(
-                            pool, m, version=version, send_notification=send_notification
+                            pool,
+                            m,
+                            version=version,
+                            send_notification=send_notification,
+                            full_tools=full_tools,
                         )
                         for m in msg
                     )
@@ -1052,6 +1146,14 @@ def serve_stdio(pool: Pool, version: str = "0.0.0") -> None:
                 if responses:
                     write_obj(responses)
                 continue
-            emit(handle_message(pool, msg, version=version, send_notification=send_notification))
+            emit(
+                handle_message(
+                    pool,
+                    msg,
+                    version=version,
+                    send_notification=send_notification,
+                    full_tools=full_tools,
+                )
+            )
     finally:
         pool.flush()

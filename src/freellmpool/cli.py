@@ -2314,7 +2314,7 @@ def cmd_mcp(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     try:
-        serve_stdio(pool, version=__version__)
+        serve_stdio(pool, version=__version__, full_tools=args.full_tools)
     except (KeyboardInterrupt, BrokenPipeError):
         pass
     finally:
@@ -2998,6 +2998,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_mcp = sub.add_parser(
         "mcp", help="run an MCP server (stdio) so MCP clients can use free models"
+    )
+    p_mcp.add_argument(
+        "--full-tools",
+        action="store_true",
+        help="list the 13 legacy tools directly instead of the lean free_llm router",
     )
     p_mcp.set_defaults(func=cmd_mcp)
 

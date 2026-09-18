@@ -45,7 +45,9 @@ can also configure:
 }
 ```
 
-Tool surface to mention in every listing:
+Tool surface to mention in every listing (default `tools/list` serves the single
+`free_llm` router; each name below is reachable as a router `action`, with full
+schemas on demand via `action: "help"`, or listed directly with `--full-tools`):
 
 - `free_llm_ask`
 - `free_llm_panel`

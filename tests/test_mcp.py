@@ -47,7 +47,9 @@ def test_notification_gets_no_reply(providers, env, quota):
 
 def test_tools_list(providers, env, quota):
     pool = _pool(providers, env, quota)
-    resp = handle_message(pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    resp = handle_message(
+        pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, full_tools=True
+    )
     names = {t["name"] for t in resp["result"]["tools"]}
     assert names == {
         "free_llm_ask",
@@ -68,16 +70,25 @@ def test_tools_list(providers, env, quota):
 
 # Tools MUST NOT expose mutating policy knobs (e.g. a set_policy tool).
 @pytest.mark.parametrize("forbidden_name", ["set_policy", "set_mode", "set_routing"])
-def test_tools_list_has_no_mutating_policy_tool(providers, env, quota, forbidden_name):
+@pytest.mark.parametrize("full_tools", [False, True])
+def test_tools_list_has_no_mutating_policy_tool(
+    providers, env, quota, forbidden_name, full_tools
+):
     pool = _pool(providers, env, quota)
-    resp = handle_message(pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    resp = handle_message(
+        pool,
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        full_tools=full_tools,
+    )
     names = {t["name"] for t in resp["result"]["tools"]}
     assert forbidden_name not in names
 
 
 def test_tool_schemas_expose_expected_fields(providers, env, quota):
     pool = _pool(providers, env, quota)
-    resp = handle_message(pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    resp = handle_message(
+        pool, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, full_tools=True
+    )
     by_name = {t["name"]: t for t in resp["result"]["tools"]}
     ask_props = by_name["free_llm_ask"]["inputSchema"]["properties"]
     assert ask_props["task"]["enum"] == ["auto", "general", "grounded-reading"]

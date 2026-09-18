@@ -28,7 +28,9 @@ models, daily quota, and lifetime stats.
 freellmpool is a local stdio MCP server for using accessible LLM provider routes
 from Claude Desktop, Claude Code, Cursor, and other MCP clients. It can work
 without provider credentials while an enabled keyless route is available; users
-can add applicable provider credentials for more routes and capacity. The server exposes direct MCP tools for
+can add applicable provider credentials for more routes and capacity. The server exposes one lean `free_llm`
+router tool by default (all actions reachable via the router, full schemas via
+`action: "help"`, or list all 13 directly with `mcp --full-tools`) covering
 single-model asks, multi-model panels, agent-facing second-opinion flows,
 Markdown battle comparisons, bundled recipes, role presets, safe Tailscale
 Tailnet setup hints, local quota-wise headroom advice, maximum fan-out

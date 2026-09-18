@@ -35,6 +35,10 @@ lifetime stats.
 
 ## Tool names
 
+The server lists one lean `free_llm` router tool by default; each action below
+is reachable via the router (full schemas via `action: "help"`) or listed
+directly with `mcp --full-tools`:
+
 - `free_llm_ask`
 - `free_llm_panel`
 - `free_llm_second_opinion`

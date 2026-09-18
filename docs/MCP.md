@@ -30,6 +30,22 @@ and `stdout` is reserved for the protocol.
 | `free_llm_quota` | Today's per-provider usage + daily-limit headroom, plus session totals and estimated cost avoided. |
 | `free_llm_stats` | Lifetime tokens served free + estimated cost avoided vs Claude Opus 4.8 (persists across restarts). |
 
+## Lean default surface (progressive disclosure)
+
+By default `tools/list` serves a single `free_llm` router tool (~1/6th the
+context of listing all 13 tools) instead of the table above. Every row stays
+reachable as an `action` with its own `args` object:
+
+```json
+{"name": "free_llm", "arguments": {"action": "free_llm_ask", "args": {"prompt": "hi"}}}
+```
+
+Call `action: "help"` (optionally with `args: {"name": "<action>"}`) for the
+action list or one action's full schema. Prefer `--full-tools`
+(`"args": ["mcp", "--full-tools"]`) only if a client can't handle the router:
+it lists the 13 legacy tools directly. `tools/call` accepts the router AND all
+legacy names in both modes, so existing prompts keep working.
+
 ## Claude Desktop
 
 Edit `claude_desktop_config.json` (Settings → Developer → Edit Config):
@@ -45,8 +61,8 @@ Edit `claude_desktop_config.json` (Settings → Developer → Edit Config):
 }
 ```
 
-Restart Claude Desktop. Ask it to *"use free_llm_ask to summarize this"* and it
-will route to a free model.
+Restart Claude Desktop. Ask it to *"use free_llm to ask a free model to
+summarize this"* and it will route to a free model.
 
 ## Claude Code
 
@@ -108,3 +124,23 @@ Pass them through the MCP server's environment, e.g. in the config:
   through" there. For the **genuine** flashing rainbow animation, run it in a real
   terminal: `freellmpool tokenmax "your question"` (it also prints every answer and
   a synthesized verdict).
+
+## Host acceptance checklist (manual, ~2 minutes)
+
+After changing the MCP surface, confirm on each GUI host (Claude Desktop,
+Cursor; Claude Code via `claude mcp add freellmpool -- freellmpool mcp`):
+
+1. **Connect:** the host lists the `freellmpool` server as connected, no errors.
+2. **List:** exactly one tool, `free_llm`, is offered (or 13 legacy tools with
+   `--full-tools`).
+3. **Call one tool per group** (lean mode uses `free_llm` + `action`):
+   - ask: *"use free_llm action free_llm_ask to say hi"*
+   - multi-model: *"use free_llm action free_llm_panel with n=1 to say hi"*
+   - routing: *"use free_llm action free_llm_models to list models"*
+   - roles: *"use free_llm action free_llm_roles to list roles"*
+   - tailnet: *"use free_llm action free_llm_tailnet_info for setup hints"*
+   - tokenmax: *"use free_llm action tokenmax with max_models=1 to say hi"*
+   - help: *"use free_llm action help with name free_llm_ask"*
+
+All seven should return tool results with no `isError`. Record the host name,
+version, and date next to the checked box in `GOALS.md`.

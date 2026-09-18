@@ -23,6 +23,10 @@ models and higher limits.
 
 ## Features
 
+The server lists one lean `free_llm` router tool by default; each feature below
+is reachable as a router action (full schemas via `action: "help"`) or listed
+directly with `mcp --full-tools`.
+
 - Ask one free model with `free_llm_ask`.
 - Compare multiple model answers with `free_llm_panel`.
 - Run the agent-facing second-opinion flow with `free_llm_second_opinion`.

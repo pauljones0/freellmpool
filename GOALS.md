@@ -51,7 +51,7 @@ Done when:
 
 Effort: S–M. Fit: highest — distribution is the top of the setup funnel.
 
-## G2 — MCP context diet (Status: active)
+## G2 — MCP context diet (Status: active — implementation done, GUI acceptance pending operator)
 
 Pain: production agents connect to 5–20 MCP servers × 5–50 tools; ~100k
 tokens of tool schemas load before the user types a word. Our MCP server
@@ -66,11 +66,40 @@ Execute:
 3. Verify every existing tool stays reachable through the new surface.
 
 Done when:
-- [ ] Before/after token counts show a large reduction (target: 5–10× on
+- [x] Before/after token counts show a large reduction (target: 5–10× on
       the default surface) with measurements pasted.
 - [ ] Claude Desktop/Cursor/Claude Code acceptance: connect, list, call
-      one tool from each group successfully.
-- [ ] Full test suite + MCP conformance checks pass.
+      one tool from each group successfully. (SDK + Claude Code CLI rows
+      PASS — see evidence below; GUI Desktop/Cursor row pending operator
+      run of the `docs/MCP.md` checklist.)
+- [x] Full test suite + MCP conformance checks pass.
+
+Measurements (method: raw stdio `tools/list` + `initialize` result JSON,
+`sort_keys`, tokens = chars/4, via `/tmp/mcp_probe.py`):
+
+| Surface | tools/list | initialize | All-in | × vs baseline |
+|---|---|---|---|---|
+| Before (13 tools) | 10004 ch / 2501 tok | 1163 ch / 290 tok | 11167 ch / 2791 tok | 1.0× |
+| After lean (`free_llm` router) | 1478 ch / 369 tok | 474 ch / 118 tok | 1952 ch / 487 tok | **5.73×** |
+| After `--full-tools` (13 tools) | 10004 ch / 2501 tok | 474 ch / 118 tok | 10478 ch / 2619 tok | 1.07× |
+
+Design: default `tools/list` serves one `free_llm` router tool
+(`{action, args}` + `action: "help"` for on-demand schemas);
+`freellmpool mcp --full-tools` lists the 13 legacy tools; `tools/call`
+accepts router AND legacy names in both modes (zero lost tools, zero-break
+migration). Ratchet test pins lean payload ≤ 2200 chars (`tests/test_mcp_lean.py`).
+
+Acceptance evidence (2026-09-18):
+- Official `mcp` SDK ClientSession: connect + list + one call per group
+  (ask, multi-model, routing, roles, tailnet, tokenmax) — PASS in lean
+  mode (1 tool) and `--full-tools` mode (13 tools).
+- Claude Code CLI 2.1.261: `claude mcp add` + `mcp list` health check
+  reported "✔ Connected"; config removed afterwards (clean).
+- GUI hosts (Claude Desktop / Cursor): manual 2-minute checklist committed
+  at `docs/MCP.md` ("Host acceptance checklist"); live GUI run pending
+  operator (no GUI host runnable in this environment).
+- Full suite green; `ruff check .` clean; `mypy --strict` on `cli.py`
+  clean; coverage gate passed (lines 87.96% ≥ 80%, branches 78.38% ≥ 70%).
 
 Effort: M. Fit: high — MCP is a flagship surface.
 
