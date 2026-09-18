@@ -16,6 +16,23 @@ from .conformance import FEATURES, ConformanceStore
 from .managed import ManagedPool
 from .router import Target
 
+TOOLS_BENCH_MINIMUM = 3
+
+
+def tools_bench_warning(status: dict[str, Any]) -> str | None:
+    """Warn when the fresh tools bench is too thin for agent traffic.
+
+    Claude Code sends tools on every request; with fewer than
+    TOOLS_BENCH_MINIMUM fresh tool-verified routes, one exhausted provider
+    strands whole sessions behind 429s.
+    """
+    ready = status.get("tools_ready")
+    if not isinstance(ready, int) or ready >= TOOLS_BENCH_MINIMUM:
+        return None
+    return (f"WARNING: only {ready} tool-capable route(s) with fresh evidence "
+            f"(need {TOOLS_BENCH_MINIMUM}); agent tool calls may 429 — "
+            f"run: freellmpool verify --features tools")
+
 
 def cmd_status(args: argparse.Namespace) -> int:
     status = ManagedPool.from_default_config().managed_status()
@@ -25,6 +42,9 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"Strict free access: {status['eligible_routes']} eligible routes")
         for row in status["providers"]:
             print(f"  {row['id']:<14} {row['eligible']:>3} routes  {row['reason']}")
+        warning = tools_bench_warning(status)
+        if warning:
+            print(f"\n{warning}")
         print("\nInspect enforced budgets and unknown limits: freellmpool status --json")
     return 0
 

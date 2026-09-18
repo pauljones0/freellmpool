@@ -361,7 +361,38 @@ clean; `mypy --strict` on touched modules clean; `check_docs.py`,
 
 Effort: S–M. Fit: high — embeddings are tokens too.
 
-## G5 — Claude Code compat hardening (Status: pending)
+## G5 — Claude Code compat hardening (Status: complete 2026-09-18)
+
+Break log (real `claude` CLI 2.1.261 vs gateway `/v1/messages`):
+- B1 (fixed): every CLI request carries 28 tools, but 71/73 tools passes
+  had expired (>7d), collapsing the bench to 2 routes that burned out
+  within minutes → 429 death spiral (CLI backs off on Retry-After
+  forever). Fixed by re-verifying tools evidence (bench: 19 routes /
+  8 providers) + `status` now reports `tools_ready`/`tools_providers`
+  and warns below 3 (regression tests x3).
+- B2 (fixed, docs): `ANTHROPIC_MODEL=auto` triggers an unknown-model
+  warning; docs now prescribe a `claude-*` alias name.
+- Verified OK, no break: streaming SSE (exact event order, terminates),
+  `?beta=true`, `thinking`/`output_config`/`context_management` tolerance,
+  mid-list `system`-role message, 429 + `Retry-After` header, session
+  resume (`-c`) with Edit/Read. Continued long session completed its
+  file edits, then rode out genuine upstream per-minute 429s — capacity
+  reality, not a protocol break.
+- Setup: 3 commands in docs/INTEGRATIONS.md (proxy, export, claude).
+
+Live transcript (multi-turn tool session, exit 0, 2 turns, 8.4s):
+```
+[init model=auto claude_code=2.1.261 tools=28]
+TOOL_USE: Write {"file_path": "/tmp/g5-work/g5-probe.txt", "content": "probe-ok\n"}
+TOOL_RESULT: File created successfully at: /tmp/g5-work/g5-probe.txt
+ASSISTANT: The file g5-probe.txt has been created with the single line: probe-ok
+[result turns=2 duration_ms=8372]
+$ cat /tmp/g5-work/g5-probe.txt
+probe-ok
+```
+Follow-up resumed session (`-c`, Edit+Read) appended `probe-ok-2`.
+Gates: full suite green, coverage 88.00/78.42, ruff + strict mypy clean,
+catalog/policy/counts pass.
 
 Pain: Claude Code is the most-used coding agent; our Anthropic-compat path
 is experimental, so "it just works" fails exactly where users are.
@@ -377,11 +408,11 @@ Execute:
 3. Document the Claude Code setup in three commands or fewer.
 
 Done when:
-- [ ] A real multi-turn Claude Code session with tool use completes via
+- [x] A real multi-turn Claude Code session with tool use completes via
       the gateway (transcript pasted).
-- [ ] Zero known compat breaks remain; each historical break has a
+- [x] Zero known compat breaks remain; each historical break has a
       regression test.
-- [ ] Full suite + gates pass.
+- [x] Full suite + gates pass.
 
 Effort: M–L. Fit: high — meets users where they already are.
 

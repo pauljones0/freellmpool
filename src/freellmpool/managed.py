@@ -841,8 +841,13 @@ class ManagedPool(Pool):
     def managed_status(self, snapshot: Snapshot | None = None) -> JSON:
         snapshot = self.snapshot() if snapshot is None else snapshot
         limits = {limit.key: limit for route in snapshot.routes for limit in route.limits}
+        tool_routes = [r for r in snapshot.routes if r.modality == "chat" and r.automatic
+                       and self.conformance is not None
+                       and self.conformance.passes(r.provider, r.model, ("tools",))]
         return {"schema": 1, "generation": snapshot.generation, "strict_free": True,
                 "eligible_routes": len(snapshot.routes), "providers": list(snapshot.providers),
+                "tools_ready": len(tool_routes),
+                "tools_providers": len({r.provider.id for r in tool_routes}),
                 "allowances": self.ledger.status(limits.values()),
                 "note": "Unknown upstream allowances are paced conservatively; external account usage may be unknown."}
 

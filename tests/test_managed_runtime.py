@@ -466,6 +466,40 @@ def test_openrouter_tier_upgrade_cannot_overwrite_tighter_account_cap(tmp_path):
     assert pool.snapshot().routes[0].limits[0].capacity == 5
 
 
+def test_status_tools_ready_counts_only_fresh_routes(tmp_path):
+    # G5: the Claude Code 429 death spiral came from a silently rotten tools
+    # bench (71/73 passes expired). status must report the fresh bench.
+    pool = make_pool(tmp_path)
+    pool.conformance.record(pool.snapshot().routes[0].provider, "free", "tools",
+                            status="pass", classification="verified")
+    status = pool.managed_status()
+    assert status["tools_ready"] == 1
+    assert status["tools_providers"] == 1
+
+
+def test_status_ignores_expired_tool_evidence(tmp_path):
+    pool = make_pool(tmp_path)
+    route = pool.snapshot().routes[0]
+    pool.conformance.record(route.provider, route.model, "tools",
+                            status="pass", classification="verified")
+    state = json.loads(pool.conformance.path.read_text())
+    key = f"{route.provider.id}/{route.model}"
+    state["targets"][key]["features"]["tools"]["verified_at"] = "2020-01-01T00:00:00Z"
+    pool.conformance.path.write_text(json.dumps(state))
+    status = pool.managed_status()
+    assert status["tools_ready"] == 0
+
+
+def test_status_warns_when_tool_bench_is_thin(tmp_path, capsys):
+    from types import SimpleNamespace
+
+    from freellmpool.managed_cli import cmd_status
+
+    assert cmd_status(SimpleNamespace(json=False)) == 0
+    out = capsys.readouterr().out
+    assert "WARNING" in out and "verify --features tools" in out
+
+
 def test_anonymous_grant_omits_even_an_existing_paid_credential(tmp_path):
     pool = make_pool(tmp_path, ids=("alpha",))
     pool._registry_override["alpha"].update(credential_env="ALPHA_API_KEY", inference_auth="none")

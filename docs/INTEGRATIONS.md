@@ -257,20 +257,25 @@ Settings → Models → enable **Override OpenAI Base URL** → `http://localhos
 API key `anything`. (Free-tier models are slower than paid frontier models.)
 
 ### Claude Code
-Claude Code can use the experimental Anthropic bridge at `/v1/messages`:
+Claude Code runs on free models through the Anthropic bridge at `/v1/messages`
+— three commands:
 
 ```bash
-export ANTHROPIC_BASE_URL=http://localhost:8080
-export ANTHROPIC_AUTH_TOKEN=dummy
-export ANTHROPIC_API_KEY=dummy
-export ANTHROPIC_MODEL=auto
-export ANTHROPIC_SMALL_FAST_MODEL=auto
-export CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1
+# 1. start the gateway (keep running)
+freellmpool proxy --port 8080
+# 2-3. point Claude Code at it and go
+export ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_API_KEY=dummy \
+  ANTHROPIC_MODEL=claude-3-5-sonnet
 claude
 ```
 
-Pin a concrete backend with `ANTHROPIC_MODEL=provider/model`, for example
-`alibaba_cloud_model_studio/qwen3-plus`.
+Use a `claude-*` model name (it aliases to a free route and silences the CLI's
+unknown-model warning). Pin a concrete backend with
+`ANTHROPIC_MODEL=provider/model` instead. Every request sends the full tool
+list, so sessions need fresh tools evidence — if calls 429, refresh the bench
+with `freellmpool verify --features tools` (`freellmpool status` warns when the
+bench is thin). Under burst load the gateway answers 429 with `Retry-After`
+and the CLI backs off and resumes on its own.
 
 ### OpenAI Codex CLI
 Codex speaks the Responses API, which freellmpool shims at `/v1/responses` — see
