@@ -198,8 +198,12 @@ def test_pull_requests_have_source_dependency_workflow_and_container_gates():
     assert "github/codeql-action/init@" in codeql
     assert "github/codeql-action/analyze@" in codeql
 
-    assert "pip-audit==2.10.1" in security
-    assert "zizmor==1.29.0" in security
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    extras = project["project"]["optional-dependencies"]["security"]
+    for tool in ("bandit", "pip-audit", "zizmor"):
+        pinned = [requirement for requirement in extras if requirement.startswith(f"{tool}==")]
+        assert len(pinned) == 1, f"pyproject must pin exactly one {tool} version"
+        assert pinned[0] in security, f"security workflow scanner must match pyproject: {pinned[0]}"
     assert "--no-ignores" in security
     assert "--no-config" in security
     assert "bandit\n          --recursive src" in security
