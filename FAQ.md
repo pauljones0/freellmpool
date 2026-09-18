@@ -126,6 +126,16 @@ posture is to use your own keys, avoid confidential data unless the selected
 provider's policy allows it, keep request volume reasonable, and remove any
 provider that tells you to stop.
 
+## What happens on first run?
+
+Route-needing commands (`ask`, `battle`, `tokenmax`, `proxy`, `mcp`,
+`jobs run`, `recipe run`) refresh the model catalog once when local
+discovery state is missing — the same refresh as `freellmpool update`.
+Later runs reuse the catalog until it expires. Set
+`FREELLMPOOL_NO_AUTO_DISCOVERY=1` to disable the bootstrap (hermetic
+environments, tests). If no free routes are found, the CLI says so and
+points at `freellmpool update` instead of failing silently.
+
 ## Sources
 
 Code behavior:

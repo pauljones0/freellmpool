@@ -3010,6 +3010,52 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+_BOOTSTRAP_COMMANDS = frozenset({"ask", "battle", "tokenmax", "proxy", "mcp"})
+_BOOTSTRAP_SUBCOMMANDS = frozenset({("jobs", "jobs_command", "run"), ("recipe", "recipe_command", "run")})
+
+
+def _needs_bootstrap(args: argparse.Namespace) -> bool:
+    """Route-needing commands refresh missing discovery state on first run."""
+    command = getattr(args, "command", None)
+    if command in _BOOTSTRAP_COMMANDS:
+        return True
+    return any(
+        command == top and getattr(args, nested, None) == leaf for top, nested, leaf in _BOOTSTRAP_SUBCOMMANDS
+    )
+
+
+def _ensure_first_run_discovery() -> bool:
+    """Refresh the model catalog once when local discovery state is missing.
+
+    Returns True when a refresh was attempted. Any failure degrades to
+    today's behavior (the handler reports its own error). Set
+    FREELLMPOOL_NO_AUTO_DISCOVERY=1 to disable (the test suite does).
+    """
+    if os.environ.get("FREELLMPOOL_NO_AUTO_DISCOVERY") == "1":
+        return False
+    from .discovery import default_discovery_path, refresh_catalog
+
+    env = effective_env()
+    if default_discovery_path(env).exists():
+        return False
+    print("freellmpool: first run - discovering free routes (one-time)...", file=sys.stderr)
+    try:
+        refresh_catalog(env)
+    except Exception:  # offline first run keeps today's handler error below
+        pass
+    return True
+
+
+def _snapshot_has_chat_routes() -> bool:
+    from .managed import ManagedPool
+
+    try:
+        snapshot = ManagedPool.from_default_config().snapshot()
+    except Exception:
+        return True
+    return any(route.modality == "chat" and route.automatic for route in snapshot.routes)
+
+
 def main(argv: list[str] | None = None) -> int:
     from .observe import configure_logging_from_env
 
@@ -3017,6 +3063,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     handler: Callable[[argparse.Namespace], int] = args.func
+    bootstrapped = _needs_bootstrap(args) and _ensure_first_run_discovery()
+    if bootstrapped and not _snapshot_has_chat_routes():
+        print(
+            "freellmpool: no free routes found - check connectivity, then run "
+            "`freellmpool update` to refresh the model catalog.",
+            file=sys.stderr,
+        )
     try:
         return handler(args)
     except (EOFError, KeyboardInterrupt):

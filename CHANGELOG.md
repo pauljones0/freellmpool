@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+- One-command install: run the fork with `uvx --from <repo-tarball-URL>`
+  (no checkout, no PyPI claim); route-needing CLI commands refresh missing
+  discovery state once on first run (`FREELLMPOOL_NO_AUTO_DISCOVERY=1`
+  disables the bootstrap).
 - September 18 maintenance review (policy revision 6): content-verify every
   renewed evidence source, move ModelScope evidence to its canonical /posts/
   URL with the identical article hash, renew OpenRouter/Zhipu/OpenCode hashes

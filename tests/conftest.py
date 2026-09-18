@@ -46,6 +46,8 @@ def isolate_operator_state(tmp_path, monkeypatch):
     # Let reports follow DATA_DIR so a test's explicit data-root override wins.
     monkeypatch.delenv("FREELLMPOOL_REPORT_DIR", raising=False)
     monkeypatch.delenv("FREELLMPOOL_REPORTS_DIR", raising=False)
+    # First-run discovery bootstrap stays off: the suite must never touch the network.
+    monkeypatch.setenv("FREELLMPOOL_NO_AUTO_DISCOVERY", "1")
     monkeypatch.setenv("FREELLMPOOL_DATA_DIR", str(state))
     for name, relative in paths.items():
         monkeypatch.setenv(name, str(state / relative))

@@ -8,7 +8,19 @@ Free allowances are finite. Account eligibility, prices, model discovery and pro
 
 ## Install and set up
 
-Requires Python 3.11+ and Git. Install this fork from source:
+Fastest path — one command with [uv](https://docs.astral.sh/uv/) installed, no checkout:
+
+```sh
+uvx --from https://github.com/pauljones0/freellmpool/archive/refs/heads/main.tar.gz freellmpool ask --max-tokens 32 "Reply with one short sentence: freellmpool is ready."
+```
+
+The first run discovers free routes automatically (one-time, no signup when a
+keyless provider is up); later runs reuse the local catalog. The tarball
+tracks `main` (audited 2026-09-18); substitute a commit SHA for the branch
+name to pin a reproducible install. This fork publishes no PyPI, npm, MCP
+Registry, or container releases; the PyPI name belongs to upstream.
+
+Or install from source (contributors). Requires Python 3.11+ and Git:
 
 ```sh
 git clone https://github.com/pauljones0/freellmpool.git
