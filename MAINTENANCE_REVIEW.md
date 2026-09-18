@@ -37,6 +37,20 @@ Policy revision 6 changes the ModelScope evidence URL identity, so retained publ
 
 Post-review renewal (revision 7): the reset run re-fired vercel catalog (#31) because Vercel added paid-only zai/glm-5.3-flashx ($0.37/$1.25 per M) between the review snapshot and the runner fetch. The addition is excluded from the zero-price grant automatically; the catalog hash is renewed with no claim or grant change and #31 resolves on the next run.
 
+## Design note: catalog-hash redundancy kept (reviewed, no change)
+
+A proposal to replace the whole-body vercel/catalog evidence hash with a digest
+over the parsed eligibility projection (or drop the row) was reviewed and
+rejected on completeness grounds. Only vercel/catalog hashes a live data API;
+the cohere/cloudflare catalog rows hash documentation pages. Deltas compare
+live-vs-last-run and are blind without baseline history (exactly when revision 7
+fired solo), while the hash compares live-vs-review; they cover different
+windows. Deltas also track pricing only, while the hash covers modalities and
+other row fields admission consumes live. Scoping the digest would silence
+byte-only churn that rarely occurs while losing both properties, and dropping
+the row is an incompatible evidence-identity removal. Duplicate issues on
+model/price events are accepted as cheap defense-in-depth.
+
 # GitHub maintenance review — September 8, 2026
 
 Reviewed open issues #3–14 and #16–20, and dependency PRs #1, #2 and #15.
