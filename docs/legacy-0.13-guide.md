@@ -1,6 +1,6 @@
 # Archived 0.13 compatibility guide
 
-This is the former README, retained for historical API/plugin instructions and dated comparisons. Its fixed catalog counts, keyless quickstart timing, paid/trial eligibility, advisory quotas, and release assertions do not describe the maintained gateway rewrite. The maintained registry currently admits chat only; historical embedding/transcription examples do not establish supported free routes. Start with the [current setup](../README.md).
+This is the former README, retained for historical API/plugin instructions and dated comparisons. Its fixed catalog counts, keyless quickstart timing, paid/trial eligibility, advisory quotas, and release assertions do not describe the maintained gateway rewrite. The maintained registry admits chat plus three reviewed embedding routes (see provider-registry.md); historical transcription examples do not establish supported free routes. Start with the [current setup](../README.md).
 
 # freellmpool
 

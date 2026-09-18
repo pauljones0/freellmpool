@@ -60,4 +60,5 @@ information as paid access.
 Research-only entries in this document do not create active provider records,
 parked models or disabled accounts. The active registry contains only reviewed
 grants with a hard no-charge boundary, and current model/account evidence must
-still support each request. The current maintained catalog admits chat only.
+still support each request. The current maintained catalog admits chat plus
+three reviewed embedding routes (see provider-registry.md).

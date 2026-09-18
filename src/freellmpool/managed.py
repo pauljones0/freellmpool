@@ -433,6 +433,9 @@ class ManagedPool(Pool):
         if "neurons_per_input_token" in costs and "neurons_per_output_token" in costs:
             amounts["neurons"] = math.ceil(Decimal(str(costs["neurons_per_input_token"])) * input_tokens +
                                            Decimal(str(costs["neurons_per_output_token"])) * output)
+        elif "neurons_per_input_token" in costs:
+            # Input-only rates (e.g. embeddings) have no output tokens to price.
+            amounts["neurons"] = math.ceil(Decimal(str(costs["neurons_per_input_token"])) * input_tokens)
         prices = route.metadata.get("pricing", {})
         if "input" in prices and "output" in prices:
             amounts["micro_usd"] = math.ceil((Decimal(str(prices["input"])) * input_tokens +

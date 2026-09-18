@@ -16,6 +16,14 @@ All notable changes to this project are documented here. The format is based on
   to current observed text, and block Groq qwen3.6-27b with its stale
   capacities removed after it left the official free table.
 
+## [0.14.2] — source maintenance
+
+- Review three free embedding routes (keyless OVH `Qwen3-Embedding-8B`,
+  Mistral `mistral-embed`, Cloudflare `@cf/baai/bge-small-en-v1.5`) with
+  embedding grants, `[[embedder]]` catalog rows, and a $0 RAG quickstart.
+- Policy revision 8 requires source client 0.14.2 because new embedding
+  grants were added.
+
 ## [0.14.1] — source maintenance
 
 - Review provider source baselines and current model removals; exclude application-only Spark from the generic gateway and correct the free Ling model ID.

@@ -210,13 +210,41 @@
           "evidence_ids": [
             "terms"
           ]
+        },
+        {
+          "id": "free-embedding",
+          "kind": "recurring_quota",
+          "status": "verified",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "Qwen3-Embedding-8B"
+            ]
+          },
+          "required_account_tier": null,
+          "requires_account_evidence": false,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "embedding"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
         }
       ],
       "limits": [
         {
           "id": "anonymous_rpm",
           "grant_ids": [
-            "free"
+            "free",
+            "free-embedding"
           ],
           "scope": "ip_model",
           "scope_keys": [
@@ -1619,13 +1647,41 @@
           "evidence_ids": [
             "terms"
           ]
+        },
+        {
+          "id": "free-embedding",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "@cf/baai/bge-small-en-v1.5"
+            ]
+          },
+          "required_account_tier": "workers_free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "embedding"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
         }
       ],
       "limits": [
         {
           "id": "neurons_daily",
           "grant_ids": [
-            "free"
+            "free",
+            "free-embedding"
           ],
           "scope": "account",
           "scope_keys": [
@@ -1644,7 +1700,8 @@
         {
           "id": "text_rpm",
           "grant_ids": [
-            "free"
+            "free",
+            "free-embedding"
           ],
           "scope": "account",
           "scope_keys": [
@@ -2095,13 +2152,41 @@
           "evidence_ids": [
             "terms"
           ]
+        },
+        {
+          "id": "free-embedding",
+          "kind": "recurring_quota",
+          "status": "conditional",
+          "model_selector": {
+            "kind": "allowlist",
+            "models": [
+              "mistral-embed"
+            ]
+          },
+          "required_account_tier": "free",
+          "requires_account_evidence": true,
+          "paid_overage_possible": false,
+          "hard_free_boundary": true,
+          "allowed_modalities": [
+            "embedding"
+          ],
+          "prohibited_addons": [
+            "web_search",
+            "paid_tools",
+            "paid_fallback",
+            "byok_fallback"
+          ],
+          "evidence_ids": [
+            "terms"
+          ]
         }
       ],
       "limits": [
         {
           "id": "rps",
           "grant_ids": [
-            "free"
+            "free",
+            "free-embedding"
           ],
           "scope": "account",
           "scope_keys": [
@@ -2120,7 +2205,8 @@
         {
           "id": "tpm",
           "grant_ids": [
-            "free"
+            "free",
+            "free-embedding"
           ],
           "scope": "model",
           "scope_keys": [
@@ -2140,7 +2226,8 @@
         {
           "id": "monthly_tokens",
           "grant_ids": [
-            "free"
+            "free",
+            "free-embedding"
           ],
           "scope": "model",
           "scope_keys": [

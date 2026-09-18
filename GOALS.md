@@ -293,7 +293,7 @@ G3_ELAPSED_SECONDS=146
 
 Effort: S. Fit: high — this is the vision in document form.
 
-## G4 — Easy free embeddings (Status: pending)
+## G4 — Easy free embeddings (Status: complete)
 
 Pain: RAG pays an embedding-API tax on every document and query (cost +
 rate limits); builders are moving embeddings to CPU to escape it. Our
@@ -308,10 +308,56 @@ Execute:
 3. Write a minimal RAG quickstart (embed → retrieve → generate, $0).
 
 Done when:
-- [ ] Embedding requests succeed against reviewed free routes (keyless
+- [x] Embedding requests succeed against reviewed free routes (keyless
       where available), verified live.
-- [ ] The RAG quickstart runs end to end at $0 (transcript pasted).
-- [ ] Full suite, coverage, and policy gates pass.
+- [x] The RAG quickstart runs end to end at $0 (transcript pasted).
+- [x] Full suite, coverage, and policy gates pass.
+
+Reviewed routes (normal evidence process, live-probed 2026-09-18):
+- `ovh/Qwen3-Embedding-8B` — keyless, 4096d. Verified recurring_quota
+  grant (mirrors chat grant; anonymous allowance per reviewed OVH terms).
+- `mistral/mistral-embed` — 1024d. Conditional recurring_quota grant,
+  tier `free` (mirrors chat grant: API free mode with included monthly
+  usage per reviewed usage-limits doc; live 200 on a tier=free account;
+  no exclusion for embeddings found in pricing/limits docs).
+- `cloudflare/@cf/baai/bge-small-en-v1.5` — 384d via OpenAI-compat
+  `/ai/v1/embeddings`. Conditional recurring_quota grant, tier
+  `workers_free`; neuron rate (0.001841/input token) already reviewed in
+  `model_costs`. Fixed managed accounting to price input-only neuron
+  rates (embeddings have no output tokens) + regression test.
+
+Implementation: separate `free-embedding` grants (allowlist selectors,
+`hard_free_boundary`, never widened chat grants); `[[embedder]]` rows in
+`providers.toml`; limits `grant_ids` extended; admission tests incl.
+registry-backed allow/deny matrix; policy revision 8 + client 0.14.2 per
+the policy-channel contract. No client shape changes (all three routes
+speak OpenAI `/embeddings`).
+
+Live verification: `Pool.embed` + managed `Pool.embed` + proxy
+`/v1/embeddings` all returned vectors on all three routes (OVH keyless;
+keyed via host keys, redacted). Note: managed-path runs used
+`FREELLMPOOL_POLICY_UPDATES=0` because the host's cached rev-7 bundle
+fail-closed against the new packaged grants — expected until the rev-8
+bundle publishes from main; host healed post-push via refresh.
+
+RAG quickstart: `docs/RAG_QUICKSTART.md` (embed → cosine retrieve →
+generate, stdlib only). Transcript (proxy on :18933; :8080 was occupied
+on the test machine — only the BASE port differs from the doc):
+
+```
+embedded 3 docs + query, dim=4096
+score=0.8604 doc1: Cuttlefish change color in milliseconds using pigment sacs c...
+score=0.3169 doc0: The freellmpool gateway pools free-tier LLM routes behind on...
+score=0.1571 doc2: The Treaty of Tordesillas divided the New World between Spai...
+answer: Cuttlefish change color in milliseconds using pigment sacs called chromatophores.
+served_by: kilo/kilo-auto/free | usage: {'prompt_tokens': 58, 'completion_tokens': 40, 'total_tokens': 98}
+```
+
+Gates: full suite green; coverage 87.96%/78.39% (≥80/70); `ruff check`
+clean; `mypy --strict` on touched modules clean; `check_docs.py`,
+`check-counts` (3 HTML cells bumped), `validate_catalog.py`,
+`check_release_ready.py`, `vet_catalog.py`, and `check_policy_channel.py
+--base HEAD` (rev 8) all pass.
 
 Effort: S–M. Fit: high — embeddings are tokens too.
 

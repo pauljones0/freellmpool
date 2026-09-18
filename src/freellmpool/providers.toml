@@ -278,3 +278,34 @@ models = [
     { name = "nemotron-3-nano:30b", rpd = 0 },
     { name = "gpt-oss:20b", rpd = 0 },
 ]
+
+[[embedder]]
+id = "ovh"
+label = "OVHcloud AI Endpoints (keyless)"
+adapter = "openai"
+base_url = "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"
+auth = "none"
+models = [
+    { name = "Qwen3-Embedding-8B", rpd = 0 },
+]
+
+[[embedder]]
+id = "mistral"
+label = "Mistral"
+adapter = "openai"
+base_url = "https://api.mistral.ai/v1"
+key_env = "MISTRAL_API_KEY"
+models = [
+    { name = "mistral-embed", rpd = 0 },
+]
+
+[[embedder]]
+id = "cloudflare"
+label = "Cloudflare Workers AI"
+adapter = "cloudflare"
+base_url = "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1"
+key_env = "CLOUDFLARE_API_TOKEN"
+extra_env = ["CLOUDFLARE_ACCOUNT_ID"]
+models = [
+    { name = "@cf/baai/bge-small-en-v1.5", rpd = 0 },
+]
