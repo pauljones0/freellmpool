@@ -416,7 +416,17 @@ Done when:
 
 Effort: M–L. Fit: high — meets users where they already are.
 
-## G6 — Trust page + relaunch (Status: pending)
+## G6 — Trust page + relaunch (Status: complete 2026-09-18)
+
+- Trust page: `docs/TRUST.md` (full) — pins, Bandit/pip-audit/zizmor/
+  CodeQL gates, evidence process, ToS posture; every claim links to
+  proof; SBOM/container/PyPI honestly listed as non-promises
+  (upstream-gated pipelines).
+- Launch copy: `docs/promotion/relaunch.md` + refreshed pack facts.
+- Published: <https://github.com/pauljones0/freellmpool/discussions/122>
+  (Announcements; Discussions enabled for this venue, single post,
+  affiliation disclosed; external channels stay human-gated).
+- Docs checks pass; no code changed.
 
 Pain: LiteLLM's CVE/KEV fallout has teams reevaluating gateways, but
 nobody knows the auditable-minimal alternative exists. Must run last:
@@ -433,9 +443,9 @@ Execute:
 3. Publish/post per the repo's outreach ground rules.
 
 Done when:
-- [ ] Every claim on the trust page links to live verification.
-- [ ] Launch post published (link recorded here).
-- [ ] No new code; docs checks pass.
+- [x] Every claim on the trust page links to live verification.
+- [x] Launch post published (link recorded here).
+- [x] No new code; docs checks pass.
 
 Effort: S. Fit: medium — distribution of proof, not product.
 

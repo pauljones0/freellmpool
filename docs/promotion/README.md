@@ -5,7 +5,12 @@ registry polish. Use this pack when posting externally.
 
 ## Current launch facts
 
-These facts describe the 0.13.0 GitHub and PyPI release.
+These facts describe the 0.13.0 GitHub and PyPI release. The fork
+relaunch (`relaunch.md`, goals G1–G5: one-command install, MCP context
+diet, $0 setup guide, free embeddings/RAG, Claude Code compat, trust
+page) supersedes them where they differ — same catalog (15 providers,
+139 enabled chat routes, 139 cataloged chat models), install from
+source (no PyPI/container on this fork).
 
 - Repository: <https://github.com/0xzr/freellmpool>
 - Docs: <https://0xzr.github.io/freellmpool/>
