@@ -122,6 +122,42 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0 if any(all(value["status"] == "pass" for value in row["features"].values()) for row in rows) else 3
 
 
+def cmd_drift(args: argparse.Namespace) -> int:
+    from . import __version__
+    from . import drift as drift_mod
+
+    if getattr(args, "probe", False):
+        probe_args = argparse.Namespace(provider=getattr(args, "provider", None),
+                                        limit=getattr(args, "limit", 8),
+                                        features=getattr(args, "features", "chat,tools,streaming"),
+                                        timeout=getattr(args, "timeout", 30), json=False)
+        rc = cmd_verify(probe_args)
+        if rc not in (0, 3):
+            return rc
+    pool = ManagedPool.from_default_config()
+    conformance = cast(ConformanceStore, pool.conformance)
+    snapshot = drift_mod.take_snapshot(conformance.snapshot(), freellmpool_version=__version__)
+    drift_dir = drift_mod.default_drift_dir()
+    _prev_path, previous = drift_mod.load_latest(drift_dir)
+    saved = drift_mod.save_run(snapshot, drift_dir)
+    emit = getattr(args, "emit", None)
+    if emit:
+        drift_mod.write_snapshot(snapshot, emit)
+    if previous is None:
+        targets = len(snapshot["targets"])
+        print(f"Drift baseline recorded ({targets} target(s)) -> {saved}")
+        return 0
+    changes = drift_mod.classify_changes(previous, snapshot)
+    old_at = previous.get("generated_at")
+    new_at = snapshot.get("generated_at")
+    if getattr(args, "json", False):
+        print(json.dumps({"old": old_at, "new": new_at, "changes": changes}, indent=2))
+    else:
+        print(drift_mod.render_report(changes, old_at=old_at, new_at=new_at))
+        print(f"snapshot: {saved}")
+    return 0
+
+
 def install_maintenance(unit_dir: Path | None = None) -> list[str]:
     from .client_setup import atomic_write
     unit_dir = unit_dir or Path.home() / ".config/systemd/user"
@@ -220,3 +256,13 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     clients = sub.add_parser("setup-clients", help="install free client profiles and local maintenance")
     clients.add_argument("--no-start", action="store_true")
     clients.set_defaults(func=cmd_setup_clients)
+    drift = sub.add_parser("drift", help="diff verify evidence vs previous snapshot")
+    drift.add_argument("--probe", action="store_true",
+                       help="run bounded verify probes before diffing")
+    drift.add_argument("--provider", action="append")
+    drift.add_argument("--limit", type=int, choices=range(1, 33), default=8)
+    drift.add_argument("--features", type=_verification_features, default="chat,tools,streaming")
+    drift.add_argument("--timeout", type=_verification_timeout, default=30)
+    drift.add_argument("--json", action="store_true")
+    drift.add_argument("--emit", help="also write the machine-readable snapshot here")
+    drift.set_defaults(func=cmd_drift)

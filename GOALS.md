@@ -620,7 +620,7 @@ Done when:
 
 Effort: M. Fit: high — removes the biggest "silently wrong" behavior.
 
-## G10 — Free-tier drift radar (Status: pending)
+## G10 — Free-tier drift radar (Status: complete, 2026-09-19)
 
 Pain: every free-tier list on the internet rots within weeks — limits
 change, models sunset, ToS shifts (e.g. Gemini's Mar-2026 EEA/UK
@@ -638,11 +638,20 @@ Execute:
    docs-check the snapshot schema doc.
 
 Done when:
-- [ ] `drift` correctly reports a real, live-observed change (paste
+- [x] `drift` correctly reports a real, live-observed change (paste
       the report showing a genuine delta).
-- [ ] Snapshot schema documented + validated by a checker script.
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G11 goal created in the same turn.
+- [x] Snapshot schema documented + validated by a checker script.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G11 goal created in the same turn.
+
+Evidence (2026-09-19, 210-target baseline → 8-target live verify):
+`Drift: 1 change(s) since 2026-09-19T02:09:34Z (as of 2026-09-19T02:10:31Z):`
+`[changed] cloudflare/@cf/zai-org/glm-4.7-flash streaming: pass -> unavailable`
+Snapshot: `freellmpool drift --emit` (484 statuses) validated clean by
+`scripts/check_drift_snapshot.py`; schema in `docs/DRIFT_SNAPSHOT.md`
+with its normative example machine-checked by `test_schema_doc_example_validates`.
+Gates: full suite green, coverage 87.91/78.21, `ruff check .` clean,
+strict mypy on 23 modules, check_docs + check-counts pass.
 
 Effort: M. Fit: medium-high — turns the evidence engine into
 distribution.
