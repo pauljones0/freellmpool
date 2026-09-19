@@ -129,7 +129,8 @@ def test_launch_opencode_writes_config_and_execs(monkeypatch, tmp_path):
     launcher.launch("opencode", ["run", "hi"], port=18091, model="agent")
     assert execed["prog"] == "opencode"
     cfg_path = execed["env"]["OPENCODE_CONFIG"]
-    assert json.loads(open(cfg_path).read())["model"] == "freellmpool/agent"
+    with open(cfg_path, encoding="utf-8") as fh:
+        assert json.load(fh)["model"] == "freellmpool/agent"
 
 
 def test_cli_passes_harness_and_agent_args(monkeypatch):

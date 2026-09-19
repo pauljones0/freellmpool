@@ -12,6 +12,7 @@ import math
 import os
 import sqlite3
 import struct
+from contextlib import closing, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -87,8 +88,13 @@ class RagStore:
                        "(chunk_id INTEGER PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL, vec BLOB NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
 
-    def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self.path)
+    @contextmanager
+    def _connect(self):
+        # `with sqlite3.connect()` commits but does NOT close; pair it with
+        # closing (same idiom as cache.py) so every connection is committed
+        # AND closed deterministically (CI runs with -W error::ResourceWarning).
+        with closing(sqlite3.connect(self.path)) as db, db:
+            yield db
 
     def __len__(self) -> int:
         with self._connect() as db:

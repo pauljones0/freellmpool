@@ -123,14 +123,16 @@ def fan_out(
     timeout: float = 90.0,
     progress: Callable[[int, int, str], None] | None = None,
     checkpoint=None,
-) -> tuple[list[tuple[str, str | None]], list[str]]:
+) -> tuple[list[tuple[str, str]], list[str]]:
     """Blast ``messages`` to every target in ``picks`` concurrently.
 
     Calls ``progress(done, total, label)`` after each model returns (thread-safe).
     Returns ``(answered, failed)`` where ``answered`` is ``[(label, text)]`` and
-    ``failed`` is ``[label]``. When ``checkpoint`` (a RunCheckpoint) is given,
-    every outcome is persisted incrementally so a later resume only runs
-    what is missing.
+    ``failed`` is ``[label]``. Answered texts are always ``str``: a success
+    with no text (e.g. a tool-call-only reply) normalizes to ``""`` so the
+    checkpoint merge and display paths never see ``None``. When ``checkpoint``
+    (a RunCheckpoint) is given, every outcome is persisted incrementally so a
+    later resume only runs what is missing.
     """
     total = len(picks)
     counter = itertools.count(1)
@@ -160,6 +162,6 @@ def fan_out(
         return [], []
     with _cf.ThreadPoolExecutor(max_workers=min(WORKERS, total)) as ex:
         results = list(ex.map(ask_one, picks))
-    answered = [(lbl, txt) for lbl, txt, err in results if not err]
+    answered = [(lbl, txt if txt is not None else "") for lbl, txt, err in results if not err]
     failed = [lbl for lbl, _txt, err in results if err]
     return answered, failed

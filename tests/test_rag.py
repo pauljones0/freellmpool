@@ -129,10 +129,51 @@ def test_rag_imports_stdlib_only():
 
     tree = ast.parse(Path(module.__file__).read_text())
     allowed = {"__future__", "freellmpool", "freellmpool.errors"}
-    stdlib = {"argparse", "json", "math", "os", "pathlib", "sqlite3", "struct", "sys", "typing"}
+    stdlib = {"argparse", "contextlib", "json", "math", "os", "pathlib", "sqlite3", "struct", "sys", "typing"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 assert alias.name.split(".")[0] in stdlib | {"freellmpool"}, alias.name
         elif isinstance(node, ast.ImportFrom):
             assert (node.module or "") in allowed | stdlib, node.module
+
+
+def test_store_closes_every_connection(tmp_path, monkeypatch):
+    """CI runs with -W error::ResourceWarning: every sqlite connection the
+    store opens must be closed, not left for GC finalization."""
+    import sqlite3 as _sqlite3
+
+    opened = []
+    real_connect = _sqlite3.connect
+
+    class _Tracked:
+        def __init__(self, con):
+            self._con = con
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+            return self._con.close()
+
+        def __enter__(self):
+            self._con.__enter__()
+            return self
+
+        def __exit__(self, *exc):
+            return self._con.__exit__(*exc)
+
+        def __getattr__(self, name):
+            return getattr(self._con, name)
+
+    def _tracking_connect(*args, **kwargs):
+        proxy = _Tracked(real_connect(*args, **kwargs))
+        opened.append(proxy)
+        return proxy
+
+    monkeypatch.setattr(_sqlite3, "connect", _tracking_connect)
+    store = rag.RagStore(tmp_path / "v.sqlite3")
+    store.index([("a.md", 0, "hello world")], [_vec(1)], model="m")
+    assert len(store) == 1
+    assert store.search(_vec(1), k=1)[0]["path"] == "a.md"
+    assert opened, "expected connections to be tracked"
+    assert all(p.closed for p in opened), "leaked sqlite connection"

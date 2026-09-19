@@ -81,10 +81,16 @@ def _run_proxy_session(script: list[dict]) -> list[dict]:
         assert proc.stdin is not None
         proc.stdin.close()
         try:
-            proc.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            raise
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                raise
+        finally:
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
     return replies
 
 

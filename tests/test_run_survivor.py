@@ -143,3 +143,15 @@ def test_new_run_id_is_filesafe_and_unique() -> None:
     ids = {rc.new_run_id() for _ in range(50)}
     assert len(ids) == 50
     assert all(set(i) <= set("0123456789TZ-abcdef") for i in ids)
+
+
+def test_fan_out_normalizes_missing_text_for_merge() -> None:
+    """CI strict-mypy contract: answered texts are str (never None) so the
+    checkpoint merge path type-checks; a textless success normalizes to ''."""
+    picks = [_target("a", "m")]
+    pool = _pool({"a/m": None}, {})
+    answered, failed = fan_out(pool, [], picks, max_tokens=64)
+    assert failed == []
+    assert answered == [("a/m", "")]
+    merged = rc.merge_answers([], answered)
+    assert merged == [("a/m", "", True)]
