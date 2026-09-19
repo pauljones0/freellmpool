@@ -1,11 +1,54 @@
-# $0 RAG quickstart: embed → retrieve → generate
+# $0 RAG in a box: `rag index` + `rag ask`
 
-Three free embedding routes are reviewed into the catalog: keyless
-`ovh/Qwen3-Embedding-8B`, plus `mistral/mistral-embed` and Cloudflare
-`@cf/baai/bge-small-en-v1.5` on free-tier keys. This page runs retrieval plus
-generation for $0 through the local proxy. Stdlib Python only.
+Two commands index a folder and answer questions over it, entirely on
+free routes with an embedded SQLite vector store. No backend, no vector
+DB, no bill — and no new dependencies (stdlib `sqlite3` only).
 
-Terminal 1 — start the proxy (loopback only):
+```sh
+# one-time keyless discovery (no API keys needed)
+freellmpool update --provider ovh --provider opencode --provider llm7
+
+# index a folder of .md/.txt/.rst files
+freellmpool rag index ./docs
+
+# ask — answer cites its sources
+freellmpool rag ask "How do cuttlefish change color?"
+```
+
+Expected output:
+
+```
+Cuttlefish change color in milliseconds using pigment sacs called chromatophores [1].
+
+Sources (llm7/codestral-latest):
+  [1] fish.txt (chunk 0, score 0.86)
+  ...
+```
+
+Options: `--store PATH` (default `~/.config/freellmpool/rag.sqlite3`,
+override with `FREELLMPOOL_RAG_FILE`), `--embed-model` for index,
+`--k`, `--model`, `--provider` for ask. Answers are grounded: the
+gateway instructs the model to cite every claim as `[1]`, and prints
+the retrieved sources with cosine scores regardless.
+
+Honest failure modes: an empty store tells you to index first; a thin
+embedding or chat bench surfaces the normal exhaustion error naming
+the gap (`freellmpool status` / `verify` to investigate).
+
+Prefer a keyed route? `rag index --embed-model mistral/mistral-embed`
+(`MISTRAL_API_KEY`) or
+`--embed-model cloudflare/@cf/baai/bge-small-en-v1.5`
+(`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
+
+## Clean-container proof
+
+`scripts/rag_container_test.sh` builds the stock image, runs discovery
+→ index → ask with no keys and no state, and asserts a correct cited
+answer. Verified 2026-09-19: PASS in 11s.
+
+## Manual recipe (appendix)
+
+The same flow through the local proxy, stdlib Python only. Terminal 1:
 
 ```sh
 freellmpool proxy --port 8080
@@ -90,7 +133,3 @@ python3 rag_quickstart.py
 Expected: the cuttlefish doc ranks first by a wide margin and the answer
 repeats its sentence. Batch texts into as few `/embeddings` calls as you
 can — keyless routes pace anonymous callers (hence the one polite retry).
-
-Prefer a keyed route? Point `EMBED_MODEL` at `mistral/mistral-embed`
-(`MISTRAL_API_KEY`) or `cloudflare/@cf/baai/bge-small-en-v1.5`
-(`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).

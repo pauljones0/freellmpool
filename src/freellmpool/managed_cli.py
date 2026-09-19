@@ -158,6 +158,38 @@ def cmd_drift(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rag_index(args: argparse.Namespace) -> int:
+    from . import rag as rag_mod
+
+    pool = ManagedPool.from_default_config()
+    try:
+        stats = rag_mod.index_folder(pool, args.store or rag_mod.default_rag_path(), args.path,
+                                     embed_model=args.embed_model)
+    except (ValueError, OSError) as exc:
+        print(f"freellmpool rag index: {exc}", file=sys.stderr)
+        return 2
+    print(f"Indexed {stats['chunks']} chunks from {stats['files']} file(s) "
+          f"(embeddings: {stats['model']})")
+    return 0
+
+
+def cmd_rag_ask(args: argparse.Namespace) -> int:
+    from . import rag as rag_mod
+
+    pool = ManagedPool.from_default_config()
+    try:
+        result = rag_mod.ask_question(pool, args.store or rag_mod.default_rag_path(), args.question,
+                                      k=args.k, model=args.model, providers=args.provider)
+    except ValueError as exc:
+        print(f"freellmpool rag ask: {exc}", file=sys.stderr)
+        return 2
+    print(result["answer"])
+    print(f"\nSources ({result['provider']}/{result['model']}):")
+    for i, cite in enumerate(result["citations"], 1):
+        print(f"  [{i}] {cite['path']} (chunk {cite['chunk']}, score {cite['score']})")
+    return 0
+
+
 def install_maintenance(unit_dir: Path | None = None) -> list[str]:
     from .client_setup import atomic_write
     unit_dir = unit_dir or Path.home() / ".config/systemd/user"
@@ -266,3 +298,17 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     drift.add_argument("--json", action="store_true")
     drift.add_argument("--emit", help="also write the machine-readable snapshot here")
     drift.set_defaults(func=cmd_drift)
+    rag = sub.add_parser("rag", help="index a folder and ask questions over it ($0)")
+    rag_sub = rag.add_subparsers(dest="rag_command", required=True)
+    rag_index = rag_sub.add_parser("index", help="embed a folder into the local vector store")
+    rag_index.add_argument("path", help="folder of text/markdown files to index")
+    rag_index.add_argument("--store", help="vector store file (default: ~/.config/freellmpool/rag.sqlite3)")
+    rag_index.add_argument("--embed-model", help="embedding model (default: automatic free route)")
+    rag_index.set_defaults(func=cmd_rag_index)
+    rag_ask = rag_sub.add_parser("ask", help="answer a question from the local vector store")
+    rag_ask.add_argument("question", help="question to answer from indexed sources")
+    rag_ask.add_argument("--store", help="vector store file (default: ~/.config/freellmpool/rag.sqlite3)")
+    rag_ask.add_argument("--k", type=int, default=4, help="sources to retrieve (default: 4)")
+    rag_ask.add_argument("--model", help="chat model (default: automatic free route)")
+    rag_ask.add_argument("--provider", action="append", help="limit chat to provider(s)")
+    rag_ask.set_defaults(func=cmd_rag_ask)

@@ -694,7 +694,7 @@ strict mypy on 25 modules, check_docs + check-counts pass.
 
 Effort: M. Fit: high — unlocks agent/tool workloads on weak models.
 
-## G12 — RAG-in-a-box CLI for students (Status: pending)
+## G12 — RAG-in-a-box CLI for students (Status: complete, 2026-09-19)
 
 Pain: G4 proved $0 RAG is possible, but it is still a quickstart, not
 a tool. Classrooms and solo builders want RAG without a backend, a
@@ -711,12 +711,24 @@ Execute:
    cited answer); quickstart doc updated to the CLI.
 
 Done when:
-- [ ] Clean-container run indexes a sample folder and returns a
+- [x] Clean-container run indexes a sample folder and returns a
       correct, cited answer at $0 (transcript pasted, timed).
-- [ ] Store + deps add no services and no paid path (review the dep
+- [x] Store + deps add no services and no paid path (review the dep
       diff explicitly).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G13 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G13 goal created in the same turn.
+
+Evidence (`scripts/rag_container_test.sh`, 2026-09-19, 11s elapsed,
+no keys, no state mounts):
+`Indexed 3 chunks from 3 file(s) (embeddings: Qwen3-Embedding-8B)`
+`Cuttlefish change color in milliseconds using pigment sacs called chromatophores [1].`
+`Sources (llm7/codestral-latest): [1] fish.txt (chunk 0, score 0.86) ...`
+`RAG E2E PASS`
+Dep review: store is stdlib `sqlite3` + brute-force cosine — `git diff`
+on `pyproject.toml`/`Dockerfile`/requirements is EMPTY, and
+`test_rag_imports_stdlib_only` forbids non-stdlib imports in `rag.py`.
+Gates: 2497 passed, coverage 87.91/78.18, `ruff check .` clean,
+strict mypy on 26 modules, check_docs + check-counts pass.
 
 Effort: M–L. Fit: medium — owns the student segment G3 opened.
 
