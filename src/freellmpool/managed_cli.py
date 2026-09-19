@@ -173,6 +173,17 @@ def cmd_rag_index(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rag_leaderboard(args: argparse.Namespace) -> int:
+    from . import embed_leaderboard as board_mod
+    from .managed import ManagedPool
+
+    pool = ManagedPool.from_default_config()
+    providers = args.providers.split(",") if args.providers else None
+    scores = board_mod.run_leaderboard(pool, providers=providers, k=args.k)
+    print(board_mod.render_table(scores, args.k))
+    return 0
+
+
 def cmd_rag_ask(args: argparse.Namespace) -> int:
     from . import rag as rag_mod
 
@@ -326,8 +337,12 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     rag_index = rag_sub.add_parser("index", help="embed a folder into the local vector store")
     rag_index.add_argument("path", help="folder of text/markdown files to index")
     rag_index.add_argument("--store", help="vector store file (default: ~/.config/freellmpool/rag.sqlite3)")
-    rag_index.add_argument("--embed-model", help="embedding model (default: automatic free route)")
+    rag_index.add_argument("--embed-model", help="embedding model (default: leaderboard winner)")
     rag_index.set_defaults(func=cmd_rag_index)
+    rag_board = rag_sub.add_parser("leaderboard", help="rank free embedding routes on a fixed retrieval fixture")
+    rag_board.add_argument("-p", "--providers", help="comma-separated provider ids to rank")
+    rag_board.add_argument("--k", type=int, default=3, help="recall cutoff (default: 3)")
+    rag_board.set_defaults(func=cmd_rag_leaderboard)
     rag_ask = rag_sub.add_parser("ask", help="answer a question from the local vector store")
     rag_ask.add_argument("question", help="question to answer from indexed sources")
     rag_ask.add_argument("--store", help="vector store file (default: ~/.config/freellmpool/rag.sqlite3)")

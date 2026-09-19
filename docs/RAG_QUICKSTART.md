@@ -35,10 +35,12 @@ Honest failure modes: an empty store tells you to index first; a thin
 embedding or chat bench surfaces the normal exhaustion error naming
 the gap (`freellmpool status` / `verify` to investigate).
 
-Prefer a keyed route? `rag index --embed-model mistral/mistral-embed`
-(`MISTRAL_API_KEY`) or
-`--embed-model cloudflare/@cf/baai/bge-small-en-v1.5`
-(`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`).
+`rag index` embeds with the leaderboard winner by default (Cloudflare
+bge-small, measured 2026-09-19 — see
+[free-embedding-leaderboard](https://0xzr.github.io/freellmpool/free-embedding-leaderboard.html),
+re-measure with `freellmpool rag leaderboard`). Prefer another route?
+`rag index --embed-model mistral/mistral-embed` (`MISTRAL_API_KEY`) or
+any other configured embedder.
 
 ## Clean-container proof
 

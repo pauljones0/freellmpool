@@ -1052,7 +1052,7 @@ release-evidence gates extended to this fork (canonical unchanged).
 
 Effort: M. Fit: medium — defensive, trust-building.
 
-## G20 — Free-embedding leaderboard (Status: pending)
+## G20 — Free-embedding leaderboard (Status: complete)
 
 Pain: teams agonize over generation models then ship a
 bottom-quartile embedding endpoint — OpenAI's embeddings rank 13th
@@ -1071,10 +1071,26 @@ Execute:
 3. Regression tests for the harness scoring (fixtures, not live).
 
 Done when:
-- [ ] Published ranking names a measured winner with scores pasted,
+- [x] Published ranking names a measured winner with scores pasted,
       and `rag index` uses it by default (transcript pasted).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G21 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G21 goal created in the same turn.
+
+Evidence (2026-09-19, live): `src/freellmpool/embed_leaderboard.py` +
+fixed `rag_bench_fixture.json` v1 (24 docs incl. keyword traps, 10
+paraphrased queries) + `rag leaderboard` CLI. Measured through the
+gateway: 1. cloudflare/@cf/baai/bge-small-en-v1.5 recall@3 1.000 MRR
+1.000 (384d, 812ms); 2. mistral/mistral-embed 1.000/0.950 (1024d);
+3. ovh/Qwen3-Embedding-8B 1.000/0.950 (4096d, slower; an earlier OVH
+run hit its daily allowance and was re-measured clean). First fixture
+tied 1.0 three ways and was hardened with distractors until it
+discriminated. Ranking published at
+https://pauljones0.github.io/freellmpool/free-embedding-leaderboard.html
+(canonical URL kept for 0xzr sync). `rag index` defaults to the winner
+(transcript: `(embeddings: @cf/baai/bge-small-en-v1.5)` with no flag;
+`--embed-model mistral-embed` overrides). 10 fixture-only regression
+tests. Full suite 2575 passed, coverage gate 87.24%/77.80%, ruff +
+mypy (touched) + check_docs green.
 
 Effort: M. Fit: medium — makes G12's RAG best-in-class free.
 

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Free embedding leaderboard — measured retrieval ranking (2026)</title>
+<meta name="description" content="Measured head-to-head retrieval ranking of free embedding routes: recall@3 and MRR on a fixed 24-document fixture with keyword-trap distractors, scored through the freellmpool gateway.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/free-embedding-leaderboard.html">
+<meta property="og:title" content="Free embedding leaderboard — measured retrieval ranking">
+<meta property="og:description" content="Head-to-head recall@3 and MRR scores for free embedding routes on a fixed fixture, measured through the gateway.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}
+ body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:27px;margin:0 0 6px;line-height:1.25}
+ h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}
+ .tag{color:var(--mut);font-size:14px}
+ a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+ pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}
+ code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}
+ pre code{background:none;padding:0}
+ .lead{font-size:17px}
+ .note{background:var(--card);border:1px solid var(--bd);border-left:3px solid var(--ac);border-radius:6px;padding:10px 14px;font-size:14px;margin:14px 0}
+ table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+ th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd)}
+ th{color:var(--mut);font-weight:600}
+ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}
+</style>
+<meta property="og:url" content="https://0xzr.github.io/freellmpool/free-embedding-leaderboard.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+<meta name="twitter:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+</head>
+<body>
+<div class="wrap">
+
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> &rsaquo; benchmark</p>
+<h1>Free embedding leaderboard</h1>
+
+<p class="lead"><strong>Which free embedding route retrieves best?
+<a href="https://github.com/0xzr/freellmpool">freellmpool</a> measures its own free
+embedders head-to-head on a fixed retrieval fixture — paraphrased queries against
+keyword-trap distractors — scored through the gateway itself.</strong> Winner as of
+2026-09-19: <strong>Cloudflare bge-small</strong>, the only perfect score.</p>
+
+<pre><code>freellmpool rag leaderboard</code></pre>
+
+<h2>Ranking (fixture v1, 2026-09-19)</h2>
+<table>
+<tr><th>#</th><th>Route</th><th>Recall@3</th><th>MRR</th><th>Dims</th><th>Time</th></tr>
+<tr><td class="num">1</td><td>cloudflare / bge-small-en-v1.5</td><td class="num">1.000</td><td class="num">1.000</td><td class="num">384</td><td class="num">812 ms</td></tr>
+<tr><td class="num">2</td><td>mistral / mistral-embed</td><td class="num">1.000</td><td class="num">0.950</td><td class="num">1024</td><td class="num">2,803 ms</td></tr>
+<tr><td class="num">3</td><td>ovh / Qwen3-Embedding-8B</td><td class="num">1.000</td><td class="num">0.950</td><td class="num">4096</td><td class="num">3,443 ms</td></tr>
+</table>
+<div class="note">Ranks by recall@3, then MRR; exact ties break by measured latency.
+Mistral and OVH tied on accuracy (1.000 / 0.950) — Mistral ranks second on speed.
+An earlier OVH run hit its daily allowance cap mid-benchmark and was re-measured
+clean; failed routes score 0 rather than silently dropping out.</div>
+
+<h2>Method</h2>
+<p>24 fixed documents (12 topical passages + 12 keyword-trap distractors sharing
+vocabulary with the wrong topic) and 10 paraphrased queries, each with a known
+relevant document. Every route embeds all documents and queries through the pool;
+documents rank by cosine similarity; recall@3 and MRR average over queries.
+Fixture: <code>src/freellmpool/rag_bench_fixture.json</code> (v1, committed, fixed).</p>
+
+<h2>RAG uses the winner by default</h2>
+<p><code>freellmpool rag index</code> embeds with the leaderboard winner unless
+<code>--embed-model</code> overrides it:</p>
+<pre><code>$ freellmpool rag index ./notes --store /tmp/demo.sqlite3
+Indexed 1 chunks from 1 file(s) (embeddings: @cf/baai/bge-small-en-v1.5)</code></pre>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open
+source). Re-measure anytime with <code>freellmpool rag leaderboard</code>. Updated 2026-09-19.</p>
+
+</div>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "freellmpool", "item": "https://0xzr.github.io/freellmpool/"}, {"@type": "ListItem", "position": 2, "name": "Free embedding leaderboard — measured retrieval ranking (2026)", "item": "https://0xzr.github.io/freellmpool/free-embedding-leaderboard.html"}]}</script>
+</body>
+</html>

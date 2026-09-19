@@ -20,6 +20,10 @@ MAX_FILES = 500
 MAX_FILE_BYTES = 200_000
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
+# G20 measured winner (2026-09-19 leaderboard, fixture v1: recall@3 1.000,
+# MRR 1.000 — the only perfect score). `rag index` uses this unless
+# --embed-model overrides it; re-run `rag leaderboard` to re-measure.
+DEFAULT_EMBED_MODEL = "@cf/baai/bge-small-en-v1.5"
 
 
 def default_rag_path() -> Path:
@@ -140,6 +144,7 @@ def _embed_texts(pool: Any, texts: list[str], model: str | None) -> tuple[list[l
 
 def index_folder(pool: Any, store_path: str | Path, folder: str | Path,
                  *, embed_model: str | None = None) -> dict[str, Any]:
+    embed_model = embed_model or DEFAULT_EMBED_MODEL
     root = Path(folder)
     files = collect_files(root)
     if not files:
