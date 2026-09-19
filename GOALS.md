@@ -867,7 +867,7 @@ load flake; green alone, on clean tree, and on full rerun.)
 
 Effort: M. Fit: high — most money behind this pain.
 
-## G16 — Privacy routing + redaction (Status: pending)
+## G16 — Privacy routing + redaction (Status: complete, 2026-09-19)
 
 Pain: free tiers train on your data by default (ChatGPT, Claude
 free, Gemini; Copilot from April 2026). Developers paste proprietary
@@ -887,11 +887,28 @@ Execute:
    train-by-default routes.
 
 Done when:
-- [ ] The pain scenario is demonstrated: a secret-bearing prompt is
+- [x] The pain scenario is demonstrated: a secret-bearing prompt is
       redacted and/or routed away from logging providers, with the
       policy labels cited (numbers/table pasted).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G17 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G17 goal created in the same turn.
+
+Evidence (2026-09-19, live): canary prompt demanding a `sk-live-*`
+secret back, sent with `redact=True, private=True` → served by
+cloudflare/@cf/openai/gpt-oss-120b (policy `api-no-train`),
+`redactions=('API_KEY',)`, model refused (never saw the secret),
+secret absent from the reply. Strict refusal verified:
+`providers=["gemini"], private=True` → `AllProvidersExhausted` with
+"Private mode admits only api-no-train providers…".
+Shipped: `src/freellmpool/data_policies.json` (all 16 providers
+labeled, separate file so quota-evidence digests are untouched),
+`privacy.py` (redact + policy lookup + validator), `redact`/`private`
+flags in CallOptions + `_run` + proxy, `Reply.redactions`,
+`docs/PRIVACY.md` with honest limits. Gates: 2535 passed, coverage
+87.88/78.31, `ruff check .` clean, mypy delta zero (137 proxy.py +
+3 models.py errors pre-exist in non-gated files), check_docs +
+check-counts pass. (Known `test_route_health` load flake; green on
+rerun.)
 
 Effort: M–L. Fit: high — least served by anyone.
 

@@ -86,6 +86,7 @@ class Reply:
     attempts: int = 1  # how many providers were tried before this one succeeded
     message: dict | None = None  # raw assistant message (carries tool_calls, etc.)
     cached: bool = False  # True if served from the response cache
+    redactions: tuple[str, ...] = ()  # PII/secret kinds scrubbed pre-flight (redact=True)
 
     def __str__(self) -> str:  # pragma: no cover - convenience
         return self.text

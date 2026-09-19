@@ -1260,6 +1260,14 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 )
             )
             try:
+                privacy_flags = {}
+                for flag in ("redact", "private"):
+                    if flag in req:
+                        if not isinstance(req[flag], bool):
+                            self._error(400, f"'{flag}' must be a boolean",
+                                        "invalid_request_error")
+                            return None
+                        privacy_flags[flag] = req[flag]
                 return pool.chat(
                     messages,
                     model=model_filter,
@@ -1273,6 +1281,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                     protocol=protocol,
                     routing=routing_override,
                     task=task,
+                    **privacy_flags,
                 )
             except NoProvidersConfigured as exc:
                 self._error(503, str(exc), "no_providers")

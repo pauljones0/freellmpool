@@ -89,6 +89,8 @@ class CallOptions(TypedDict, total=False):
     routing: str | None
     task: str | None
     language: str | None
+    redact: bool
+    private: bool
 
 
 class AttemptState(TypedDict, total=False):
@@ -403,13 +405,26 @@ class ManagedPool(Pool):
                     providers: Iterable[str] | None, messages: list[JSON] | None = None,
                     tools: list[JSON] | None = None, response_format: JSON | str | None = None,
                     protocol: str | None = None, probe: bool = False, max_tokens: int = 0,
-                    stream: bool = False) -> list[Route]:
+                    stream: bool = False, private: bool = False) -> list[Route]:
+        from . import privacy as privacy_mod
+
         include = set(providers or [])
         if model in {"auto", "free", "free-coding", "free-fast", "free-quality"}:
             model = None
         routes = [r for r in snapshot.routes if r.modality == modality and
                   (not include or r.provider.id in include) and
                   (r.model == model if model else r.automatic)]
+        if private:
+            eligible = [r for r in routes
+                        if privacy_mod.training_policy(r.provider.id) == "api-no-train"]
+            if not eligible and routes:
+                raise AllProvidersExhausted(
+                    [(r.name, f"excluded by private mode ({privacy_mod.training_policy(r.provider.id)})")
+                     for r in routes],
+                    client_status=400,
+                    client_message=("Private mode admits only api-no-train providers; no eligible "
+                                    "route remains. Relax filters or run freellmpool status."))
+            routes = eligible
         features: Iterable[str] = required_features(messages, tools=tools, response_format=response_format)
         if stream:
             features = (*features, "streaming")
@@ -740,11 +755,18 @@ class ManagedPool(Pool):
              timeout: float = 90, tools: list[JSON] | None = None, tool_choice: JSON | str | None = None,
              response_format: JSON | str | None = None, protocol: str | None = None,
              probe: bool = False, stream: bool = False, filename: str | None = None,
-             language: str | None = None, **unused: object) -> Reply | EmbedReply | TranscribeReply | ManagedStream:
+             language: str | None = None, redact: bool = False, private: bool = False,
+             **unused: object) -> Reply | EmbedReply | TranscribeReply | ManagedStream:
+        from . import privacy as privacy_mod
+
+        redactions: list[str] = []
+        if redact and modality == "chat" and not probe:
+            payload, redactions = privacy_mod.redact_messages(cast(list[Any], payload))
         snapshot = self.snapshot()
         candidates = self._candidates(snapshot, modality, model, providers,
                                       cast(list[JSON], payload) if modality == "chat" else None, tools, response_format,
-                                      protocol, probe, max_tokens if modality == "chat" else 0, stream=stream)
+                                      protocol, probe, max_tokens if modality == "chat" else 0, stream=stream,
+                                      private=private)
         attempts: list[tuple[str, str]] = []
         deadlines: list[float] = []
         failures: list[Exception] = []
@@ -805,6 +827,8 @@ class ManagedPool(Pool):
                         self._success(route, reply, started)
                         if hasattr(reply, "attempts"):
                             reply.attempts = len(attempts) + 1
+                        if redactions and hasattr(reply, "redactions"):
+                            reply.redactions = tuple(redactions)
                         return reply
                     except ProviderHTTPError as key_exc:
                         if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
@@ -959,7 +983,8 @@ class ManagedPool(Pool):
                       model: str | None = None, **kwargs: Any) -> list[Target]:
         candidates = self._candidates(self.snapshot(), "chat", model, providers, messages,
                                       tools=kwargs.get("tools"), response_format=kwargs.get("response_format"),
-                                      max_tokens=kwargs.get("max_tokens", 0))
+                                      max_tokens=kwargs.get("max_tokens", 0),
+                                      private=bool(kwargs.get("private")))
         return [Target(r.provider, r.model, 0, r.metadata.get("context")) for r in candidates]
 
     def _all_targets(self, include: Iterable[str] | None = None, model: str | None = None) -> list[Target]:
