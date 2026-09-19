@@ -9,6 +9,7 @@ import pytest
 
 from freellmpool.client_setup import (
     atomic_write,
+    atomic_write_public,
     build_launch_environment,
     generate_client_files,
     install_client_setup,
@@ -63,6 +64,19 @@ def test_launch_environment_drops_upstream_keys_and_conflicting_configs(tmp_path
 def test_free_presets_reject_nonlocal_or_credential_urls(tmp_path, url):
     with pytest.raises(ValueError):
         generate_client_files(tmp_path, url)
+
+
+def test_secret_and_public_writers_enforce_literal_modes(tmp_path):
+    """G19: secret writes are always 0o600; public writes 0o644/0o755."""
+    secret = tmp_path / "secret"
+    atomic_write(secret, "s3cret")
+    assert secret.stat().st_mode & 0o777 == 0o600
+    unit = tmp_path / "unit.service"
+    atomic_write_public(unit, "[Unit]")
+    assert unit.stat().st_mode & 0o777 == 0o644
+    shim = tmp_path / "shim"
+    atomic_write_public(shim, "#!/bin/sh", executable=True)
+    assert shim.stat().st_mode & 0o777 == 0o755
 
 
 def test_atomic_private_write_retains_original_when_replace_fails(tmp_path, monkeypatch):

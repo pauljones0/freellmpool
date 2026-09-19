@@ -191,7 +191,7 @@ def cmd_rag_ask(args: argparse.Namespace) -> int:
 
 
 def install_maintenance(unit_dir: Path | None = None) -> list[str]:
-    from .client_setup import atomic_write
+    from .client_setup import atomic_write_public
     unit_dir = unit_dir or Path.home() / ".config/systemd/user"
     commands = {
         "update": [sys.executable, "-m", "freellmpool", "maintenance", "--refresh"],
@@ -206,8 +206,8 @@ def install_maintenance(unit_dir: Path | None = None) -> list[str]:
         schedule = {"update": "daily\nOnBootSec=5min", "review": "Sun *-*-* 10:00:00", "verify": "*-*-* 11:00:00"}[name]
         timer = ("[Unit]\nDescription=Scheduled free provider maintenance\n\n[Timer]\nOnCalendar="
                  + schedule + "\nRandomizedDelaySec=10min\nPersistent=true\n\n[Install]\nWantedBy=timers.target\n")
-        atomic_write(unit_dir / f"freellmpool-{name}.service", service, mode=0o644)
-        atomic_write(unit_dir / f"freellmpool-{name}.timer", timer, mode=0o644)
+        atomic_write_public(unit_dir / f"freellmpool-{name}.service", service)
+        atomic_write_public(unit_dir / f"freellmpool-{name}.timer", timer)
     return [f"freellmpool-{name}.timer" for name in commands]
 
 

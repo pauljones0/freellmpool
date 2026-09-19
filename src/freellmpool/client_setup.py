@@ -36,8 +36,9 @@ class InstallResult(TypedDict):
     status: str
 
 
-def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
-    """Replace one file without exposing partial contents or widening its mode."""
+def _atomic_replace(path: Path, content: str, mode: int) -> None:
+    """Replace one file without exposing partial contents. Internal: callers
+    must be the secret or public writer below, never a variable mode."""
     path = Path(path)
     if path.is_symlink():
         raise ValueError("refusing to replace a symlink with generated configuration")
@@ -58,6 +59,21 @@ def atomic_write(path: Path, content: str, *, mode: int = 0o600) -> None:
             os.unlink(name)
         except FileNotFoundError:
             pass
+
+
+def atomic_write(path: Path, content: str) -> None:
+    """Atomically replace a SECRET-bearing file; always owner-only (0o600).
+
+    The mode is a literal (not a parameter) so no caller can widen it by
+    accident. Non-secret files use atomic_write_public.
+    """
+    _atomic_replace(path, content, 0o600)
+
+
+def atomic_write_public(path: Path, content: str, *, executable: bool = False) -> None:
+    """Atomically replace a file that provably carries no secrets (systemd
+    units, launcher shims): 0o644, or 0o755 for executables."""
+    _atomic_replace(path, content, 0o755 if executable else 0o644)
 
 
 def _local_base_url(value: str) -> str:
@@ -203,12 +219,16 @@ def _ensure_key(path: Path) -> str:
     return value
 
 
-def _write_with_backup(path: Path, content: str, *, mode: int = 0o600) -> None:
+def _write_with_backup(path: Path, content: str, *, public: bool = False,
+                       executable: bool = False) -> None:
     if path.exists() and path.read_text() != content:
         backup = path.with_name(path.name + ".before-freellmpool")
         if not backup.exists():
             atomic_write(backup, path.read_text())
-    atomic_write(path, content, mode=mode)
+    if public:
+        atomic_write_public(path, content, executable=executable)
+    else:
+        atomic_write(path, content)
 
 
 def install_command_launcher(binary: Path, *, bin_dir: Path | None = None) -> Path:
@@ -217,7 +237,7 @@ def install_command_launcher(binary: Path, *, bin_dir: Path | None = None) -> Pa
     launcher = (bin_dir or Path.home() / ".local/bin") / "freellmpool"
     if not binary.is_file() or not os.access(binary, os.X_OK) or binary == launcher.absolute():
         raise ValueError("the installed freellmpool executable is missing or invalid")
-    _write_with_backup(launcher, "#!/bin/sh\nexec " + shlex.quote(str(binary)) + ' "$@"\n', mode=0o755)
+    _write_with_backup(launcher, "#!/bin/sh\nexec " + shlex.quote(str(binary)) + ' "$@"\n', public=True, executable=True)
     return launcher
 
 
@@ -256,14 +276,14 @@ def install_client_setup(
         clipboard_wrapper,
         '#!/bin/sh\nset -eu\n[ "$#" -eq 1 ] || { echo "Usage: freellmpool-key-from-clipboard PROVIDER" >&2; exit 2; }\n'
         + "exec " + clipboard_command + ' --provider "$1" --clipboard\n',
-        mode=0o755,
+        public=True, executable=True,
     )
     for name, binary in binaries.items():
         if name not in ("opencode", "hermes", "claude"):
             continue
         wrapper = bin_dir / (name + "-free")
         command = [sys.executable, "-m", "freellmpool.client_setup", "launch", "--root", str(root), "--client", name, "--binary", binary]
-        _write_with_backup(wrapper, "#!/bin/sh\nexec " + shlex.join(command) + ' -- "$@"\n', mode=0o755)
+        _write_with_backup(wrapper, "#!/bin/sh\nexec " + shlex.join(command) + ' -- "$@"\n', public=True, executable=True)
         wrappers.append(str(wrapper))
     if "opencode" in binaries and t3_settings.exists():
         providers = t3.setdefault("providers", {})
@@ -287,7 +307,7 @@ def install_client_setup(
         + "\nRestart=on-failure\nRestartSec=5\nTimeoutStopSec=30\nNoNewPrivileges=true\n"
         "\n[Install]\nWantedBy=default.target\n"
     )
-    _write_with_backup(unit_dir / "freellmpool.service", unit, mode=0o644)
+    _write_with_backup(unit_dir / "freellmpool.service", unit, public=True)
     return {"root": str(root), "wrappers": wrappers, "unit": str(unit_dir / "freellmpool.service"), "base_url": base_url, "status": "configured"}
 
 
