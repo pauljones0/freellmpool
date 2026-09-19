@@ -16,6 +16,15 @@ All notable changes to this project are documented here. The format is based on
   to current observed text, and block Groq qwen3.6-27b with its stale
   capacities removed after it left the official free table.
 
+## [0.14.3] — security hardening
+
+- Redact and cap upstream error text before it can reach proxy/MCP
+  clients (a provider echoing a key in a 4xx body no longer propagates).
+- Split atomic file writes into secret-only (literal 0o600) and public
+  (0o644/0o755) writers so credentials cannot be widened by a caller slip.
+- Release pipeline runs Sigstore-attested SBOM builds with a
+  zero-open-high-alerts gate.
+
 ## [0.14.2] — source maintenance
 
 - Review three free embedding routes (keyless OVH `Qwen3-Embedding-8B`,
