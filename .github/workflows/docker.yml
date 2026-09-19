@@ -69,14 +69,14 @@ jobs:
           python3 scripts/security_exceptions.py ids trivy > .trivyignore.generated
 
       - name: Set up pinned Buildx and BuildKit
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
         with:
           version: v0.36.1
           driver-opts: >-
             image=moby/buildkit@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
 
       - name: Build exact release image archive
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           tags: freellmpool:release-scan-${{ github.sha }}
@@ -155,7 +155,7 @@ jobs:
           path: /tmp/scanned-release-image
 
       - name: Set up pinned Buildx and BuildKit
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
         with:
           version: v0.36.1
           driver-opts: >-
