@@ -996,7 +996,7 @@ code, `check_docs.py` green.
 
 Effort: S–M. Fit: medium — small code, big discoverability.
 
-## G19 — Security-hardening sprint (Status: in-progress)
+## G19 — Security-hardening sprint (Status: complete)
 
 Pain: LiteLLM published 12 advisories in 2026 including pre-auth
 RCE; teams ask "do we have someone on-call for the next one?" Our
@@ -1014,11 +1014,41 @@ Execute:
    explicit residual risks (no security theater).
 
 Done when:
-- [ ] Audit workflow is green, release artifacts are signed + SBOM'd
+- [x] Audit workflow is green, release artifacts are signed + SBOM'd
       (links pasted), and the comparison doc names residual risks
       honestly.
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G20 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G20 goal created in the same turn.
+
+Evidence (2026-09-19, live): security.yml green 4/4
+(https://github.com/pauljones0/freellmpool/actions/runs/35424416293);
+bandit high/high + pip-audit --strict clean locally (0 exceptions).
+Release v0.14.3:
+https://github.com/pauljones0/freellmpool/releases/tag/v0.14.3 —
+wheel+sdist+2 SPDX SBOMs built by release-evidence run
+https://github.com/pauljones0/freellmpool/actions/runs/35425357340
+(gate: ruff/catalog/release_ready/full suite+coverage/zero alerts/
+pip-audit all green); `gh attestation verify` passes on both artifacts
+(Sigstore bundle shown; tampered-file negative control correctly
+rejected). sdist SBOM carries the 129-package inventory; wheel SBOM is
+file-digest-only (syft limitation, noted honestly). Container jobs
+skipped on fork (docker.yml still 0xzr-gated).
+Adversarial proxy-auth review: live probes (401/403/400/413 paths,
+pre-auth shell data-free) held; 1 flaw found+fixed — upstream error
+bodies (uncapped, unredacted) flowed to clients via client_message —
+now 400-capped + G16-redacted at construction (3 regression tests).
+Release gate surfaced 2 HIGH CodeQL alerts, both resolved: #1 SHA256
+fingerprint dismissed as false positive (identity, not password
+verification, comment recorded); #2 variable-mode chmod fixed by
+splitting atomic_write (literal 0o600) / atomic_write_public, then the
+residual internal-helper instance dismissed with structural
+justification. Comparison doc docs/SECURITY_COMPARISON.md maps 5
+verified 2026 LiteLLM advisory classes to our surface + 6 residual
+risks. Full suite 2565 passed, coverage gate 87.28%/77.85%, ruff clean,
+mypy clean on touched lines, check_docs green. Notes: dead v0.14.2 tag
+(gate failed correctly) removed before any release; v0.14.3 tag moved
+once to include the scripts fix (never released before the move);
+release-evidence gates extended to this fork (canonical unchanged).
 
 Effort: M. Fit: medium — defensive, trust-building.
 

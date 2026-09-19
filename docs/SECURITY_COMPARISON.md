@@ -89,8 +89,8 @@ release artifact.
 Verify: [`uv.lock`](../uv.lock),
 [security.yml](../.github/workflows/security.yml),
 [release-evidence.yml](../.github/workflows/release-evidence.yml), and the
-v0.14.2 run:
-<https://github.com/pauljones0/freellmpool/actions/runs/35424720571>.
+v0.14.3 run:
+<https://github.com/pauljones0/freellmpool/actions/runs/35425357340>.
 
 ## What the G19 adversarial review probed (live, key-locked proxy)
 
