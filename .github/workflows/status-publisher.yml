@@ -1,0 +1,46 @@
+name: Status publisher
+
+# G18: refresh the live free-tier status page on a schedule. Probes run
+# with whatever provider keys exist as Actions secrets; with no keys the
+# publisher writes an honest empty reading (never fake green).
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: status-publisher
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+      - name: Install freellmpool
+        run: python -m pip install --disable-pip-version-check -e .
+      - name: Publish status snapshot
+        run: |
+          freellmpool status-page publish
+          freellmpool status-page check
+          python scripts/check_docs.py docs
+      - name: Commit refreshed snapshot
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/free-tier-status.html docs/status-history.json; then
+            echo "No status changes to commit."
+            exit 0
+          fi
+          git config user.name "freellmpool-status-bot"
+          git config user.email "freellmpool-status-bot@users.noreply.github.com"
+          git add docs/free-tier-status.html docs/status-history.json
+          git commit -m "chore: refresh free-tier status snapshot"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

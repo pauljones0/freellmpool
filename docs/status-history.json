@@ -1,0 +1,105 @@
+[
+  {
+    "freellmpool": "0.14.2",
+    "generated_at": "2026-09-19T05:29:17Z",
+    "rows": [
+      {
+        "latency_ms": 1648.3448950166348,
+        "note": "16 tok",
+        "status": "ok",
+        "target": "openrouter/inclusionai/ling-3.0-flash-vl:free"
+      },
+      {
+        "latency_ms": 1666.7823850002605,
+        "note": "1 tok",
+        "status": "ok",
+        "target": "cohere/c4ai-aya-expanse-32b"
+      },
+      {
+        "latency_ms": 1797.9872550058644,
+        "note": "2 tok",
+        "status": "ok",
+        "target": "mistral/codestral-2508"
+      },
+      {
+        "latency_ms": 1974.3472549889702,
+        "note": "2 tok",
+        "status": "ok",
+        "target": "llm7/codestral-latest"
+      },
+      {
+        "latency_ms": 2247.785504994681,
+        "note": "54 tok",
+        "status": "ok",
+        "target": "aion/aion-labs/aion-2.0"
+      },
+      {
+        "latency_ms": 2314.4883629865944,
+        "note": "46 tok",
+        "status": "ok",
+        "target": "cloudflare/@cf/openai/gpt-oss-120b"
+      },
+      {
+        "latency_ms": 3187.889606982935,
+        "note": "16 tok",
+        "status": "ok",
+        "target": "kilo/kilo-auto/free"
+      },
+      {
+        "latency_ms": 3337.4507160042413,
+        "note": "151 tok",
+        "status": "ok",
+        "target": "vercel/inclusionai/ling-3.0-flash-fin-free"
+      },
+      {
+        "latency_ms": 5049.37180998968,
+        "note": "26 tok",
+        "status": "ok",
+        "target": "modelscope/deepseek-ai/DeepSeek-V4-Pro"
+      },
+      {
+        "latency_ms": 14322.072448994732,
+        "note": "20 tok",
+        "status": "ok",
+        "target": "ollama/nemotron-3-ultra"
+      },
+      {
+        "latency_ms": null,
+        "note": "HTTP 404: No free route could serve this request; inspect freellmpool status and",
+        "status": "fail",
+        "target": "ovh/nvr-tts-es-es"
+      },
+      {
+        "latency_ms": null,
+        "note": "HTTP 403: No free route could serve this request; inspect freellmpool status and",
+        "status": "fail",
+        "target": "opencode/big-pickle"
+      },
+      {
+        "latency_ms": null,
+        "note": "HTTP 400: No free route could serve this request; inspect freellmpool status and",
+        "status": "fail",
+        "target": "groq/canopylabs/orpheus-v1-english"
+      },
+      {
+        "latency_ms": null,
+        "note": "HTTP 404: No free route could serve this request; inspect freellmpool status and",
+        "status": "fail",
+        "target": "nvidia/01-ai/yi-large"
+      },
+      {
+        "latency_ms": null,
+        "note": "HTTP 404: No free route could serve this request; inspect freellmpool status and",
+        "status": "fail",
+        "target": "gemini/gemini-2.5-flash"
+      },
+      {
+        "latency_ms": null,
+        "note": "HTTP 429: Free capacity is temporarily exhausted; retry after the reported coold",
+        "status": "rate_limited",
+        "target": "zhipu/glm-4.7-flash"
+      }
+    ],
+    "schema": 1
+  }
+]

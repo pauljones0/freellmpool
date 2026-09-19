@@ -607,6 +607,44 @@ def cmd_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status_publish(args: argparse.Namespace) -> int:
+    import json
+
+    from .drift import utcnow
+    from .healthcheck import HealthRow
+    from .router import Pool
+    from .status_page import collect_live_rows, publish_status
+
+    if args.rows_file:
+        with open(args.rows_file, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        rows = [HealthRow(str(r.get("target", "?")), str(r.get("status", "?")),
+                          r.get("latency_ms"), str(r.get("note", "")))
+                for r in raw]
+    else:
+        pool = Pool.from_default_config()
+        provider_filter = args.providers.split(",") if args.providers else None
+        rows = collect_live_rows(pool, model=args.model, providers=provider_filter,
+                                 timeout=args.timeout)
+    page, history = publish_status(args.docs_dir, rows, generated_at=utcnow(),
+                                   version=__version__)
+    ok = sum(1 for r in rows if r.ok)
+    print(f"status: {ok}/{len(rows)} ok -> {page} + {history}")
+    return 0
+
+
+def cmd_status_check(args: argparse.Namespace) -> int:
+    from .status_page import validate_published
+
+    errors = validate_published(args.docs_dir)
+    if errors:
+        for error in errors:
+            print(f"status check: {error}", file=sys.stderr)
+        return 1
+    print(f"status files in {args.docs_dir} are valid.")
+    return 0
+
+
 def cmd_badge(args: argparse.Namespace) -> int:
     from . import svg
     from .stats import StatsStore
@@ -2658,6 +2696,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_badge.add_argument("-o", "--output", help="write the SVG to this file instead of stdout")
     p_badge.set_defaults(func=cmd_badge)
+
+    p_status = sub.add_parser("status-page", help="publish the live free-tier status page")
+    status_sub = p_status.add_subparsers(dest="status_command")
+    p_status_publish = status_sub.add_parser(
+        "publish", help="probe providers and write the Pages status files"
+    )
+    p_status_publish.add_argument("--docs-dir", default="docs",
+                                  help="docs directory to write into (default: docs)")
+    p_status_publish.add_argument("-m", "--model", help="pin one model name to probe")
+    p_status_publish.add_argument("-p", "--providers", help="comma-separated provider ids")
+    p_status_publish.add_argument("--timeout", type=float, default=20.0,
+                                  help="per-call timeout seconds")
+    p_status_publish.add_argument("--rows-file",
+                                  help="use pre-collected rows JSON instead of live probes")
+    p_status_publish.set_defaults(func=cmd_status_publish)
+    p_status_check = status_sub.add_parser(
+        "check", help="validate the published status files (shape + no secrets)"
+    )
+    p_status_check.add_argument("--docs-dir", default="docs",
+                                help="docs directory to check (default: docs)")
+    p_status_check.set_defaults(func=cmd_status_check)
 
     p_keys = sub.add_parser("keys", help="inspect manually configured provider keys")
     keys_sub = p_keys.add_subparsers(dest="keys_command", required=True)

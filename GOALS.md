@@ -960,7 +960,7 @@ mypy failures pre-existing). One `test_allowance_ledger` multiprocess
 sqlite-lock flake under load 24+ failed two full runs, passed twice
 in isolation and on retry; zero coupling to this change.
 
-## G18 — Live free-tier status page (Status: pending)
+## G18 — Live free-tier status page (Status: in-progress)
 
 Pain: free endpoints die and 429 without warning; "is X down or is
 it me?" has no public answer. G10 drift snapshots exist but stay on
