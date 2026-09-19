@@ -21,7 +21,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 if str(_ROOT / "src") not in sys.path:
     sys.path.insert(0, str(_ROOT / "src"))
 
-from freellmpool.client_setup import atomic_write  # noqa: E402
+from freellmpool.client_setup import atomic_write_public  # noqa: E402
 from freellmpool.policy_updates import IncompatiblePolicy, validate_document  # noqa: E402
 
 JSON = dict[str, Any]
@@ -156,7 +156,7 @@ def check_channel(root: Path, *, base: str | None = None, prepare: bool = False)
             if _version(manifest["minimum_client_version"]) <= old_version:
                 raise ValueError("protected policy changes require a newer minimum_client_version and client release") from exc
     if prepare:
-        atomic_write(root / _MANIFEST, json.dumps(manifest, indent=2) + "\n", mode=0o644)
+        atomic_write_public(root / _MANIFEST, json.dumps(manifest, indent=2) + "\n")
     return manifest
 
 
