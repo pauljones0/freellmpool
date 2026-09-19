@@ -49,35 +49,24 @@
 schedule.</strong> Each snapshot below is a real tiny request sent to every configured
 provider — not a guess from docs or dashboards.</p>
 
-<div class="note" id="stale">Snapshot taken <code>2026-09-19T05:29:17Z</code>
+<div class="note" id="stale">Snapshot taken <code>2026-09-19T11:07:12Z</code>
 <span id="age"></span> — treat snapshots older than 12 hours as stale. Snapshots refresh
 on a 6-hour schedule; intraday outages between snapshots will not appear here.</div>
 
 <h2>Latest snapshot</h2>
-<p><strong>10/16</strong> providers responding.</p>
+<p><strong>0/4</strong> providers responding.</p>
 <table>
 <tr><th>Provider/model</th><th>Status</th><th>Latency</th><th>Note</th></tr>
-<tr><td>openrouter/inclusionai/ling-3.0-flash-vl:free</td><td><span class="pill ok">ok</span></td><td class="num">1,648 ms</td><td>16 tok</td></tr>
-<tr><td>cohere/c4ai-aya-expanse-32b</td><td><span class="pill ok">ok</span></td><td class="num">1,667 ms</td><td>1 tok</td></tr>
-<tr><td>mistral/codestral-2508</td><td><span class="pill ok">ok</span></td><td class="num">1,798 ms</td><td>2 tok</td></tr>
-<tr><td>llm7/codestral-latest</td><td><span class="pill ok">ok</span></td><td class="num">1,974 ms</td><td>2 tok</td></tr>
-<tr><td>aion/aion-labs/aion-2.0</td><td><span class="pill ok">ok</span></td><td class="num">2,248 ms</td><td>54 tok</td></tr>
-<tr><td>cloudflare/@cf/openai/gpt-oss-120b</td><td><span class="pill ok">ok</span></td><td class="num">2,314 ms</td><td>46 tok</td></tr>
-<tr><td>kilo/kilo-auto/free</td><td><span class="pill ok">ok</span></td><td class="num">3,188 ms</td><td>16 tok</td></tr>
-<tr><td>vercel/inclusionai/ling-3.0-flash-fin-free</td><td><span class="pill ok">ok</span></td><td class="num">3,337 ms</td><td>151 tok</td></tr>
-<tr><td>modelscope/deepseek-ai/DeepSeek-V4-Pro</td><td><span class="pill ok">ok</span></td><td class="num">5,049 ms</td><td>26 tok</td></tr>
-<tr><td>ollama/nemotron-3-ultra</td><td><span class="pill ok">ok</span></td><td class="num">14,322 ms</td><td>20 tok</td></tr>
-<tr><td>ovh/nvr-tts-es-es</td><td><span class="pill bad">fail</span></td><td class="num">-</td><td>HTTP 404: No free route could serve this request; inspect freellmpool status and</td></tr>
-<tr><td>opencode/big-pickle</td><td><span class="pill bad">fail</span></td><td class="num">-</td><td>HTTP 403: No free route could serve this request; inspect freellmpool status and</td></tr>
-<tr><td>groq/canopylabs/orpheus-v1-english</td><td><span class="pill bad">fail</span></td><td class="num">-</td><td>HTTP 400: No free route could serve this request; inspect freellmpool status and</td></tr>
-<tr><td>nvidia/01-ai/yi-large</td><td><span class="pill bad">fail</span></td><td class="num">-</td><td>HTTP 404: No free route could serve this request; inspect freellmpool status and</td></tr>
-<tr><td>gemini/gemini-2.5-flash</td><td><span class="pill bad">fail</span></td><td class="num">-</td><td>HTTP 404: No free route could serve this request; inspect freellmpool status and</td></tr>
-<tr><td>zhipu/glm-4.7-flash</td><td><span class="pill warn">rate_limited</span></td><td class="num">-</td><td>HTTP 429: Free capacity is temporarily exhausted; retry after the reported coold</td></tr>
+<tr><td>llm7</td><td><span class="pill muted">skipped</span></td><td class="num">-</td><td>complete model discovery needed</td></tr>
+<tr><td>ovh</td><td><span class="pill muted">skipped</span></td><td class="num">-</td><td>complete model discovery needed</td></tr>
+<tr><td>kilo</td><td><span class="pill muted">skipped</span></td><td class="num">-</td><td>complete model discovery needed</td></tr>
+<tr><td>opencode</td><td><span class="pill muted">skipped</span></td><td class="num">-</td><td>complete model discovery needed</td></tr>
 </table>
 
 <h2>History</h2>
 <table>
 <tr><th>Snapshot (UTC)</th><th>Ok/total</th></tr>
+<tr><td>2026-09-19T11:07:12Z</td><td class="num">0/4</td></tr>
 <tr><td>2026-09-19T05:29:17Z</td><td class="num">10/16</td></tr>
 </table>
 <p class="tag">Machine-readable: <a href="status-history.json">status-history.json</a>
@@ -90,7 +79,7 @@ source). Observed by this project's own health probes; your keys and quotas may 
 <script>
 (function() {
   var el = document.getElementById("age");
-  var taken = Date.parse("2026-09-19T05:29:17Z");
+  var taken = Date.parse("2026-09-19T11:07:12Z");
   if (!el || isNaN(taken)) return;
   var mins = Math.max(0, Math.round((Date.now() - taken) / 60000));
   var label = mins < 90 ? mins + " min ago" : Math.round(mins / 60) + " h ago";
