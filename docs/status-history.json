@@ -163,5 +163,36 @@
       }
     ],
     "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-19T20:46:53Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
   }
 ]
