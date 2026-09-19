@@ -122,12 +122,15 @@ def fan_out(
     max_tokens: int,
     timeout: float = 90.0,
     progress: Callable[[int, int, str], None] | None = None,
+    checkpoint=None,
 ) -> tuple[list[tuple[str, str | None]], list[str]]:
     """Blast ``messages`` to every target in ``picks`` concurrently.
 
     Calls ``progress(done, total, label)`` after each model returns (thread-safe).
     Returns ``(answered, failed)`` where ``answered`` is ``[(label, text)]`` and
-    ``failed`` is ``[label]``.
+    ``failed`` is ``[label]``. When ``checkpoint`` (a RunCheckpoint) is given,
+    every outcome is persisted incrementally so a later resume only runs
+    what is missing.
     """
     total = len(picks)
     counter = itertools.count(1)
@@ -145,6 +148,8 @@ def fan_out(
             out = (f"{r.provider_id}/{r.model}", r.text, None)
         except Exception as exc:  # noqa: BLE001 — one model failing must not abort the swarm
             out = (f"{t.provider.id}/{t.model}", None, f"{type(exc).__name__}: {exc}")
+        if checkpoint is not None:
+            checkpoint.record_and_save(out[0], text=out[1], error=out[2], fresh=True)
         if progress is not None:
             with lock:
                 done = next(counter)

@@ -182,6 +182,7 @@ def run_recipe(
     synthesize: bool = False,
     max_tokens: int | None = None,
     timeout: float = 90.0,
+    checkpoint=None,
 ) -> RecipeRun:
     variables = {
         "input": input_text,
@@ -201,6 +202,7 @@ def run_recipe(
             max_tokens=max_tokens if max_tokens is not None else 512,
             timeout=timeout,
             synthesize=synthesize,
+            checkpoint=checkpoint,
         )
         return RecipeRun(recipe=recipe, output=render_panel_markdown(result), prompt=prompt)
 

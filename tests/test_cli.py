@@ -785,7 +785,8 @@ def test_cli_tokenmax_passes_timeout(monkeypatch):
         lambda pool, messages, max_models: ([SimpleNamespace()], 1),
     )
 
-    def fake_fan_out(pool, messages, picks, *, max_tokens, timeout, progress=None):
+    def fake_fan_out(pool, messages, picks, *, max_tokens, timeout, progress=None,
+                     checkpoint=None):
         captured["timeout"] = timeout
         captured["max_tokens"] = max_tokens
         return [("fake/model", "ok")], []
@@ -818,7 +819,8 @@ def test_cli_tokenmax_passes_timeout_to_synthesis(monkeypatch, capsys):
     )
     monkeypatch.setattr(
         "freellmpool.tokenmax.fan_out",
-        lambda pool, messages, picks, *, max_tokens, timeout, progress=None: (
+        lambda pool, messages, picks, *, max_tokens, timeout, progress=None,
+        checkpoint=None: (
             [("fake/model", "answer")],
             [],
         ),

@@ -322,7 +322,44 @@ def cmd_tokenmax(args: argparse.Namespace) -> int:
             if not confirm_expensive_operation(label, assume_yes=args.yes):
                 return 4
 
-    label = f"TOKENMAXXING {len(picks)} models across {n_providers} providers"
+    checkpoint = None
+    replay: list[tuple[str, str]] = []
+    resume_id = args.resume or args.run_id
+    if resume_id:
+        from .run_checkpoint import (
+            RunCheckpoint,
+            checkpoint_path,
+            merge_answers,
+            resume_plan,
+        )
+
+        try:
+            cp_path = checkpoint_path(resume_id)
+        except ValueError as exc:
+            print(f"freellmpool: {exc}", file=sys.stderr)
+            return 3
+        if args.resume or cp_path.exists():
+            try:
+                checkpoint = RunCheckpoint.load(cp_path)
+            except FileNotFoundError:
+                print(f"freellmpool: no checkpoint {resume_id}; nothing to resume",
+                      file=sys.stderr)
+                return 3
+            replay, picks = resume_plan(checkpoint)
+            n_providers = len({label.split("/", 1)[0]
+                               for label, _ in replay} |
+                              {t.provider.id for t in picks})
+            print(f"(resuming run {resume_id}: {len(replay)} replayed, "
+                  f"{len(picks)} to run)", file=sys.stderr)
+        else:
+            checkpoint = RunCheckpoint(
+                run_id=resume_id, kind="tokenmax", max_tokens=args.max_tokens,
+                targets=[f"{t.provider.id}/{t.model}" for t in picks],
+                path=cp_path,
+            )
+            print(f"(checkpointing run {resume_id})", file=sys.stderr)
+
+    label = f"TOKENMAXXING {len(replay) + len(picks)} models across {n_providers} providers"
     with RainbowThrob(label):
         answered, failed = fan_out(
             pool,
@@ -330,20 +367,33 @@ def cmd_tokenmax(args: argparse.Namespace) -> int:
             picks,
             max_tokens=args.max_tokens,
             timeout=args.timeout,
+            checkpoint=checkpoint,
         )
 
+    if checkpoint is not None:
+        merged = merge_answers(replay, answered)
+    else:
+        merged = [(lbl, txt, True) for lbl, txt in answered]
+    total_models = len(merged) + len(failed)
     print(
-        f"{RAINBOW_BANNER} TOKENMAX — {len(picks)} models / {n_providers} providers · "
-        f"{len(answered)} answered, {len(failed)} unavailable {RAINBOW_BANNER}\n"
+        f"{RAINBOW_BANNER} TOKENMAX — {total_models} models / {n_providers} providers · "
+        f"{len(merged)} answered, {len(failed)} unavailable {RAINBOW_BANNER}\n"
     )
-    for lbl, text in answered:
-        print(f"### {lbl}\n{text}\n")
+    for lbl, text, fresh in merged:
+        if checkpoint is None:
+            print(f"### {lbl}\n{text}\n")
+        else:
+            tag = "(fresh)" if fresh else "(replayed)"
+            print(f"### {lbl} {tag}\n{text}\n")
     if failed:
         shown = ", ".join(failed[:30]) + ("…" if len(failed) > 30 else "")
         print(f"({len(failed)} unavailable: {shown})\n", file=sys.stderr)
+        if checkpoint is not None:
+            print(f"(resume with: freellmpool tokenmax --resume {checkpoint.run_id} "
+                  f"'{prompt[:60]}')", file=sys.stderr)
 
-    if not args.no_synthesize and answered:
-        blob = "\n\n".join(f"[{lbl}]\n{txt}" for lbl, txt in answered)
+    if not args.no_synthesize and merged:
+        blob = "\n\n".join(f"[{lbl}]\n{txt}" for lbl, txt, _fresh in merged)
         syn_prompt = (
             "Below are many models' answers to the same question. Synthesize the single "
             "best, correct, concise answer, weighing agreement and discarding outliers.\n\n"
@@ -2019,6 +2069,29 @@ def cmd_recipe_run(args: argparse.Namespace) -> int:
         validation_output = args.validation_output
         if args.validation_output_file:
             validation_output = Path(args.validation_output_file).read_text(encoding="utf-8")
+        checkpoint = None
+        resume_id = args.resume or args.run_id
+        if resume_id:
+            from .run_checkpoint import RunCheckpoint, checkpoint_path
+
+            try:
+                cp_path = checkpoint_path(resume_id)
+            except ValueError as exc:
+                print(f"freellmpool recipe: {exc}", file=sys.stderr)
+                return 3
+            if args.resume or cp_path.exists():
+                try:
+                    checkpoint = RunCheckpoint.load(cp_path)
+                except FileNotFoundError:
+                    print(f"freellmpool recipe: no checkpoint {resume_id}",
+                          file=sys.stderr)
+                    return 3
+                print(f"(resuming run {resume_id})", file=sys.stderr)
+            else:
+                checkpoint = RunCheckpoint(
+                    run_id=resume_id, kind="recipe", max_tokens=args.max_tokens,
+                    targets=[], path=cp_path)
+                print(f"(checkpointing run {resume_id})", file=sys.stderr)
         result = run_recipe(
             Pool.from_default_config(),
             recipe,
@@ -2029,6 +2102,7 @@ def cmd_recipe_run(args: argparse.Namespace) -> int:
             synthesize=args.synthesize,
             max_tokens=args.max_tokens,
             timeout=args.timeout,
+            checkpoint=checkpoint,
         )
     except (RecipeError, NoProvidersConfigured, AllProvidersExhausted) as exc:
         print(f"freellmpool recipe: {exc}", file=sys.stderr)
@@ -2495,6 +2569,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="confirm wise-mode fan-out prompts",
     )
+    p_tokenmax.add_argument(
+        "--run-id",
+        help="checkpoint per-model results under this id (re-running resumes it)",
+    )
+    p_tokenmax.add_argument(
+        "--resume",
+        metavar="RUN_ID",
+        help="resume a checkpointed run, running only missing labels",
+    )
     p_tokenmax.set_defaults(func=cmd_tokenmax)
 
     p_battle = sub.add_parser("battle", help="compare a prompt across a small model panel")
@@ -2547,6 +2630,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_recipe_run.add_argument("--synthesize", action="store_true", help="append panel synthesis")
     p_recipe_run.add_argument("--max-tokens", type=int, default=None, help="max output tokens")
     p_recipe_run.add_argument("--timeout", type=float, default=90.0, help="upstream timeout seconds")
+    p_recipe_run.add_argument(
+        "--run-id", help="checkpoint panel answers under this id (panel recipes)"
+    )
+    p_recipe_run.add_argument(
+        "--resume", metavar="RUN_ID",
+        help="resume a checkpointed panel recipe, running only missing labels",
+    )
     p_recipe_run.set_defaults(func=cmd_recipe_run)
 
     p_jobs = sub.add_parser(

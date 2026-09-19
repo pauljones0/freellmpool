@@ -1094,7 +1094,7 @@ mypy (touched) + check_docs green.
 
 Effort: M. Fit: medium — makes G12's RAG best-in-class free.
 
-## G21 — Run survivor (Status: pending)
+## G21 — Run survivor (Status: complete)
 
 Pain: free endpoints 429 and die mid-session; long agentic runs
 (tokenmax swarms, recipes, panels) lose everything when the bench
@@ -1114,10 +1114,26 @@ Execute:
    resume to a complete result.
 
 Done when:
-- [ ] A run interrupted by real 429s/outages resumes to a complete,
+- [x] A run interrupted by real 429s/outages resumes to a complete,
       correctly labeled result (transcript pasted).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G22 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G22 goal created in the same turn.
+
+Evidence (2026-09-19, live): `src/freellmpool/run_checkpoint.py`
+(0o600 JSON per run under 0o700 runs dir; prompts never stored) +
+`--run-id/--resume` on `tokenmax` and `recipe run`; fan_out/run_panel
+record incrementally; resume replays the ORIGINAL target set (a first
+cut re-selected 256 models on resume — fixed to resume_plan, with a
+regression test). Transcripts: (1) g21kill hit real outages (1/6
+answered) → resume ran only the 5 missing: 2 transient failures
+recovered fresh, 1 replayed, 3 dead routes honestly still dead;
+(2) g21kill3 SIGKILLed mid-run at 14/40 → resume completed to 40/40
+fully resolved; (3) panel recipe g21recipe resumed with
+`(4667ms, replayed)` rendering. Quota test asserts replays make zero
+live calls. Full suite 2582 passed, coverage gate 87.12%/77.73%, ruff
++ mypy (touched) + check_docs green. Lesson recorded: the 256-model
+resume bug burned real daily quotas before the fix — bench was
+degraded for later runs (since recovered).
 
 Effort: M–L. Fit: medium-high — completes the G7 story at run level.
 

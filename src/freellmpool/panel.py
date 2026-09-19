@@ -39,6 +39,7 @@ class PanelAnswer:
     latency_ms: int
     error: str | None = None
     cached: bool = False
+    replayed: bool = False
 
     @property
     def ok(self) -> bool:
@@ -173,6 +174,7 @@ def run_panel(
     timeout: float = DEFAULT_TIMEOUT,
     synthesize: bool = False,
     task: str | None = None,
+    checkpoint=None,
 ) -> PanelResult:
     requested_count = _int_or_default(n, DEFAULT_PANEL_COUNT)
     selected_count = clamp_panel_count(n)
@@ -234,8 +236,37 @@ def run_panel(
                 error=f"{type(exc).__name__}: {exc}",
             )
 
-    with _cf.ThreadPoolExecutor(max_workers=min(_WORKERS, len(picks))) as ex:
-        answers = tuple(ex.map(ask_one, picks))
+    replayed_answers: list[PanelAnswer] = []
+    todo = picks
+    if checkpoint is not None:
+        from .run_checkpoint import replay_panel_answer
+
+        answered = checkpoint.answered
+        todo = []
+        for target in picks:
+            label = f"{target.provider.id}/{target.model}"
+            if label in answered:
+                replayed_answers.append(replay_panel_answer(
+                    {"label": label, **answered[label]}))
+            else:
+                todo.append(target)
+
+    def ask_and_record(target: Any) -> PanelAnswer:
+        answer = ask_one(target)
+        if checkpoint is not None:
+            checkpoint.record_and_save(
+                answer.label, text=answer.text, error=answer.error, fresh=True,
+                provider_id=answer.provider_id, model=answer.model,
+                family=answer.family, latency_ms=answer.latency_ms,
+                cached=answer.cached)
+        return answer
+
+    if todo:
+        with _cf.ThreadPoolExecutor(max_workers=min(_WORKERS, len(todo))) as ex:
+            fresh_answers = list(ex.map(ask_and_record, todo))
+    else:
+        fresh_answers = []
+    answers = tuple(replayed_answers + fresh_answers)
 
     synthesis = _synthesize(pool, prompt, msgs, answers, token_limit, timeout) if synthesize else None
     return PanelResult(
@@ -269,6 +300,8 @@ def render_panel_markdown(result: PanelResult, *, title: str = "freellmpool pane
             lines.append(f"### {answer.label}  (failed)\n{answer.error}\n")
         else:
             tag = "cache" if answer.cached else f"{answer.latency_ms}ms"
+            if answer.replayed:
+                tag += ", replayed"
             body = answer.text or ""
             if max_chars_per_answer is not None:
                 body = truncate_labeled(body, max_chars_per_answer, label=f"answer {answer.label}")
