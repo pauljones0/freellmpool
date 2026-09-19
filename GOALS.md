@@ -732,7 +732,7 @@ strict mypy on 26 modules, check_docs + check-counts pass.
 
 Effort: M–L. Fit: medium — owns the student segment G3 opened.
 
-## G13 — LiteLLM drop-in migration path (Status: pending)
+## G13 — LiteLLM drop-in migration path (Status: complete, 2026-09-19)
 
 Pain: teams fleeing LiteLLM's 2026 CVE record need a 1-line switch,
 not a rewrite. Our OpenAI surface is close but unproven as a
@@ -751,11 +751,27 @@ Execute:
    (budgets, admin UI — killed bet #2 stays dead).
 
 Done when:
-- [ ] A real LiteLLM-client config completes chat + streaming +
+- [x] A real LiteLLM-client config completes chat + streaming +
       failover against the gateway (transcript pasted).
-- [ ] Zero known migration breaks; migration doc merged.
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G14 goal created in the same turn.
+- [x] Zero known migration breaks; migration doc merged.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G14 goal created in the same turn.
+
+Evidence (2026-09-19, real `litellm` 1.101.0 client, api_base swap only):
+`[OK] chat-auto`, `[OK] chat-pinned` (cohere/command-r-08-2024),
+`[OK] stream` ("1, 2, 3."), `[OK] models` (309, OpenAI list shape),
+`[OK] failover` (Router dead-primary -> `auto` backup served `OK.`
+via mistral/codestral-2508), `[OK] embed` (dim=4096),
+`[OK] params+usage` (19/13/32, finish=stop), `[OK] json_object`,
+`[OK] tools` (record_number{7} tool_call), `[OK] stream_usage`,
+`[OK] embed_auto`, `[OK] multi_turn` — 12/12, zero breaks, so zero
+code changes per the no-speculative-shims rule (existing proxy tests
+already lock /v1/models + SSE shapes). Migration doc:
+`docs/LITELLM_MIGRATION.md` (remap table, checklist, non-goals:
+budgets, admin UI, spend APIs). Note: stream usage is estimated
+client-side by LiteLLM; authoritative spend is the gateway ledger.
+Gates: full suite green, coverage floors pass, `ruff check .` clean,
+check_docs + check-counts pass.
 
 Effort: M. Fit: medium — captures CVE-driven demand with proof.
 
