@@ -775,7 +775,7 @@ check_docs + check-counts pass.
 
 Effort: M. Fit: medium — captures CVE-driven demand with proof.
 
-## G14 — MCP response diet (Status: pending)
+## G14 — MCP response diet (Status: complete, 2026-09-19)
 
 Pain: post-G2 research shows *responses* dwarf schemas — one chatty
 tool result can eat 19%+ of a context window. Our own MCP tools have
@@ -793,11 +793,22 @@ Execute:
    MCP authors.
 
 Done when:
-- [ ] Before/after measurements show large-response shrinkage with
+- [x] Before/after measurements show large-response shrinkage with
       zero silent truncations (numbers pasted).
-- [ ] Every tool stays fully usable through the compact surface.
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; chain complete — report the series result.
+- [x] Every tool stays fully usable through the compact surface.
+- [x] Full suite + gates pass.
+- [x] Commit + push; chain complete — report the series result.
+
+Evidence (same fixtures, 2026-09-19): panel 8,483→4,241 ch (−50%),
+battle 8,552→4,319 (−49%), models 10,228→1,467 (−86%), quota
+28,131→2,634 (−91%). Every cut carries an in-band
+`[… N chars omitted — re-run with "full": true]` label (asserted in
+tests); all 9 capped tools advertise `full`, models adds a `provider`
+filter, CLI/renderers unchanged by default. Pattern doc:
+`docs/MCP_RESPONSE_DIET.md`. Gates: 2507 passed, coverage
+87.95/78.31, `ruff check .` clean, mypy delta zero on touched files,
+check_docs + check-counts pass. (One `test_route_health` flake under
+full-suite load; passes alone and on full rerun.)
 
 Effort: S–M. Fit: medium — completes the G2 story honestly.
 

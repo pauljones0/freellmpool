@@ -40,6 +40,7 @@ import logging
 import sys
 import threading
 import time
+from typing import Any, cast
 
 from .battle import render_battle_markdown, run_battle
 from .config import resolve_alias, split_provider_model
@@ -50,6 +51,7 @@ from .panel import (
     clamp_panel_count,
     render_panel_markdown,
     run_panel,
+    truncate_labeled,
 )
 from .recipes import (
     MissingRecipeInputError,
@@ -422,6 +424,27 @@ TOOLS = [
     },
 ]
 
+# G14: every capped tool advertises the full-text escape hatch. Applied
+# programmatically so the flag's wording cannot drift between tools.
+_DIET_TOOLS = frozenset({
+    "free_llm_ask", "free_llm_panel", "free_llm_second_opinion", "free_llm_battle",
+    "free_llm_recipe", "tokenmax", "free_llm_models", "free_llm_quota", "free_llm_quota_wise",
+})
+_FULL_ARG = {
+    "type": "boolean",
+    "description": 'If true, return the complete untruncated result (default: compact, with labeled cuts pointing here).',
+}
+for _tool_def in TOOLS:
+    if _tool_def["name"] in _DIET_TOOLS:
+        cast(dict[str, Any], _tool_def["inputSchema"])["properties"]["full"] = dict(_FULL_ARG)
+for _tool_def in TOOLS:
+    if _tool_def["name"] == "free_llm_models":
+        cast(dict[str, Any], _tool_def["inputSchema"])["properties"]["provider"] = {
+            "type": "string",
+            "description": "Only list routes for this provider id (keeps the compact surface fully usable).",
+        }
+
+
 # One-line action summaries for the lean router surface (progressive disclosure).
 # Keys must match the legacy tool names in TOOLS exactly; the `help` action and
 # the router description below are both rendered from this map.
@@ -484,6 +507,21 @@ def _text(text: str, is_error: bool = False) -> dict:
     return {"content": [{"type": "text", "text": text}], "isError": is_error}
 
 
+# G14 response diet: compact-by-default char budgets. Every cut is labeled
+# in-band with a "full": true pointer — never silent.
+_DIET_ANSWER_CHARS = 800
+_DIET_SYNTHESIS_CHARS = 2000
+_DIET_ASK_CHARS = 4000
+_DIET_RECIPE_CHARS = 3000
+_DIET_TOKENMAX_CHARS = 800
+_DIET_MODEL_ROWS = 40
+_DIET_QUOTA_ROWS = 30
+
+
+def _compact_text(text: str, budget: int, *, label: str = "text") -> str:
+    return truncate_labeled(text, budget, label=label)
+
+
 def _routing_arg(value) -> str | None:
     """Map the tool's routing arg to a pool routing override (auto/unknown -> None)."""
     return routing_override(value)
@@ -539,22 +577,45 @@ def _call_tool(pool: Pool, params: dict, notify=None) -> dict:
     if name == "free_llm_tailnet_info":
         return _tool_tailnet_info(args)
     if name == "free_llm_quota_wise":
-        return _tool_quota_wise(pool)
+        return _tool_quota_wise(pool, args)
     if name == "tokenmax":
         return _tool_tokenmax(pool, args, notify=notify)
     if name == "free_llm_route":
         return _tool_route(pool, args)
     if name == "free_llm_models":
-        ids = ([route.name for route in snapshot.routes if route.modality == "chat"] if snapshot is not None else
-               [f"{p.id}/{m.name}" for p in pool.providers for m in p.models if m.enabled])
-        return _text("\n".join(ids) or "no providers configured")
+        return _tool_models(pool, snapshot, args)
     if name == "free_llm_quota":
-        return _text(_quota_summary(pool))
+        return _text(_quota_summary(pool, full=bool(args.get("full"))))
     if name == "free_llm_stats":
         return _text(_lifetime_summary(pool))
     if name == "free_llm":
         return _tool_router(pool, args, notify=notify)
     return _text(f"unknown tool: {name}", is_error=True)
+
+
+def _tool_models(pool: Pool, snapshot: Any, args: dict[str, Any]) -> dict[str, Any]:
+    if snapshot is not None:
+        ids = [route.name for route in snapshot.routes if route.modality == "chat"]
+    else:
+        ids = [f"{p.id}/{m.name}" for p in pool.providers for m in p.models if m.enabled]
+    only = args.get("provider")
+    if isinstance(only, str) and only.strip():
+        ids = [i for i in ids if i.split("/", 1)[0] == only.strip()]
+    if not ids:
+        return _text("no providers configured")
+    if args.get("full"):
+        return _text("\n".join(ids))
+    counts: dict[str, int] = {}
+    for i in ids:
+        counts[i.split("/", 1)[0]] = counts.get(i.split("/", 1)[0], 0) + 1
+    summary = ", ".join(f"{pid}: {n}" for pid, n in sorted(counts.items()))
+    shown = ids[:_DIET_MODEL_ROWS]
+    lines = [f"{len(ids)} chat routes ({summary})", ""]
+    lines.extend(shown)
+    if len(ids) > len(shown):
+        lines.append(f"\n[… {len(ids) - len(shown)} more routes omitted — "
+                     f'filter with "provider" or re-run with "full": true]')
+    return _text("\n".join(lines))
 
 
 def _tool_router(pool: Pool, args: dict, notify=None) -> dict:
@@ -621,7 +682,8 @@ def _tool_ask(pool: Pool, args: dict) -> dict:
         return _text(f"{type(exc).__name__}: {exc}", is_error=True)
     ms = round((time.monotonic() - started) * 1000)
     tag = "cache" if reply.cached else f"{ms}ms"
-    return _text(f"{reply.text}\n\n— via {reply.provider_id}/{reply.model} ({tag})")
+    text = reply.text if args.get("full") else _compact_text(reply.text, _DIET_ASK_CHARS, label="answer")
+    return _text(f"{text}\n\n— via {reply.provider_id}/{reply.model} ({tag})")
 
 
 def _tool_panel(pool: Pool, args: dict) -> dict:
@@ -640,7 +702,10 @@ def _tool_panel(pool: Pool, args: dict) -> dict:
     )
     if not result.answers:
         return _text("no providers configured", is_error=True)
-    return _text(render_panel_markdown(result))
+    if args.get("full"):
+        return _text(render_panel_markdown(result))
+    return _text(render_panel_markdown(result, max_chars_per_answer=_DIET_ANSWER_CHARS,
+                                       max_chars_synthesis=_DIET_SYNTHESIS_CHARS))
 
 
 # `_tool_second_opinion` is the same callable as `_tool_panel` so the
@@ -666,7 +731,10 @@ def _tool_battle(pool: Pool, args: dict) -> dict:
     )
     if not result.answers:
         return _text("no providers configured", is_error=True)
-    return _text(render_battle_markdown(result))
+    if args.get("full"):
+        return _text(render_battle_markdown(result))
+    return _text(render_battle_markdown(result, max_chars_per_answer=_DIET_ANSWER_CHARS,
+                                       max_chars_synthesis=_DIET_SYNTHESIS_CHARS))
 
 
 def _tool_recipe(pool: Pool, args: dict) -> dict:
@@ -751,7 +819,9 @@ def _tool_recipe(pool: Pool, args: dict) -> dict:
         if run.provider_id is None
         else f"\n\n— via {run.provider_id}/{run.model}"
     )
-    return _text(header + "\n\n" + run.output + footer)
+    output = run.output if args.get("full") else _compact_text(run.output, _DIET_RECIPE_CHARS,
+                                                              label=f"recipe {recipe.name}")
+    return _text(header + "\n\n" + output + footer)
 
 
 def _tool_roles(args: dict) -> dict:
@@ -824,9 +894,9 @@ def _tool_tailnet_info(args: dict) -> dict:
     return _text("\n".join(lines))
 
 
-def _tool_quota_wise(pool: Pool) -> dict:
+def _tool_quota_wise(pool: Pool, args: dict | None = None) -> dict:
     if getattr(pool, "managed", False):
-        return _text(_quota_summary(pool))
+        return _text(_quota_summary(pool, full=bool((args or {}).get("full"))))
     snapshot = pool.quota.snapshot()
     active = current_mode(pool.env) == "wise"
     body = render_quota_wise_status(pool.providers, snapshot, active=active)
@@ -878,7 +948,11 @@ def _tool_tokenmax(pool: Pool, args: dict, notify=None) -> dict:
         "(weigh agreement, discard outliers):",
         "",
     ]
-    body = [f"### {lbl}\n{txt}\n" for lbl, txt in answered]
+    if args.get("full"):
+        body = [f"### {lbl}\n{txt}\n" for lbl, txt in answered]
+    else:
+        body = [f"### {lbl}\n{_compact_text(txt or '', _DIET_TOKENMAX_CHARS, label=f'answer {lbl}')}\n"
+                for lbl, txt in answered]
     if failed:
         shown = ", ".join(failed[:30]) + ("…" if len(failed) > 30 else "")
         body.append(f"_{len(failed)} unavailable (rate-limited / errored): {shown}_")
@@ -931,13 +1005,17 @@ def _tool_route(pool: Pool, args: dict) -> dict:
     return _text("\n".join(lines))
 
 
-def _quota_summary(pool: Pool) -> str:
+def _quota_summary(pool: Pool, *, full: bool = False) -> str:
     from .savings import usd_saved
 
     if getattr(pool, "managed", False):
         status = pool.managed_status()
         lines = [f"Strict free gateway: {status['eligible_routes']} eligible routes.", status["note"]]
-        for row in status["allowances"]:
+        rows = status["allowances"]
+        if not full and len(rows) > _DIET_QUOTA_ROWS:
+            lines.append(f"showing {_DIET_QUOTA_ROWS} of {len(rows)} allowance rows "
+                         f'(re-run with "full": true for all):')
+        for row in rows if full else rows[:_DIET_QUOTA_ROWS]:
             remaining = row["remaining"]
             value = "unknown" if remaining is None else f"{remaining:g}"
             capacity = "unknown" if row["capacity"] is None else f"{row['capacity']:g}"

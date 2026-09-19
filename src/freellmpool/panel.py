@@ -249,7 +249,17 @@ def run_panel(
     )
 
 
-def render_panel_markdown(result: PanelResult, *, title: str = "freellmpool panel") -> str:
+def truncate_labeled(text: str, budget: int, *, label: str = "text") -> str:
+    """Cap text at budget chars; over-budget cuts carry an in-band full-text pointer."""
+    if len(text) <= budget:
+        return text
+    return (f"{text[:budget]}\n[… {len(text) - budget} chars of {label} omitted — "
+            f're-run with "full": true]')
+
+
+def render_panel_markdown(result: PanelResult, *, title: str = "freellmpool panel",
+                          max_chars_per_answer: int | None = None,
+                          max_chars_synthesis: int = 2000) -> str:
     prompt = result.prompt.replace("\n", " ").strip()
     if len(prompt) > 70:
         prompt = prompt[:69] + "..."
@@ -259,13 +269,19 @@ def render_panel_markdown(result: PanelResult, *, title: str = "freellmpool pane
             lines.append(f"### {answer.label}  (failed)\n{answer.error}\n")
         else:
             tag = "cache" if answer.cached else f"{answer.latency_ms}ms"
-            lines.append(f"### {answer.label}  ({tag})\n{answer.text or ''}\n")
+            body = answer.text or ""
+            if max_chars_per_answer is not None:
+                body = truncate_labeled(body, max_chars_per_answer, label=f"answer {answer.label}")
+            lines.append(f"### {answer.label}  ({tag})\n{body}\n")
     if result.synthesis is not None:
         if result.synthesis.error:
             lines.append(f"### synthesis (failed)\n{result.synthesis.error}")
         else:
             label = f"{result.synthesis.provider_id}/{result.synthesis.model}"
-            lines.append(f"### synthesis - via {label}\n{result.synthesis.text or ''}")
+            body = result.synthesis.text or ""
+            if max_chars_per_answer is not None:
+                body = truncate_labeled(body, max_chars_synthesis, label="synthesis")
+            lines.append(f"### synthesis - via {label}\n{body}")
     return "\n".join(lines).rstrip()
 
 

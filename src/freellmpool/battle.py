@@ -8,6 +8,7 @@ from .panel import (
     PanelAnswer,
     PanelResult,
     run_panel,
+    truncate_labeled,
 )
 from .router import Pool
 
@@ -33,7 +34,8 @@ def run_battle(
     )
 
 
-def render_battle_markdown(result: PanelResult) -> str:
+def render_battle_markdown(result: PanelResult, *, max_chars_per_answer: int | None = None,
+                           max_chars_synthesis: int = 2000) -> str:
     prompt = result.prompt.replace("\n", " ").strip()
     if len(prompt) > 80:
         prompt = prompt[:79] + "..."
@@ -54,7 +56,7 @@ def render_battle_markdown(result: PanelResult) -> str:
         ]
     )
     for answer in result.answers:
-        lines.append(f"| `{_escape_cell(answer.label)}` | {_answer_cell(answer)} |")
+        lines.append(f"| `{_escape_cell(answer.label)}` | {_answer_cell(answer, max_chars_per_answer)} |")
     if result.synthesis is not None:
         lines.extend(["", "## synthesis"])
         if result.synthesis.error:
@@ -63,7 +65,10 @@ def render_battle_markdown(result: PanelResult) -> str:
             label = f"{result.synthesis.provider_id}/{result.synthesis.model}"
             lines.append(f"via `{label}`")
             lines.append("")
-            lines.append(result.synthesis.text or "")
+            body = result.synthesis.text or ""
+            if max_chars_per_answer is not None:
+                body = truncate_labeled(body, max_chars_synthesis, label="synthesis")
+            lines.append(body)
     return "\n".join(lines).rstrip()
 
 
@@ -119,12 +124,14 @@ def write_battle_record(result: PanelResult, *, store=None):
     )
 
 
-def _answer_cell(answer: PanelAnswer) -> str:
+def _answer_cell(answer: PanelAnswer, max_chars: int | None = None) -> str:
     if answer.error:
         return f"failed: `{_escape_cell(answer.error)}`"
-    body = _escape_cell(answer.text or "")
+    body = answer.text or ""
+    if max_chars is not None:
+        body = truncate_labeled(body, max_chars, label=f"answer {answer.label}")
     tag = "cache" if answer.cached else f"{answer.latency_ms}ms"
-    return f"{body}<br><sub>{tag}</sub>"
+    return f"{_escape_cell(body)}<br><sub>{tag}</sub>"
 
 
 def _escape_cell(value: str) -> str:
