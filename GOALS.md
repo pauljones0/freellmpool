@@ -960,7 +960,7 @@ mypy failures pre-existing). One `test_allowance_ledger` multiprocess
 sqlite-lock flake under load 24+ failed two full runs, passed twice
 in isolation and on retry; zero coupling to this change.
 
-## G18 — Live free-tier status page (Status: in-progress)
+## G18 — Live free-tier status page (Status: complete)
 
 Pain: free endpoints die and 429 without warning; "is X down or is
 it me?" has no public answer. G10 drift snapshots exist but stay on
@@ -976,11 +976,23 @@ Execute:
 3. Live page verified from a clean checkout.
 
 Done when:
-- [ ] The public page correctly shows a real, live-observed route
+- [x] The public page correctly shows a real, live-observed route
       state (URL + screenshot/transcript pasted), with staleness
       labeled.
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G19 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G19 goal created in the same turn.
+
+Evidence (2026-09-19, live): `src/freellmpool/status_page.py` +
+`status-page publish/check` CLI; `.github/workflows/status-publisher.yml`
+(6h cron + dispatch). Live snapshot 2026-09-19T05:29:17Z: 10/16 ok,
+5 fail, 1 rate_limited (honest 429 from zhipu). Page verified HTTP 200
+at https://pauljones0.github.io/freellmpool/free-tier-status.html from
+a clean clone (/tmp/g18clean @ abcc50f): stamp, 10/16 summary, and 16
+rows match byte-for-byte; staleness note + 12-snapshot history on-page.
+No key material by construction (fixed schema + G16 redaction +
+fail-closed secret scan; `status-page check` green). Full suite 2561
+passed, coverage gate 87.28%/77.84%, ruff clean, mypy clean on touched
+code, `check_docs.py` green.
 
 Effort: S–M. Fit: medium — small code, big discoverability.
 
