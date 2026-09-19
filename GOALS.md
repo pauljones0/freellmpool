@@ -656,7 +656,7 @@ strict mypy on 23 modules, check_docs + check-counts pass.
 Effort: M. Fit: medium-high — turns the evidence engine into
 distribution.
 
-## G11 — Structured-output repair loop (Status: pending)
+## G11 — Structured-output repair loop (Status: complete, 2026-09-19)
 
 Pain: free models are bad at strict JSON; builders waste days on parse
 failures, regex salvage, and hand-rolled re-prompts.
@@ -674,11 +674,23 @@ Execute:
    unrepairable → honest error); live-verify against a weak free model.
 
 Done when:
-- [ ] A live structured-output request that fails raw JSON parsing
+- [x] A live structured-output request that fails raw JSON parsing
       succeeds through the repair loop (transcript pasted).
-- [ ] Allowances charged for both turns (ledger evidence pasted).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G12 goal created in the same turn.
+- [x] Allowances charged for both turns (ledger evidence pasted).
+- [x] Full suite + gates pass.
+- [x] Commit + push; G12 goal created in the same turn.
+
+Evidence (2026-09-19, cohere/command-r-08-2024, json_object, max_tokens=160):
+turn 1 raw reply truncated mid-string (`... "Yogurt Parfait: Lay` + end of
+output) -> strict parse failed `Unterminated string`; turn 2 (repair, 3
+messages, validation error appended) returned shorter valid JSON that parses.
+Final: `{"foods": ["Fruit Salad: ..."]}`, attempts=2.
+Ledger: reservations 511 -> 513; two distinct charge sets
+(`d715059b...` raw, `31c59c94...` repair), each 1 request across 4 limit keys.
+Bound documented in `docs/STRUCTURED_OUTPUT.md` (max 1 repair, then
+`StructuredOutputError`/HTTP 502); canaries still measure raw output.
+Gates: full suite green, coverage 87.94/78.25, `ruff check .` clean,
+strict mypy on 25 modules, check_docs + check-counts pass.
 
 Effort: M. Fit: high — unlocks agent/tool workloads on weak models.
 

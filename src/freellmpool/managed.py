@@ -36,7 +36,12 @@ from .conformance import (
     default_conformance_path,
     required_features,
 )
-from .errors import AllProvidersExhausted, ContextWindowExceeded, ProviderHTTPError
+from .errors import (
+    AllProvidersExhausted,
+    ContextWindowExceeded,
+    ProviderHTTPError,
+    StructuredOutputError,
+)
 from .free_policy import admit, credential_fingerprint, fresh, load_accounts, timestamp
 from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .media import check_image_url, image_input_tokens
@@ -870,7 +875,34 @@ class ManagedPool(Pool):
                     route, {"usage": state.get("usage", {})}, state["reserved_amounts"]))
 
     def chat(self, messages: list[JSON], **kwargs: Unpack[CallOptions]) -> Reply:
-        return cast(Reply, self._run("chat", messages, **kwargs))
+        reply = cast(Reply, self._run("chat", messages, **kwargs))
+        return self._structured_repair(messages, reply, kwargs)
+
+    def _structured_repair(self, messages: list[JSON], reply: Reply,
+                           kwargs: CallOptions) -> Reply:
+        from .structured import MAX_REPAIRS, check_reply, repair_messages
+
+        response_format = kwargs.get("response_format")
+        if response_format is None:
+            return reply
+        _value, error = check_reply(reply.text, response_format)
+        if error is None:
+            return reply
+        attempts = [(f"{reply.provider_id}/{reply.model}", f"raw reply invalid: {error}")]
+        current: Reply = reply
+        for _ in range(MAX_REPAIRS):
+            fixed = cast(Reply, self._run(
+                "chat", repair_messages(list(messages), current.text, error), **kwargs))
+            _value, error = check_reply(fixed.text, response_format)
+            if error is None:
+                fixed.attempts += current.attempts
+                return fixed
+            attempts.append((f"{fixed.provider_id}/{fixed.model}", f"repair reply invalid: {error}"))
+            current = fixed
+        raise StructuredOutputError(
+            attempts,
+            client_message=(f"JSON-mode reply failed validation after max {MAX_REPAIRS} repair "
+                            f"turn(s); last error: {error}"))
 
     async def achat(self, messages: list[JSON], *, apost: AsyncPost | None = None,
                     **kwargs: Unpack[CallOptions]) -> Reply:

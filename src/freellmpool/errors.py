@@ -44,6 +44,20 @@ class AllProvidersExhausted(FreeLLMPoolError):
         super().__init__(f"all providers exhausted ({detail})")
 
 
+class StructuredOutputError(AllProvidersExhausted):
+    """A JSON-mode reply failed validation even after the bounded repair turn.
+
+    A subclass of :class:`AllProvidersExhausted` so the proxy surfaces it
+    through the normal exhaustion path (502: the upstream served unusable
+    output, not a client mistake).
+    """
+
+    def __init__(self, attempts: list[tuple[str, str]], *, client_message: str | None = None,
+                 retry_after: float | None = None):
+        super().__init__(attempts, client_status=502, client_message=client_message,
+                         retry_after=retry_after)
+
+
 class ContextWindowExceeded(AllProvidersExhausted):
     """Every candidate rejected the request because the input was too long.
 
