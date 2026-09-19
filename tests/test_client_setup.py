@@ -125,6 +125,34 @@ def test_service_uses_actual_proxy_command_and_never_key_argv(tmp_path, monkeypa
     assert os.environ["FREELLMPOOL_LEGACY_ROUTER"] == "0"
 
 
+def test_claude_launch_environment_points_at_local_gateway(tmp_path):
+    inherited = {
+        "HOME": "/unchanged/home",
+        "PATH": "/usr/bin",
+        "ANTHROPIC_API_KEY": "upstream-must-not-pass",
+        "ANTHROPIC_BASE_URL": "https://paid.example",
+        "CLAUDE_CODE_USE_BEDROCK": "1",
+    }
+    env = build_launch_environment("claude", tmp_path, "synthetic-local-key", inherited)
+    assert env["ANTHROPIC_BASE_URL"] == "http://127.0.0.1:8080"
+    assert env["ANTHROPIC_API_KEY"] == "synthetic-local-key"
+    assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "claude")
+    assert "CLAUDE_CODE_USE_BEDROCK" not in env
+    assert env["HOME"] == "/unchanged/home"
+
+
+def test_install_writes_claude_free_wrapper(tmp_path):
+    result = install_client_setup(root=tmp_path / "clients", bin_dir=tmp_path / "bin",
+                                  unit_dir=tmp_path / "units",
+                                  t3_settings=tmp_path / "t3.json",
+                                  binaries={"claude": "/usr/bin/claude"})
+    wrapper = tmp_path / "bin" / "claude-free"
+    assert str(wrapper) in result["wrappers"]
+    body = wrapper.read_text()
+    assert "--client" in body and "claude" in body
+    assert "synthetic" not in body  # no key material in the wrapper
+
+
 def test_bootstrap_installs_this_checkout_and_preserves_setup_arguments(tmp_path):
     fake_bin = tmp_path / "fake-bin"
     fake_bin.mkdir()

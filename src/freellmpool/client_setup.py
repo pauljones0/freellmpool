@@ -1,4 +1,4 @@
-"""Private, reversible gateway service and contained OpenCode/Hermes profiles."""
+"""Private, reversible gateway service and contained OpenCode/Hermes/Claude profiles."""
 
 from __future__ import annotations
 
@@ -173,6 +173,19 @@ def build_launch_environment(client: str, root: Path, proxy_key: str,
             # isolated profile. Never restore upstream keys through dotenv.
             "PYTHON_DOTENV_DISABLED": "1",
         })
+    elif client == "claude":
+        # Claude Code appends /v1/messages itself; the manifest base ends in
+        # /v1, so strip it. Upstream ANTHROPIC_* values never survive: the
+        # allowlist above already dropped them, and these overwrite regardless.
+        manifest_base = _local_base_url(json.loads(files["client-manifest.json"])["base_url"])
+        env.update({
+            "ANTHROPIC_BASE_URL": manifest_base.removesuffix("/v1"),
+            "ANTHROPIC_API_KEY": proxy_key,
+            "FREELLMPOOL_PROXY_KEY": proxy_key,
+            # Isolated config dir: no shared OAuth/login, skills, or MCP
+            # servers leak in; the session spends only free gateway routes.
+            "CLAUDE_CONFIG_DIR": str(root / "claude"),
+        })
     else:
         raise ValueError("unsupported free client")
     return env
@@ -218,7 +231,7 @@ def install_client_setup(
     bin_dir = bin_dir or Path.home() / ".local/bin"
     unit_dir = unit_dir or Path.home() / ".config/systemd/user"
     t3_settings = t3_settings or Path.home() / ".t3/userdata/settings.json"
-    binaries = binaries if binaries is not None else {name: path for name in ("opencode", "hermes") if (path := shutil.which(name))}
+    binaries = binaries if binaries is not None else {name: path for name in ("opencode", "hermes", "claude") if (path := shutil.which(name))}
     files = generate_client_files(root, base_url)
     # Decode existing settings before touching anything; never overwrite corruption.
     t3 = json.loads(t3_settings.read_text()) if t3_settings.exists() else {}
@@ -246,7 +259,7 @@ def install_client_setup(
         mode=0o755,
     )
     for name, binary in binaries.items():
-        if name not in ("opencode", "hermes"):
+        if name not in ("opencode", "hermes", "claude"):
             continue
         wrapper = bin_dir / (name + "-free")
         command = [sys.executable, "-m", "freellmpool.client_setup", "launch", "--root", str(root), "--client", name, "--binary", binary]
@@ -282,7 +295,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("install", "install-command", "launch", "service"))
     parser.add_argument("--root", type=Path, default=Path.home() / ".config/freellmpool/clients")
-    parser.add_argument("--client", choices=("opencode", "hermes"))
+    parser.add_argument("--client", choices=("opencode", "hermes", "claude"))
     parser.add_argument("--binary")
     args, remainder = parser.parse_known_args(argv)
     if args.action == "install-command":

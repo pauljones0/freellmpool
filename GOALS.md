@@ -812,6 +812,245 @@ full-suite load; passes alone and on full rerun.)
 
 Effort: S–M. Fit: medium — completes the G2 story honestly.
 
+## Goal chain G15–G22 (accepted 2026-09-19)
+
+Eight pain-point goals, brainstormed from live web research (agentic
+coding bill shock, free-tier data-training defaults, MCP context-tax
+analysis, mid-session free-endpoint death, LiteLLM CVE fallout,
+embedding-quality rankings). Execute strictly in order; each goal's
+Done-when is the audit for "did we completely solve this pain?" —
+including a pain-scenario demonstration, not just unit tests. On
+completing each goal, immediately create the next goal as the active
+session goal in the same turn. If a goal is truly blocked, record the
+blocker here and skip to the next — never hold the chain hostage.
+
+## G15 — Claude Code $0 mode (Status: complete, 2026-09-19)
+
+Pain: agentic coding bills are detonating — $200/mo Claude Code power
+users quitting, $50+/week API burn, Opus at $5/$25 per M tokens. The
+G9 Anthropic bridge can already serve Claude Code from free tiers,
+but there is no one-command setup and no visible "$0" receipt, so the
+exact demographic quitting paid plans never finds the door.
+
+Bet: a 5-minute switch captures the "I just quit $200/mo" crowd: one
+setup command routes Claude Code entirely through the gateway, and a
+session receipt proves the savings.
+
+Execute:
+1. One-command Claude Code onboarding (config + base-URL + key
+   wiring) beside the existing OpenCode/Hermes setup.
+2. Session savings receipt: "$X at Opus rates — you paid $0"
+   (display only; killed bet #2 stays dead — no budgets).
+3. Docs + troubleshooting for the Claude Code path.
+
+Done when:
+- [x] A fresh-machine transcript shows Claude Code completing a
+      real coding task end-to-end at $0 with the receipt printed
+      (the pain scenario, solved).
+- [x] Full suite + gates pass.
+- [x] Commit + push; G16 goal created in the same turn.
+
+Evidence (2026-09-19, claude 2.1.261, isolated HOME + scratch
+workdir simulating a fresh machine): `claude -p` with the wrapper
+env (`ANTHROPIC_BASE_URL=http://127.0.0.1:8080`, local proxy key
+only, no upstream creds, no OAuth) implemented real FizzBuzz in
+`fizzbuzz.py` (edited file verified), ran it, and reported outputs
+1–16 correctly — all through free gateway routes.
+Receipt: `Lifetime free usage: 348 requests, 1,123,601 tokens ...
+Would have cost ~$19.18 at Claude Opus 4.8 rates — you paid $0.`
+Shipped: `claude` client in setup (wrapper + isolated
+`CLAUDE_CONFIG_DIR`), `freellmpool receipt` (+ `--json`),
+`docs/CLAUDE_CODE.md` with troubleshooting. Gates: 2511 passed,
+coverage 87.96/78.32, `ruff check .` clean, strict mypy on touched
+files, check_docs + check-counts pass. (Known `test_route_health`
+load flake; green alone, on clean tree, and on full rerun.)
+
+Effort: M. Fit: high — most money behind this pain.
+
+## G16 — Privacy routing + redaction (Status: pending)
+
+Pain: free tiers train on your data by default (ChatGPT, Claude
+free, Gemini; Copilot from April 2026). Developers paste proprietary
+code into free endpoints daily; lawyers now warn against it. Nobody
+labels which free route logs and which doesn't.
+
+Bet: the gateway becomes the safe way to use free tiers: published
+data-policy labels per provider, pre-flight PII/secret redaction,
+and routing that respects both.
+
+Execute:
+1. Data-policy labels in the catalog per provider
+   (trains-by-default / api-no-train / unknown, sourced with dates).
+2. Pre-flight redaction (PII + secrets) with adversarial-fixture
+   tests; strict mode refuses logging providers for flagged prompts.
+3. Live transcript: a sensitive prompt provably avoids
+   train-by-default routes.
+
+Done when:
+- [ ] The pain scenario is demonstrated: a secret-bearing prompt is
+      redacted and/or routed away from logging providers, with the
+      policy labels cited (numbers/table pasted).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G17 goal created in the same turn.
+
+Effort: M–L. Fit: high — least served by anyone.
+
+## G17 — MCP diet as a weapon (Status: pending)
+
+Pain: MCP context bloat is the #1 developer complaint (40–72% of
+context gone before any work); a lone output-compression project
+gained 3,400 stars in a week. G14 solved this for our own tools but
+nobody outside this repo knows or can reuse it.
+
+Bet: generalize + publish: a reusable compression wrapper and a
+measured benchmark page that makes freellmpool the cited answer to
+MCP bloat.
+
+Execute:
+1. Generalize G14 truncation into a reusable wrapper for any MCP
+   output (budgets + labels + full escape).
+2. Benchmark before/after tokens across popular MCP servers;
+   publish the numbers on the Pages site.
+3. Docs for third-party MCP authors to adopt the wrapper.
+
+Done when:
+- [ ] Published benchmark shows large-response shrinkage on
+      third-party MCP output with zero silent truncations (numbers
+      pasted, page live).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G18 goal created in the same turn.
+
+Effort: M. Fit: medium-high — distribution, riding proven demand.
+
+## G18 — Live free-tier status page (Status: pending)
+
+Pain: free endpoints die and 429 without warning; "is X down or is
+it me?" has no public answer. G10 drift snapshots exist but stay on
+one machine.
+
+Bet: publish drift snapshots to GitHub Pages on a timer — the public
+"is free-tier X working right now?" signal with staleness honesty.
+
+Execute:
+1. Snapshot publisher: drift snapshot → Pages site on a schedule,
+   with generated-at staleness indicator + short history.
+2. Docs-check the published shape; no key material by construction.
+3. Live page verified from a clean checkout.
+
+Done when:
+- [ ] The public page correctly shows a real, live-observed route
+      state (URL + screenshot/transcript pasted), with staleness
+      labeled.
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G19 goal created in the same turn.
+
+Effort: S–M. Fit: medium — small code, big discoverability.
+
+## G19 — Security-hardening sprint (Status: pending)
+
+Pain: LiteLLM published 12 advisories in 2026 including pre-auth
+RCE; teams ask "do we have someone on-call for the next one?" Our
+gateway is small but has never been audited or packaged for trust.
+
+Bet: make "boring and safe" provable: SBOM, signed releases,
+dependency audit gate, and an honest comparison page.
+
+Execute:
+1. SBOM generation + signed release artifacts + `pip-audit` (or
+   equivalent) as a CI gate.
+2. Adversarial self-review of the proxy auth boundary with fixes
+   for anything found (regression test per fix).
+3. Comparison doc: our surface vs LiteLLM's 12 advisories, with
+   explicit residual risks (no security theater).
+
+Done when:
+- [ ] Audit workflow is green, release artifacts are signed + SBOM'd
+      (links pasted), and the comparison doc names residual risks
+      honestly.
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G20 goal created in the same turn.
+
+Effort: M. Fit: medium — defensive, trust-building.
+
+## G20 — Free-embedding leaderboard (Status: pending)
+
+Pain: teams agonize over generation models then ship a
+bottom-quartile embedding endpoint — OpenAI's embeddings rank 13th
+of 15 while free models win by 11 points. Nobody has measured the
+free embedding routes head-to-head.
+
+Bet: the gateway measures its own free embedders on a fixed
+retrieval fixture and recommends/routes to the winner; RAG defaults
+to the best free embedder automatically.
+
+Execute:
+1. Retrieval-accuracy harness: fixed Q/A fixture set, scored per
+   free embedding route through the gateway.
+2. Publish the ranking; wire the winner as the RAG default with an
+   override flag.
+3. Regression tests for the harness scoring (fixtures, not live).
+
+Done when:
+- [ ] Published ranking names a measured winner with scores pasted,
+      and `rag index` uses it by default (transcript pasted).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G21 goal created in the same turn.
+
+Effort: M. Fit: medium — makes G12's RAG best-in-class free.
+
+## G21 — Run survivor (Status: pending)
+
+Pain: free endpoints 429 and die mid-session; long agentic runs
+(tokenmax swarms, recipes, panels) lose everything when the bench
+collapses halfway. An entire genus of failover-proxy repos proves
+the pain is real and unsolved at the run level.
+
+Bet: long runs checkpoint progress and resume across 429s/outages
+instead of restarting — survival, not just failover.
+
+Execute:
+1. Checkpoint/resume for long fan-out runs (tokenmax/recipes):
+   per-model results persisted incrementally, resume picks up only
+   what is missing.
+2. Honest resume semantics: resumed runs label what was fresh vs
+   replayed; quotas still account every live call.
+3. Live transcript: kill the bench mid-run (or hit real 429s) and
+   resume to a complete result.
+
+Done when:
+- [ ] A run interrupted by real 429s/outages resumes to a complete,
+      correctly labeled result (transcript pasted).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G22 goal created in the same turn.
+
+Effort: M–L. Fit: medium-high — completes the G7 story at run level.
+
+## G22 — Agent-loop cache (Status: pending)
+
+Pain: agentic loops resend the same growing prefix every turn,
+burning free quotas 2–5x faster than needed; prompt caching (up to
+90% savings where supported) is the industry's #1 mitigation and we
+only cache whole responses.
+
+Bet: prefix-aware caching for multi-turn agent traffic stretches
+free quotas dramatically with zero behavior change on a hit.
+
+Execute:
+1. Prefix-aware cache: hash the stable prompt prefix, serve/cache
+   per-turn deltas; exact-hit returns byte-identical behavior.
+2. Quota math stays honest: cached prefixes cost nothing, deltas
+   cost normally; stats expose hit rate + tokens avoided.
+3. Live measurement: same agentic loop with/without the cache,
+   quota spend pasted.
+
+Done when:
+- [ ] Before/after quota spend shows large savings on a realistic
+      multi-turn loop with identical outputs (numbers pasted).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; chain complete — report the series result.
+
+Effort: M. Fit: medium — quota multiplier for every agent user.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

@@ -101,3 +101,25 @@ def test_empty_verification_does_not_claim_success(tmp_path, monkeypatch, capsys
     args = argparse.Namespace(provider=None, limit=2, features="", timeout=5, json=False)
     assert managed_cli.cmd_verify(args) == 2
     assert "at least one" in capsys.readouterr().err
+
+
+def test_receipt_prints_savings_and_zero_paid(tmp_path, monkeypatch, capsys):
+    pool = make_pool(tmp_path)
+    monkeypatch.setattr(managed_cli.ManagedPool, "from_default_config", lambda: pool)
+    monkeypatch.setattr(pool, "lifetime_stats", lambda: {"requests": 12, "prompt_tokens": 100000,
+                                                         "completion_tokens": 20000, "cache_hits": 3})
+    assert managed_cli.cmd_receipt(argparse.Namespace(json=False)) == 0
+    out = capsys.readouterr().out
+    assert "$3.00" in out and "paid $0" in out and "Opus" in out
+
+
+def test_receipt_json_shape(tmp_path, monkeypatch, capsys):
+    import json
+
+    pool = make_pool(tmp_path)
+    monkeypatch.setattr(managed_cli.ManagedPool, "from_default_config", lambda: pool)
+    monkeypatch.setattr(pool, "lifetime_stats", lambda: {"requests": 1, "prompt_tokens": 10,
+                                                         "completion_tokens": 5, "cache_hits": 0})
+    assert managed_cli.cmd_receipt(argparse.Namespace(json=True)) == 0
+    body = json.loads(capsys.readouterr().out)
+    assert body["paid_usd"] == 0 and body["would_have_cost_usd"] > 0

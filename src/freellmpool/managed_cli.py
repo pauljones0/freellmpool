@@ -211,6 +211,26 @@ def install_maintenance(unit_dir: Path | None = None) -> list[str]:
     return [f"freellmpool-{name}.timer" for name in commands]
 
 
+def cmd_receipt(args: argparse.Namespace) -> int:
+    from .savings import BASELINE_LABEL, usd_saved
+
+    stats = ManagedPool.from_default_config().lifetime_stats()
+    prompt = stats.get("prompt_tokens") or 0
+    completion = stats.get("completion_tokens") or 0
+    avoided = usd_saved(prompt, completion)
+    if args.json:
+        print(json.dumps({"requests": stats.get("requests", 0),
+                          "prompt_tokens": prompt, "completion_tokens": completion,
+                          "cache_hits": stats.get("cache_hits", 0),
+                          "baseline": BASELINE_LABEL, "would_have_cost_usd": round(avoided, 4),
+                          "paid_usd": 0}, indent=2))
+        return 0
+    print(f"Lifetime free usage: {stats.get('requests', 0)} requests, "
+          f"{prompt + completion:,} tokens ({stats.get('cache_hits', 0)} cache hits)")
+    print(f"Would have cost ~${avoided:,.2f} at {BASELINE_LABEL} — you paid $0.")
+    return 0
+
+
 def cmd_setup_clients(args: argparse.Namespace) -> int:
     from .client_setup import install_client_setup
     result = install_client_setup()
@@ -232,7 +252,7 @@ def cmd_setup_clients(args: argparse.Namespace) -> int:
         if any(Path(wrapper).name == "opencode-free" for wrapper in result["wrappers"]):
             print("T3's OpenCode provider uses the free profile when T3 settings are present.")
     else:
-        print("No supported coding client was found. Install OpenCode or Hermes, then run freellmpool setup-clients.")
+        print("No supported coding client was found. Install OpenCode, Hermes, or Claude Code, then run freellmpool setup-clients.")
     if started:
         print("Gateway service and maintenance timer starts requested.")
     else:
@@ -285,6 +305,9 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     status = sub.add_parser("status", help="show free admission and allowance state")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=cmd_status)
+    receipt = sub.add_parser("receipt", help="show lifetime free usage and cost avoided")
+    receipt.add_argument("--json", action="store_true")
+    receipt.set_defaults(func=cmd_receipt)
     clients = sub.add_parser("setup-clients", help="install free client profiles and local maintenance")
     clients.add_argument("--no-start", action="store_true")
     clients.set_defaults(func=cmd_setup_clients)
