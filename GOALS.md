@@ -996,7 +996,7 @@ code, `check_docs.py` green.
 
 Effort: S–M. Fit: medium — small code, big discoverability.
 
-## G19 — Security-hardening sprint (Status: pending)
+## G19 — Security-hardening sprint (Status: in-progress)
 
 Pain: LiteLLM published 12 advisories in 2026 including pre-auth
 RCE; teams ask "do we have someone on-call for the next one?" Our

@@ -488,3 +488,24 @@ def test_client_singleton_under_concurrency():
     for x in threads:
         x.join()
     assert len({id(r) for r in results}) == 1  # all threads got the same client
+
+
+def test_upstream_error_redacts_echoed_secrets():
+    """G19: a provider echoing a key in its error body must not propagate it."""
+    secret = "sk-live-abcdefghijklmnop1234"
+    result = C.HTTPResult(
+        401,
+        {"error": {"message": f"invalid key {secret} for project"}},
+        f"invalid key {secret}",
+    )
+    err = C._provider_http_error(result)
+    assert secret not in str(err)
+    assert "REDACTED" in str(err)
+    assert "invalid key" in str(err)
+
+
+def test_upstream_error_message_is_length_capped():
+    """G19: unbounded upstream error payloads must not flow into errors/logs."""
+    result = C.HTTPResult(500, {"error": {"message": "E" * 100_000}}, "E" * 100_000)
+    err = C._provider_http_error(result)
+    assert len(str(err)) <= 500

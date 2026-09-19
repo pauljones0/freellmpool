@@ -532,12 +532,21 @@ def _retryable(status: int) -> bool:
 
 
 def _err_message(result: HTTPResult) -> str:
+    # Upstream bytes are untrusted: cap length (a hostile provider must not be
+    # able to stuff megabytes into our errors/logs) and redact secret shapes
+    # (some providers echo keys in 4xx messages; these strings are served to
+    # proxy/MCP clients verbatim via client_message).
+    from .privacy import redact_text
+
     err = result.body.get("error")
     if isinstance(err, dict):
-        return str(err.get("message") or err)
-    if isinstance(err, str):
-        return err
-    return (result.text or "").strip()[:200] or "no body"
+        message = str(err.get("message") or err)
+    elif isinstance(err, str):
+        message = err
+    else:
+        message = (result.text or "").strip()
+    scrubbed = redact_text(message[:400])[0].strip()
+    return scrubbed or "no body"
 
 
 def _provider_http_error(result: HTTPResult) -> ProviderHTTPError:

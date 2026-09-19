@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   gate:
-    if: github.repository == '0xzr/freellmpool'
+    if: github.repository == '0xzr/freellmpool' || github.repository == 'pauljones0/freellmpool'
     name: Audit release dependencies
     runs-on: ubuntu-latest
     permissions:
@@ -83,7 +83,7 @@ jobs:
           python -m pip_audit . --strict --desc=on --aliases=on "${args[@]}"
 
   packages:
-    if: github.repository == '0xzr/freellmpool'
+    if: github.repository == '0xzr/freellmpool' || github.repository == 'pauljones0/freellmpool'
     name: Package SBOMs and provenance
     needs: gate
     runs-on: ubuntu-latest
@@ -183,7 +183,7 @@ jobs:
           retention-days: 90
 
   container:
-    if: github.repository == '0xzr/freellmpool'
+    if: github.repository == '0xzr/freellmpool' || github.repository == 'pauljones0/freellmpool'
     name: Container SBOM and provenance
     needs: packages
     permissions:

@@ -2816,3 +2816,37 @@ def test_chat_sse_chunks_include_integer_created_timestamp(
     assert chunks
     assert all(isinstance(chunk["created"], int) for chunk in chunks)
     assert len({chunk["created"] for chunk in chunks}) == 1
+
+
+def test_proxy_error_never_echoes_upstream_key(providers, env, quota):
+    """G19: provider errors served to proxy clients must not carry echoed keys."""
+    from freellmpool.client import HTTPResult
+    from freellmpool.router import Pool
+
+    secret = "sk-live-zzzzzzzzzzzzzzzzzzzz1234"
+
+    def hostile_post(url, headers, body, timeout):
+        return HTTPResult(
+            401,
+            {"error": {"message": f"invalid key {secret} rejected"}},
+            f"invalid key {secret} rejected",
+        )
+
+    pool = Pool(providers[:1], quota=quota, env=env, post=hostile_post)
+    httpd, base = _serve(pool)
+    try:
+        req = urllib.request.Request(
+            base + "/v1/chat/completions",
+            data=json.dumps({"model": "auto", "messages": [{"role": "user", "content": "hi"}]}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            urllib.request.urlopen(req)  # noqa: S310 (localhost test)
+            raise AssertionError("expected upstream exhaustion to fail the request")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode()
+            assert secret not in body
+            assert "REDACTED" in body
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
