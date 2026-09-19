@@ -833,11 +833,16 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
         provider = _choose_provider(load_catalog(), local_id)
 
     # _choose_provider only returns providers with a credential environment name.
-    key_env = provider.key_env
-    assert key_env is not None
+    base_env = provider.key_env
+    assert base_env is not None
+    slot = getattr(args, "slot", 1) or 1
+    if not 1 <= slot <= 9:
+        print("Slot must be 1-9.", file=sys.stderr)
+        return 3
+    key_env = base_env if slot == 1 else f"{base_env}_{slot}"
     value = getattr(args, "value", None)
     if not value:
-        value = getpass.getpass(f"Paste {provider.key_env}: ").strip()
+        value = getpass.getpass(f"Paste {key_env}: ").strip()
 
     if not value:
         print("No value provided.", file=sys.stderr)
@@ -857,7 +862,7 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
         extra_values[env_var] = extra_value
 
     if not args.yes:
-        names = [str(provider.key_env), *extra_values]
+        names = [str(key_env), *extra_values]
         answer = input(f"Write {', '.join(names)} to {default_config_path()}? [y/N] ")
         if answer.strip().lower() not in {"y", "yes"}:
             print("Cancelled.")
@@ -869,7 +874,7 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
         print("Could not save credentials. Check config.toml syntax and permissions, then retry; existing contents were not replaced.", file=sys.stderr)
         return 2
 
-    written_names = [str(provider.key_env), *extra_values]
+    written_names = [str(key_env), *extra_values]
     inventory_path = append_inventory_record(
         KeyRecord(
             provider=provider.id,
@@ -2660,6 +2665,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_keys_add.add_argument("provider_arg", nargs="?", help="provider id or external provider name")
     p_keys_add.add_argument("-p", "--provider")
     p_keys_add.add_argument("--value")
+    p_keys_add.add_argument("--slot", type=int, default=1,
+                            help="key slot: 1 writes KEY_ENV, 2+ writes KEY_ENV_N for rotation")
     p_keys_add.add_argument("--base-url", help="OpenAI-compatible base URL for a new provider")
     p_keys_add.add_argument("--model", help="default model id for a new provider")
     p_keys_add.add_argument("--label")

@@ -449,6 +449,262 @@ Done when:
 
 Effort: S. Fit: medium — distribution of proof, not product.
 
+## Goal chain G7–G14 (accepted 2026-09-18)
+
+Eight pain-point goals, brainstormed from live web research (free-tier
+429 complaints, Claude Code $200/mo pain, LiteLLM CVE fallout, MCP
+context-tax analysis, free-tier drift reports). Execute strictly in
+order; each goal's Done-when is the audit for "did we completely solve
+this pain?". On completing each goal, immediately create the next goal
+as the active session goal in the same turn. If a goal is truly
+blocked, record the blocker here and skip to the next — never hold the
+chain hostage.
+
+## G7 — Multi-key rotation per provider (Status: complete 2026-09-19)
+
+Shipped: numbered slots (`KEY`, `KEY_2`…`_9`) via `Provider.api_keys()`;
+sticky-until-429 `KeyRotator` (per-slot cooldowns, 401/403→300s,
+429→Retry-After/60s); rotation wired on managed + legacy + async paths
+(chat/embed/transcribe/stream); snapshot admits a route when ANY slot
+qualifies; unadmitted slots skipped pre-dispatch with attempt notes;
+`status` reports `key_depth` + prints multi-key lines;
+`keys add --slot N`; FAQ documented. 13 regression tests.
+
+Live transcripts (real upstreams, single-account boundary noted below):
+```
+# Track A: dead slot 1 → served via slot 2 (groq)
+TEXT: slot-two-ok | VIA: groq / qwen/qwen3.8-27b | ATTEMPTS: 4
+# Track B: unadmitted slot skipped pre-dispatch, accounting intact
+groq/qwen/qwen3.8-27b: key slot 2 skipped (credential not admitted)
+groq/qwen/qwen3.8-27b: allowance exhausted   # 45KB probe > local TPM grant
+```
+- Deterministic 429→rotate→success, cooldown-skip, and
+  all-exhausted→429+Retry-After proven by unit tests (fake transports).
+- Literal live 429→success needs two funded buckets; with one account
+  slot 2 reproduces slot 1's 429 by construction. Attempts to force it
+  (80-req RPM burst, per-model pins, TPM-shaped singles across
+  groq/openrouter) documented in-session; no second account was
+  created (out of scope). Re-verify if a second key ever exists.
+- `status` live: `Multi-key rotation: groq=2 keys`, `key_depth.groq=2`.
+- Key-material grep over all state files: zero hits outside config.toml.
+Gates: full suite green, coverage 88.01/78.39, ruff + strict mypy clean
+on touched gated modules, catalog/policy/counts/docs pass.
+
+Pain: one free key = one rate-limit bucket. A single 429-prone key
+stalls whole sessions; competitors already rotate tokens and we do not.
+Users with two free keys (or a partner's key) get no benefit today.
+
+Bet: N keys per provider behave as one deep bucket with honest
+per-key cooldowns.
+
+Execute:
+1. Accept numbered key slots per provider (`<PROVIDER>_API_KEY`,
+   `<PROVIDER>_API_KEY_2`, …) in env + `keys.toml`; never log key
+   material.
+2. Rotate on 429/auth-failure with per-key cooldowns; skip
+   cooled-down keys without spending them; surface bucket depth in
+   `status`.
+3. Regression tests per behavior: rotation order, per-key cooldown,
+   sticky-until-429 vs round-robin (document the chosen policy),
+   all-keys-exhausted → 429 + `Retry-After`.
+
+Done when:
+- [x] A live two-key session survives a forced 429 on key 1 by
+      serving from key 2 (transcript pasted).
+- [x] `status` shows per-provider key depth; zero key material in
+      logs/state (grep-verified).
+- [x] Full suite + gates pass.
+- [x] Commit + push; G8 goal created in the same turn.
+
+Effort: M. Fit: high — multiplies every session-survival flow G1–G6 built.
+
+## G8 — One-command $0 coding agent launcher (Status: pending)
+
+Pain: "run Claude Code free" is a top-trend pain, but every setup is a
+fragile 10-step README. G5 proved compat; nobody can run it without
+hand-holding.
+
+Bet: one command starts the gateway, wires the env, and execs the
+agent — for Claude Code and OpenCode.
+
+Execute:
+1. `freellmpool claude` (and `--harness opencode`): start proxy,
+   set `ANTHROPIC_*`/OpenCode provider config, exec the agent
+   in-process-replacing (signals propagate).
+2. Copy-paste-verify every step verbatim in a clean container like G3;
+   record the transcript + timing.
+3. Docs: 1-command setup in INTEGRATIONS.md; caveats (free-model
+   quality, 429 backoff behavior).
+
+Done when:
+- [ ] Fresh-container run goes from zero to a real agent file-edit via
+      the launcher (transcript pasted, timed).
+- [ ] Both harnesses verified (claude exec + opencode config path).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G9 goal created in the same turn.
+
+Effort: S–M. Fit: high — distribution kicker for the whole series.
+
+## G9 — Vision on the Anthropic bridge (Status: pending)
+
+Pain: G5's known gap — image blocks are silently dropped. Agent users
+paste screenshots, diagrams, and error photos constantly; silent
+dropping is the worst failure mode (wrong answers, no error).
+
+Bet: images flow through on vision-verified free routes, or the client
+gets a loud, honest error.
+
+Execute:
+1. Translate Anthropic image blocks to OpenAI vision content on routes
+   with fresh `vision` conformance; add a downscale/size guard with a
+   documented bound.
+2. Routes without vision proof → honest 400-class error naming the
+   gap (never silent drop).
+3. Conformance probe for vision (+ vision with tools); regression
+   tests per fix; live-verify one image turn through the real CLI.
+
+Done when:
+- [ ] A live `claude` turn referencing an attached image succeeds via
+      the gateway (transcript pasted).
+- [ ] Silent-drop path is impossible by construction (test proves the
+      error branch).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G10 goal created in the same turn.
+
+Effort: M. Fit: high — removes the biggest "silently wrong" behavior.
+
+## G10 — Free-tier drift radar (Status: pending)
+
+Pain: every free-tier list on the internet rots within weeks — limits
+change, models sunset, ToS shifts (e.g. Gemini's Mar-2026 EEA/UK
+end-user serving restriction). Users discover drift by failing.
+
+Bet: the gateway tells you what changed before you feel it, and
+publishes a live-verified snapshot others can consume.
+
+Execute:
+1. `freellmpool drift`: diff last verify evidence vs fresh probes;
+   print changed/died/recovered routes with dates.
+2. Emit a weekly machine-readable snapshot (dated, sourced) designed
+   for third-party consumption; document the schema.
+3. Tests for diff classification (changed vs died vs recovered);
+   docs-check the snapshot schema doc.
+
+Done when:
+- [ ] `drift` correctly reports a real, live-observed change (paste
+      the report showing a genuine delta).
+- [ ] Snapshot schema documented + validated by a checker script.
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G11 goal created in the same turn.
+
+Effort: M. Fit: medium-high — turns the evidence engine into
+distribution.
+
+## G11 — Structured-output repair loop (Status: pending)
+
+Pain: free models are bad at strict JSON; builders waste days on parse
+failures, regex salvage, and hand-rolled re-prompts.
+
+Bet: `response_format: json_schema` just works — the gateway validates
+and, on failure, re-asks once with the validation error appended,
+all inside honest allowance accounting.
+
+Execute:
+1. Validate JSON-mode responses against the schema; on failure,
+   one bounded repair turn carrying the validation error.
+2. Repair spend counts against allowances (no free double-calls);
+   document the bound (max 1 repair, then honest error).
+3. Conformance probe + regression tests (valid passthrough, repaired,
+   unrepairable → honest error); live-verify against a weak free model.
+
+Done when:
+- [ ] A live structured-output request that fails raw JSON parsing
+      succeeds through the repair loop (transcript pasted).
+- [ ] Allowances charged for both turns (ledger evidence pasted).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G12 goal created in the same turn.
+
+Effort: M. Fit: high — unlocks agent/tool workloads on weak models.
+
+## G12 — RAG-in-a-box CLI for students (Status: pending)
+
+Pain: G4 proved $0 RAG is possible, but it is still a quickstart, not
+a tool. Classrooms and solo builders want RAG without a backend, a
+vector DB, or any bill.
+
+Bet: two commands index a folder and answer questions over it,
+entirely on free routes with an embedded store.
+
+Execute:
+1. `freellmpool rag index ./docs` + `freellmpool rag ask "…"` backed
+   by an embedded sqlite-vec (or equivalent zero-service) store.
+2. All-free embeddings + chat; honest errors when the bench is thin.
+3. End-to-end test at $0 in a clean container (index → ask →
+   cited answer); quickstart doc updated to the CLI.
+
+Done when:
+- [ ] Clean-container run indexes a sample folder and returns a
+      correct, cited answer at $0 (transcript pasted, timed).
+- [ ] Store + deps add no services and no paid path (review the dep
+      diff explicitly).
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G13 goal created in the same turn.
+
+Effort: M–L. Fit: medium — owns the student segment G3 opened.
+
+## G13 — LiteLLM drop-in migration path (Status: pending)
+
+Pain: teams fleeing LiteLLM's 2026 CVE record need a 1-line switch,
+not a rewrite. Our OpenAI surface is close but unproven as a
+migration target.
+
+Bet: a tested remap + checklist makes switching mechanical, with an
+honest "what we deliberately don't do" list.
+
+Execute:
+1. Probe with a real LiteLLM-client configuration against the
+   gateway: base URL swap, `provider/model` naming, `/v1/models`
+   shape, fallback semantics. Log every break.
+2. Code only where a failing probe proves a compat gap (no
+   speculative shims); regression test per fix.
+3. Migration doc: remap table, checklist, explicit non-goals
+   (budgets, admin UI — killed bet #2 stays dead).
+
+Done when:
+- [ ] A real LiteLLM-client config completes chat + streaming +
+      failover against the gateway (transcript pasted).
+- [ ] Zero known migration breaks; migration doc merged.
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; G14 goal created in the same turn.
+
+Effort: M. Fit: medium — captures CVE-driven demand with proof.
+
+## G14 — MCP response diet (Status: pending)
+
+Pain: post-G2 research shows *responses* dwarf schemas — one chatty
+tool result can eat 19%+ of a context window. Our own MCP tools have
+no size discipline.
+
+Bet: freellmpool's MCP tools return compact results by default, with
+depth available on demand.
+
+Execute:
+1. Cap + truncate + summarize-large-result behavior for our own MCP
+   tools; every truncation labeled in-band (never silent).
+2. Measure before/after response token sizes on representative calls
+   (paste the numbers).
+3. Regression tests per tool behavior; document the pattern for other
+   MCP authors.
+
+Done when:
+- [ ] Before/after measurements show large-response shrinkage with
+      zero silent truncations (numbers pasted).
+- [ ] Every tool stays fully usable through the compact surface.
+- [ ] Full suite + gates pass.
+- [ ] Commit + push; chain complete — report the series result.
+
+Effort: S–M. Fit: medium — completes the G2 story honestly.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

@@ -42,6 +42,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"Strict free access: {status['eligible_routes']} eligible routes")
         for row in status["providers"]:
             print(f"  {row['id']:<14} {row['eligible']:>3} routes  {row['reason']}")
+        depth = status.get("key_depth") or {}
+        multi = sorted(pid for pid, n in depth.items() if isinstance(n, int) and n > 1)
+        if multi:
+            print(f"Multi-key rotation: {', '.join(f'{pid}={depth[pid]} keys' for pid in multi)}")
         warning = tools_bench_warning(status)
         if warning:
             print(f"\n{warning}")

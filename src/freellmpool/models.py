@@ -43,19 +43,28 @@ class Provider:
 
     def is_configured(self, env: dict[str, str] | None = None) -> bool:
         """True if this provider is usable: any extra env vars are present, and
-        either it's keyless or its API key is set."""
+        either it's keyless or at least one API key slot is set."""
         env = env if env is not None else dict(os.environ)
         if not all(env.get(name) for name in self.extra_env):
             return False
         if self.keyless:
             return True
-        return bool(self.key_env and env.get(self.key_env))
+        return bool(self.api_keys(env))
 
     def api_key(self, env: dict[str, str] | None = None) -> str | None:
         env = env if env is not None else dict(os.environ)
         if not self.key_env:
             return None
         return env.get(self.key_env) or None
+
+    def api_keys(self, env: dict[str, str] | None = None) -> tuple[str, ...]:
+        """All configured key slots: bare ``key_env`` first, then ``_2`` … ``_9``."""
+        from .key_rotation import slot_env_names
+
+        env = env if env is not None else dict(os.environ)
+        if not self.key_env:
+            return ()
+        return tuple(v for name in slot_env_names(self.key_env) if (v := env.get(name)))
 
     def model(self, name: str) -> Model | None:
         for m in self.models:

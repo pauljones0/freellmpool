@@ -15,6 +15,7 @@ and reused for the pool's lifetime; close it with ``await pool.aclose()`` or an
 from __future__ import annotations
 
 import asyncio
+import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable
 
@@ -38,6 +39,7 @@ from .errors import (
     NoProvidersConfigured,
     ProviderHTTPError,
 )
+from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .models import Provider, Reply
 from .observe import emit
 from .router import (
@@ -82,6 +84,7 @@ class AsyncPool:
 
     def __init__(self, pool: Pool, *, apost: AsyncPostFn | None = None):
         self._pool = pool
+        self._key_rotator = KeyRotator()
         self._apost_fn = apost
         self._aclient = None  # lazy httpx.AsyncClient
         self._aclient_loop = None  # the loop the client is bound to
@@ -239,7 +242,45 @@ class AsyncPool:
     ) -> Reply:
         if _is_thinking(model) and max_tokens < _THINKING_FLOOR:
             max_tokens = _THINKING_FLOOR
-        api_key = provider.api_key(self.env)
+        keys = provider.api_keys(self.env)
+        now = time.time()
+        slots = self._key_rotator.usable_slots(provider.id, len(keys), now) if keys else [-1]
+        if keys and not slots:
+            slots = [self._key_rotator.usable_slots(provider.id, len(keys), float("inf"))[0]]
+        last: ProviderHTTPError | None = None
+        for trial, slot in enumerate(slots):
+            api_key = keys[slot] if slot >= 0 else None
+            try:
+                return await self._acall_with_key(
+                    provider, model, messages, api_key=api_key, max_tokens=max_tokens,
+                    temperature=temperature, timeout=timeout, tools=tools,
+                    tool_choice=tool_choice, response_format=response_format,
+                    max_transport_attempts=max_transport_attempts,
+                )
+            except ProviderHTTPError as exc:
+                last = exc
+                if slot < 0 or exc.status not in ROTATE_STATUSES or trial + 1 >= len(slots):
+                    raise
+                self._key_rotator.cool(provider.id, slot, now + cool_delay(exc.status, exc.retry_after))
+                self._key_rotator.advance(provider.id, len(keys))
+        assert last is not None  # slots is never empty; body returns or raises
+        raise last
+
+    async def _acall_with_key(
+        self,
+        provider: Provider,
+        model: str,
+        messages: list[dict],
+        *,
+        api_key,
+        max_tokens: int,
+        temperature: float,
+        timeout: float,
+        tools,
+        tool_choice,
+        response_format,
+        max_transport_attempts: int | None = None,
+    ) -> Reply:
         if provider.adapter == "gemini":
             if tools:
                 raise ProviderHTTPError(

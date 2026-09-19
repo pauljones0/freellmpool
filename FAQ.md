@@ -94,6 +94,15 @@ If a provider bans or disables your account/key/IP, freellmpool can route around
 it only when another configured provider is available. It cannot unban you or
 make a banned key legitimate.
 
+## Can I configure a second key for one provider?
+
+Yes. Set numbered slots (`GROQ_API_KEY` plus `GROQ_API_KEY_2`, … up to
+`_9`), or run `freellmpool keys add groq --slot 2`. The pool is
+sticky: it stays on one key until that key returns 429/401/403, then
+cools that slot down and serves from the next one. Cooled slots are
+skipped without being spent. `freellmpool status` shows per-provider
+key depth, and key material never appears in logs or state files.
+
 ## How reliable is failover?
 
 It is useful but not magic. Failover helps with transient outages, rate limits,

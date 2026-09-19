@@ -46,6 +46,7 @@ from .errors import (
     NoProvidersConfigured,
     ProviderHTTPError,
 )
+from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .metrics import Metrics, Stat, score_stat
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
@@ -284,6 +285,7 @@ class Pool:
         self._cache = cache
         self.cooldown_seconds = cooldown_seconds
         self._clock = clock or time.monotonic
+        self._key_rotator = KeyRotator()
         self.metrics = metrics or Metrics()
         self.route_health = route_health
         self.conformance = conformance
@@ -383,6 +385,22 @@ class Pool:
             "version": 1,
             "targets": {},
         }
+
+    def _key_trials(self, provider: Provider) -> list[tuple[int, str | None]]:
+        """Usable (slot, key) trials in sticky order; keyless gets one None trial."""
+        keys = provider.api_keys(self.env)
+        if not keys:
+            return [(-1, None)]
+        now = self._clock()
+        slots = self._key_rotator.usable_slots(provider.id, len(keys), now)
+        if not slots:
+            slots = [self._key_rotator.usable_slots(provider.id, len(keys), float("inf"))[0]]
+        return [(slot, keys[slot]) for slot in slots]
+
+    def _cool_key_slot(self, provider_id: str, slot: int, count: int, exc: ProviderHTTPError) -> None:
+        now = self._clock()
+        self._key_rotator.cool(provider_id, slot, now + cool_delay(exc.status, exc.retry_after))
+        self._key_rotator.advance(provider_id, count)
 
     def _acquire_route(self, target: Target) -> HealthLease | None:
         if self.route_health is None:
@@ -659,15 +677,26 @@ class Pool:
                     continue
                 started = self._clock()
                 try:
-                    reply = _client.embed(
-                        emb,
-                        m.name,
-                        inputs,
-                        api_key=emb.api_key(self.env),
-                        env=self.env,
-                        timeout=timeout,
-                        post=self._post,
-                    )
+                    trials = self._key_trials(emb)
+                    reply = None
+                    for trial, (slot, key) in enumerate(trials):
+                        try:
+                            reply = _client.embed(
+                                emb,
+                                m.name,
+                                inputs,
+                                api_key=key,
+                                env=self.env,
+                                timeout=timeout,
+                                post=self._post,
+                            )
+                            break
+                        except ProviderHTTPError as key_exc:
+                            if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
+                                raise
+                            self._cool_key_slot(emb.id, slot, len(trials), key_exc)
+                            attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                    assert reply is not None  # trials is never empty; body returns or raises
                 except Exception as exc:  # noqa: BLE001 — try the next embedder
                     attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
                     self._record_route_failure(target, exc, lease)
@@ -733,18 +762,29 @@ class Pool:
                     continue
                 started = self._clock()
                 try:
-                    reply = _client.transcribe(
-                        tr,
-                        m.name,
-                        audio,
-                        filename,
-                        api_key=tr.api_key(self.env),
-                        env=self.env,
-                        language=language,
-                        response_format=response_format,
-                        timeout=timeout,
-                        post=self._transcribe_post,
-                    )
+                    trials = self._key_trials(tr)
+                    reply = None
+                    for trial, (slot, key) in enumerate(trials):
+                        try:
+                            reply = _client.transcribe(
+                                tr,
+                                m.name,
+                                audio,
+                                filename,
+                                api_key=key,
+                                env=self.env,
+                                language=language,
+                                response_format=response_format,
+                                timeout=timeout,
+                                post=self._transcribe_post,
+                            )
+                            break
+                        except ProviderHTTPError as key_exc:
+                            if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
+                                raise
+                            self._cool_key_slot(tr.id, slot, len(trials), key_exc)
+                            attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                    assert reply is not None  # trials is never empty; body returns or raises
                 except Exception as exc:  # noqa: BLE001 — try the next transcriber
                     attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
                     self._record_route_failure(target, exc, lease)
@@ -1272,24 +1312,35 @@ class Pool:
                 continue
             emit(self._on_event, "attempt", target=target.name, n=len(attempts) + 1)
             try:
-                reply = _client.call(
-                    target.provider,
-                    target.model,
-                    messages,
-                    api_key=api_key,
-                    env=self.env,
-                    max_tokens=max_tokens,
-                    temperature=temperature,
-                    timeout=remaining,
-                    tools=tools,
-                    tool_choice=tool_choice,
-                    response_format=response_format,
-                    post=(
-                        self._chat_post_once
-                        if attempt.allow_defer or is_deferred
-                        else self._post
-                    ),
-                )
+                trials = self._key_trials(target.provider)
+                reply: Reply | None = None
+                for trial, (slot, key) in enumerate(trials):
+                    try:
+                        reply = _client.call(
+                            target.provider,
+                            target.model,
+                            messages,
+                            api_key=key,
+                            env=self.env,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                            timeout=remaining,
+                            tools=tools,
+                            tool_choice=tool_choice,
+                            response_format=response_format,
+                            post=(
+                                self._chat_post_once
+                                if attempt.allow_defer or is_deferred
+                                else self._post
+                            ),
+                        )
+                        break
+                    except ProviderHTTPError as key_exc:
+                        if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
+                            raise
+                        self._cool_key_slot(target.provider.id, slot, len(trials), key_exc)
+                        attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                assert reply is not None  # trials is never empty; body returns or raises
             except ProviderHTTPError as exc:
                 is_ctx, limit = context_limit_from_error(exc.status, str(exc))
                 if is_ctx:
@@ -1509,27 +1560,43 @@ class Pool:
                 emit(self._on_event, "circuit_skip", target=target.name, stream=True)
                 continue
             emit(self._on_event, "attempt", target=target.name, stream=True)
-            gen = _client.stream_call(
-                target.provider,
-                target.model,
-                messages,
-                api_key=api_key,
-                env=self.env,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                timeout=remaining,
-                stream_post=self._stream_post,
-            )
-            try:
-                first = next(gen)  # triggers connection + status check
-            except StopIteration:
+            trials = self._key_trials(target.provider)
+            gen = None
+            first = None
+            open_error: Exception | None = None
+            for trial, (slot, key) in enumerate(trials):
+                gen = _client.stream_call(
+                    target.provider,
+                    target.model,
+                    messages,
+                    api_key=key,
+                    env=self.env,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    timeout=remaining,
+                    stream_post=self._stream_post,
+                )
+                try:
+                    first = next(gen)  # triggers connection + status check
+                except ProviderHTTPError as key_exc:
+                    getattr(gen, "close", lambda: None)()
+                    if slot >= 0 and key_exc.status in ROTATE_STATUSES and trial + 1 < len(trials):
+                        self._cool_key_slot(target.provider.id, slot, len(trials), key_exc)
+                        attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                        continue
+                    open_error = key_exc
+                except Exception as try_exc:  # noqa: BLE001 — StopIteration + transport errors
+                    open_error = try_exc
+                break
+            if isinstance(open_error, StopIteration):
                 non_ctx_failure = True
                 self.metrics.record_failure(target.name, "empty stream")
                 self._record_route_empty(target, lease)
                 emit(self._on_event, "error", target=target.name, reason="empty stream")
                 attempts.append((target.name, "empty stream"))
                 continue
-            except ProviderHTTPError as exc:
+            if isinstance(open_error, ProviderHTTPError):
+                exc = open_error
                 is_ctx, limit = context_limit_from_error(exc.status, str(exc))
                 if is_ctx:
                     self._record_route_failure(target, exc, lease)
@@ -1560,13 +1627,15 @@ class Pool:
                 emit(self._on_event, "error", target=target.name, reason=str(exc))
                 attempts.append((target.name, str(exc)))
                 continue
-            except Exception as exc:  # noqa: BLE001
+            if open_error is not None:
+                err = open_error
                 non_ctx_failure = True
-                self.metrics.record_failure(target.name, f"{type(exc).__name__}: {exc}")
-                self._record_route_failure(target, exc, lease)
-                emit(self._on_event, "error", target=target.name, reason=f"{type(exc).__name__}")
-                attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
+                self.metrics.record_failure(target.name, f"{type(err).__name__}: {err}")
+                self._record_route_failure(target, exc=err, lease=lease)
+                emit(self._on_event, "error", target=target.name, reason=f"{type(err).__name__}")
+                attempts.append((target.name, f"{type(err).__name__}: {err}"))
                 continue
+            assert gen is not None and first is not None  # open_error None implies first byte
 
             # First byte arrived — count it a success (latency to first token).
             latency_ms = max(0.0, (self._clock() - started) * 1000.0)

@@ -33,6 +33,7 @@ from .config import effective_env, load_catalog
 from .conformance import ConformanceStore, default_conformance_path, required_features
 from .errors import AllProvidersExhausted, ContextWindowExceeded, ProviderHTTPError
 from .free_policy import admit, credential_fingerprint, fresh, load_accounts, timestamp
+from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply, TranscribeReply
 from .observe import EventHook
@@ -83,6 +84,8 @@ class AttemptState(TypedDict, total=False):
     reservation: str
     reserved_amounts: dict[str, float]
     usage: JSON
+    active_key: str | None
+    active_slot: int
 
 
 @dataclass(frozen=True)
@@ -157,6 +160,7 @@ class ManagedPool(Pool):
         self._sequence_lock = threading.Lock()
         self._last_used: dict[str, int] = {}
         self._request_sequence = [0]  # shared by asynchronous worker copies
+        self._key_rotator = KeyRotator()
         kwargs.setdefault("stats_store", StatsStore())
         kwargs.setdefault("conformance", ConformanceStore(default_conformance_path(env)))
         kwargs.setdefault("route_health", RouteHealthStore(path=default_route_health_path(env)))
@@ -237,6 +241,8 @@ class ManagedPool(Pool):
             account = accounts.get(pid, {})
             provider_routes: list[Route] = []
             exclusions: defaultdict[str, int] = defaultdict(int)
+            slot_keys = provider.api_keys(request_env) or (provider.api_key(request_env),)
+            slot_refs = [credential_fingerprint(pid, key) for key in slot_keys]
             for metadata in row.get("models", []):
                 if not isinstance(metadata, dict) or not isinstance(metadata.get("id"), str):
                     continue
@@ -244,8 +250,19 @@ class ManagedPool(Pool):
                 for modality in metadata.get("modalities", []):
                     if modality not in {"chat", "embedding", "transcription"}:
                         continue
-                    allowed = admit(spec, metadata, account, modality=modality, now=now,
-                                    credential_ref=credential_fingerprint(pid, provider.api_key(request_env)))
+                    # A route is usable when ANY key slot is admitted, so a dead
+                    # slot-1 key never hides a healthy slot 2 from rotation.
+                    allowed = None
+                    admitted_ref = slot_refs[0]
+                    for ref in slot_refs:
+                        candidate = admit(spec, metadata, account, modality=modality, now=now,
+                                          credential_ref=ref)
+                        if allowed is None:
+                            allowed = candidate
+                        if candidate.allowed:
+                            allowed, admitted_ref = candidate, ref
+                            break
+                    assert allowed is not None  # slot_refs is never empty
                     local = operator.get((modality, pid))
                     restriction = local.model(model_id) if local else None
                     local_reason = ""
@@ -260,7 +277,7 @@ class ManagedPool(Pool):
                         continue
                     try:
                         limits = self._limits(spec, cast(JSON, allowed.grant), model_id, account,
-                                              credential_ref=credential_fingerprint(pid, provider.api_key(request_env)))
+                                              credential_ref=admitted_ref)
                     except (ValueError, TypeError):
                         exclusions["invalid allowance rule; update/review provider"] += 1
                         continue
@@ -283,7 +300,7 @@ class ManagedPool(Pool):
             {"route": r.name, "modality": r.modality, "metadata": r.metadata,
              "policy": r.policy, "account": r.account, "automatic": r.automatic,
              "limits": [asdict(limit) for limit in r.limits],
-             "credential_ref": credential_fingerprint(r.provider.id, r.provider.api_key(r.env))}
+             "credential_ref": credential_fingerprint(r.provider.id, "\0".join(r.provider.api_keys(r.env)))}
             for r in routes]], sort_keys=True).encode()).hexdigest()[:16]
         result = Snapshot(generation, tuple(routes), tuple(statuses))
         with self._snapshot_lock:
@@ -521,7 +538,7 @@ class ManagedPool(Pool):
 
     def _post_for(self, route: Route, state: AttemptState) -> client.PostFn:
         def post(url: str, headers: dict[str, str], body: JSON, timeout: float) -> client.HTTPResult:
-            limits = self._recheck(route)
+            limits = self._recheck(route, state)
             # Last opportunity to constrain provider-specific paid additions.
             if route.provider.id == "openrouter":
                 body = dict(body)
@@ -545,7 +562,7 @@ class ManagedPool(Pool):
 
     def _stream_for(self, route: Route, state: AttemptState) -> client.StreamPostFn:
         def stream(url: str, headers: dict[str, str], body: JSON, timeout: float) -> StreamOpened:
-            limits = self._recheck(route)
+            limits = self._recheck(route, state)
             if route.provider.id == "openrouter":
                 body = dict(body, provider={"max_price": {"prompt": 0, "completion": 0, "request": 0, "image": 0}})
             state["reserved_amounts"] = self._cost(route, body)
@@ -575,17 +592,23 @@ class ManagedPool(Pool):
             return opened[0], observed_lines()
         return stream
 
-    def _recheck(self, route: Route) -> tuple[Limit, ...]:
+    def _recheck(self, route: Route, state: AttemptState | None = None) -> tuple[Limit, ...]:
         self._check_cancelled()
         now = self._wall_clock()
+        # Bind admission to the key actually being spent, so a rotated slot
+        # never borrows slot 1's account limits: a non-primary key simply
+        # fails the account-current check and falls back to policy limits.
+        active = state.get("active_key") if state else None
+        if active is None and (state is None or "active_key" not in state):
+            active = route.provider.api_key(route.env)
         result = admit(route.policy, route.metadata, route.account, modality=route.modality, now=now,
-                       credential_ref=credential_fingerprint(route.provider.id, route.provider.api_key(route.env)))
+                       credential_ref=credential_fingerprint(route.provider.id, active))
         if not result.allowed or now >= route.metadata["catalog_expires_at"]:
             raise ValueError("free eligibility expired before dispatch")
         if conflict := _automatic_tool_conflict(route.provider.id, route.model, cast(JSON, result.grant)):
             raise ValueError(conflict)
         return self._limits(route.policy, route.grant, route.model, route.account,
-                            credential_ref=credential_fingerprint(route.provider.id, route.provider.api_key(route.env)))
+                            credential_ref=credential_fingerprint(route.provider.id, active))
 
     def _check_cancelled(self) -> None:
         cancelled: threading.Event | None = getattr(self, "_cancelled", None)
@@ -594,7 +617,7 @@ class ManagedPool(Pool):
 
     def _multipart_for(self, route: Route, state: AttemptState) -> client.MultipartPostFn:
         def multipart(url: str, headers: dict[str, str], files: JSON, data: JSON, call_timeout: float) -> client.HTTPResult:
-            limits = self._recheck(route)
+            limits = self._recheck(route, state)
             amounts = self._cost(route, data)
             if any(limit.unit == "audio_seconds" for limit in limits):
                 try:
@@ -616,6 +639,39 @@ class ManagedPool(Pool):
                                if response.status == 200 else None)
             return response
         return multipart
+
+    def _key_trials_for_route(self, route: Route) -> tuple[list[tuple[int, str | None]], list[int]]:
+        """Usable (slot, key) trials in sticky order plus skipped-as-unadmitted slots.
+
+        Keyless routes get one None trial. Slots whose credential is not
+        admitted are skipped without spending them; when none qualifies,
+        the sticky slot is tried anyway so the failure stays honest.
+        """
+        keys = route.provider.api_keys(route.env)
+        if not keys:
+            return [(-1, None)], []
+        now = self._wall_clock()
+        slots = self._key_rotator.usable_slots(route.provider.id, len(keys), now)
+        if not slots:  # every slot cooling: try the sticky slot anyway, let it fail honestly
+            slots = [self._key_rotator.usable_slots(route.provider.id, len(keys), float("inf"))[0]]
+        trials: list[tuple[int, str | None]] = []
+        skipped: list[int] = []
+        for slot in slots:
+            ref = credential_fingerprint(route.provider.id, keys[slot])
+            if admit(route.policy, route.metadata, route.account,
+                     modality=route.modality, now=now, credential_ref=ref).allowed:
+                trials.append((slot, keys[slot]))
+            else:
+                skipped.append(slot)
+        if not trials:
+            slot = slots[0]
+            return [(slot, keys[slot])], skipped[1:] if skipped else []
+        return trials, skipped
+
+    def _cool_key_slot(self, provider_id: str, slot: int, count: int, exc: ProviderHTTPError) -> None:
+        now = self._wall_clock()
+        self._key_rotator.cool(provider_id, slot, now + cool_delay(exc.status, exc.retry_after))
+        self._key_rotator.advance(provider_id, count)
 
     def _failure(self, route: Route, exc: Exception) -> float | None:
         if isinstance(exc, AllowanceDenied):
@@ -677,40 +733,52 @@ class ManagedPool(Pool):
             state: AttemptState = {}
             started = time.monotonic()
             try:
-                if stream:
-                    gen = cast(Generator[str, None, None], client.stream_call(route.provider, route.model, cast(list[JSON], payload),
-                                             api_key=route.provider.api_key(route.env), env=route.env,
-                                             max_tokens=max_tokens, temperature=temperature,
-                                             timeout=min(remaining, 30), stream_post=self._stream_for(route, state)))
+                trials, skipped_slots = self._key_trials_for_route(route)
+                for slot in skipped_slots:
+                    attempts.append((route.name, f"key slot {slot + 1} skipped (credential not admitted)"))
+                for trial, (slot, key) in enumerate(trials):
+                    state["active_key"] = key
+                    state["active_slot"] = slot
                     try:
-                        first = next(gen)
-                    except BaseException:
-                        gen.close()
-                        raise
-                    return self._committed_stream(route, gen, first, state, started, len(attempts) + 1)
-                reply: Reply | EmbedReply | TranscribeReply
-                if modality == "chat":
-                    reply = client.call(route.provider, route.model, cast(list[JSON], payload),
-                                        api_key=route.provider.api_key(route.env), env=route.env,
-                                        max_tokens=max_tokens, temperature=temperature, timeout=min(remaining, 30),
-                                        tools=tools, tool_choice=tool_choice, response_format=response_format,
-                                        enforce_thinking_floor=not probe, post=self._post_for(route, state))
-                    if not reply.text.strip() and not (reply.message and reply.message.get("tool_calls")):
-                        raise ProviderHTTPError(502, "empty completion", retryable=True)
-                elif modality == "embedding":
-                    reply = client.embed(route.provider, route.model, cast(list[str], payload),
-                                         api_key=route.provider.api_key(route.env), env=route.env,
-                                         timeout=min(remaining, 30), post=self._post_for(route, state))
-                else:
-                    reply = client.transcribe(route.provider, route.model, cast(bytes, payload), cast(str, filename),
-                                              api_key=route.provider.api_key(route.env), env=route.env,
-                                              language=language, response_format=cast(str, response_format or "json"),
-                                              timeout=min(remaining, 30), post=self._multipart_for(route, state))
-                self._check_cancelled()
-                self._success(route, reply, started)
-                if hasattr(reply, "attempts"):
-                    reply.attempts = len(attempts) + 1
-                return reply
+                        if stream:
+                            gen = cast(Generator[str, None, None], client.stream_call(route.provider, route.model, cast(list[JSON], payload),
+                                                     api_key=key, env=route.env,
+                                                     max_tokens=max_tokens, temperature=temperature,
+                                                     timeout=min(remaining, 30), stream_post=self._stream_for(route, state)))
+                            try:
+                                first = next(gen)
+                            except BaseException:
+                                gen.close()
+                                raise
+                            return self._committed_stream(route, gen, first, state, started, len(attempts) + 1)
+                        reply: Reply | EmbedReply | TranscribeReply
+                        if modality == "chat":
+                            reply = client.call(route.provider, route.model, cast(list[JSON], payload),
+                                                api_key=key, env=route.env,
+                                                max_tokens=max_tokens, temperature=temperature, timeout=min(remaining, 30),
+                                                tools=tools, tool_choice=tool_choice, response_format=response_format,
+                                                enforce_thinking_floor=not probe, post=self._post_for(route, state))
+                            if not reply.text.strip() and not (reply.message and reply.message.get("tool_calls")):
+                                raise ProviderHTTPError(502, "empty completion", retryable=True)
+                        elif modality == "embedding":
+                            reply = client.embed(route.provider, route.model, cast(list[str], payload),
+                                                 api_key=key, env=route.env,
+                                                 timeout=min(remaining, 30), post=self._post_for(route, state))
+                        else:
+                            reply = client.transcribe(route.provider, route.model, cast(bytes, payload), cast(str, filename),
+                                                      api_key=key, env=route.env,
+                                                      language=language, response_format=cast(str, response_format or "json"),
+                                                      timeout=min(remaining, 30), post=self._multipart_for(route, state))
+                        self._check_cancelled()
+                        self._success(route, reply, started)
+                        if hasattr(reply, "attempts"):
+                            reply.attempts = len(attempts) + 1
+                        return reply
+                    except ProviderHTTPError as key_exc:
+                        if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
+                            raise
+                        self._cool_key_slot(route.provider.id, slot, len(trials), key_exc)
+                        attempts.append((route.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
             except Exception as exc:
                 self._check_cancelled()
                 delay = self._failure(route, exc)
@@ -724,6 +792,9 @@ class ManagedPool(Pool):
                 # an upstream body that may echo credentials or request content.
                 detail = (exc.reason if isinstance(exc, AllowanceDenied) else
                           f"HTTP {exc.status}" if isinstance(exc, ProviderHTTPError) else type(exc).__name__)
+                if (isinstance(exc, ProviderHTTPError) and state.get("active_slot", -1) >= 0
+                        and len(route.provider.api_keys(route.env)) > 1):
+                    detail = f"key slot {state['active_slot'] + 1}: {detail}"
                 attempts.append((route.name, detail))
             if not queue and retryable:
                 wake = min(end for _, end in retryable)
@@ -844,10 +915,15 @@ class ManagedPool(Pool):
         tool_routes = [r for r in snapshot.routes if r.modality == "chat" and r.automatic
                        and self.conformance is not None
                        and self.conformance.passes(r.provider, r.model, ("tools",))]
+        key_depth: dict[str, int] = {}
+        for r in snapshot.routes:
+            if r.provider.key_env and r.provider.id not in key_depth:
+                key_depth[r.provider.id] = len(r.provider.api_keys(r.env))
         return {"schema": 1, "generation": snapshot.generation, "strict_free": True,
                 "eligible_routes": len(snapshot.routes), "providers": list(snapshot.providers),
                 "tools_ready": len(tool_routes),
                 "tools_providers": len({r.provider.id for r in tool_routes}),
+                "key_depth": key_depth,
                 "allowances": self.ledger.status(limits.values()),
                 "note": "Unknown upstream allowances are paced conservatively; external account usage may be unknown."}
 
