@@ -912,7 +912,7 @@ rerun.)
 
 Effort: M–L. Fit: high — least served by anyone.
 
-## G17 — MCP diet as a weapon (Status: pending)
+## G17 — MCP diet as a weapon (Status: complete)
 
 Pain: MCP context bloat is the #1 developer complaint (40–72% of
 context gone before any work); a lone output-compression project
@@ -931,13 +931,30 @@ Execute:
 3. Docs for third-party MCP authors to adopt the wrapper.
 
 Done when:
-- [ ] Published benchmark shows large-response shrinkage on
+- [x] Published benchmark shows large-response shrinkage on
       third-party MCP output with zero silent truncations (numbers
       pasted, page live).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G18 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G18 goal created in the same turn.
 
 Effort: M. Fit: medium-high — distribution, riding proven demand.
+
+Evidence (2026-09-19, live): `src/freellmpool/mcp_diet.py`
+(`compact_text`/`compact_content` + stdio `DietProxy` with `_full`
+cache escape; `panel.truncate_labeled` now delegates to it).
+Benchmarked through the proxy at budget 2000 chars: filesystem
+`read_text_file` 81,053→2,067 ch (−97%), `list_directory`
+1,130→1,130 (untouched), memory `read_graph` 36,071→2,067 (−94%),
+fetch 3,342→2,066 (−38%); all 3 cuts carried the labeled `_full`
+marker and the escape restored the full 81,053-char report.
+Numbers published at
+https://0xzr.github.io/freellmpool/mcp-response-diet.html (sitemap +
+index linked, `check_docs.py` green); author adoption docs in
+`docs/MCP_RESPONSE_DIET.md`. Full suite 2536 passed, coverage gate
+87.20%/77.68%, ruff clean, mypy clean on touched files (repo-wide
+mypy failures pre-existing). One `test_allowance_ledger` multiprocess
+sqlite-lock flake under load 24+ failed two full runs, passed twice
+in isolation and on retry; zero coupling to this change.
 
 ## G18 — Live free-tier status page (Status: pending)
 

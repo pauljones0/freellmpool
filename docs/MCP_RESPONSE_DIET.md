@@ -34,3 +34,53 @@ Measured 2026-09-19 (same fixtures before/after):
 tokenmax/ask/recipe follow the same per-answer caps. Tools already
 under ~1K chars (route, roles, tailnet_info, stats, help) were
 measured and left alone.
+
+## Adopting the wrapper (third-party MCP authors)
+
+`src/freellmpool/mcp_diet.py` generalizes the truncation above into a
+reusable diet for any MCP output. Two integration paths:
+
+**1. In your server (Python): compact before you reply.**
+
+```python
+from freellmpool.mcp_diet import compact_content
+
+result = {"content": [{"type": "text", "text": huge_report}]}
+result["content"] = compact_content(result["content"], 2000,
+                                    label="quarterly report")
+```
+
+Under-budget payloads return byte-identical; oversized text blocks are
+cut with an in-band marker (`[… N chars of <label> omitted — re-run
+with "_full": true]`) so no truncation is silent. Non-text blocks
+(images, resources) pass through untouched.
+
+**2. Around any server (any language): the stdio proxy.**
+
+```bash
+pip install freellmpool
+python -m freellmpool.mcp_diet --budget 2000 -- \
+    npx -y @modelcontextprotocol/server-filesystem /data
+```
+
+Point your MCP client at the proxy instead of the server. It relays
+JSON-RPC both ways, compacts oversized text results in flight, caches
+the full text, and answers a re-call with `"_full": true` from cache
+(depth-on-demand; no second server round-trip). Requests that arrive
+with `"_full": true` and no cache entry pass through uncompacted.
+
+Marker contract: every cut names the label, the omitted char count,
+and the escape. Measured third-party results (2026-09-19, budget 2000
+chars, ~4 chars/token) — see the
+[benchmark page](https://0xzr.github.io/freellmpool/mcp-response-diet.html):
+
+| Server / call | Before | After | Δ |
+|---|---|---|---|
+| filesystem `read_text_file`, 81 KB report | 81,053 ch (~20,263 tok) | 2,067 ch (~516 tok) | −97% |
+| filesystem `list_directory`, 60 files | 1,130 ch (~282 tok) | 1,130 ch (~282 tok) | 0% (under budget, untouched) |
+| memory `read_graph`, 30 entities | 36,071 ch (~9,017 tok) | 2,067 ch (~516 tok) | −94% |
+| fetch `fetch`, Wikipedia article | 3,342 ch (~835 tok) | 2,066 ch (~516 tok) | −38% |
+
+Zero silent truncations: all 3 cuts carried the labeled `_full`
+marker, and the escape restored the full 81,053-char report
+marker-free.

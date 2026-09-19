@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cut MCP context bloat 38–97% with a reusable response diet (measured)</title>
+<meta name="description" content="Measured benchmark: freellmpool's reusable MCP output diet shrinks third-party MCP server responses 38–97% with zero silent truncations. Drop-in stdio proxy or Python wrapper with a _full escape hatch.">
+<link rel="canonical" href="https://0xzr.github.io/freellmpool/mcp-response-diet.html">
+<meta property="og:title" content="Cut MCP context bloat 38–97% with a reusable response diet (measured)">
+<meta property="og:description" content="Before/after token numbers on popular MCP servers, zero silent truncations, and a drop-in wrapper any MCP author can adopt.">
+<meta property="og:type" content="article">
+<style>
+ :root{--bg:#0b0e14;--fg:#e6e6e6;--mut:#8a93a2;--card:#141925;--bd:#232a39;--ac:#6ea8ff}
+ *{box-sizing:border-box}
+ body{font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;margin:0;background:var(--bg);color:var(--fg);line-height:1.65}
+ .wrap{max-width:780px;margin:0 auto;padding:40px 20px 80px}
+ h1{font-size:27px;margin:0 0 6px;line-height:1.25}
+ h2{font-size:20px;margin:36px 0 10px;border-bottom:1px solid var(--bd);padding-bottom:6px}
+ h3{font-size:16px;margin:22px 0 4px}
+ .tag{color:var(--mut);font-size:14px}
+ a{color:var(--ac);text-decoration:none}a:hover{text-decoration:underline}
+ code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+ pre{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:14px 16px;overflow:auto;font-size:13.5px}
+ code{background:#1b2230;padding:1px 5px;border-radius:4px;font-size:.92em}
+ pre code{background:none;padding:0}
+ .lead{font-size:17px}
+ .note{background:var(--card);border:1px solid var(--bd);border-left:3px solid var(--ac);border-radius:6px;padding:10px 14px;font-size:14px;margin:14px 0}
+ table{width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;background:var(--card);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+ th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--bd)}
+ th{color:var(--mut);font-weight:600}
+ td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+ .meta{color:var(--mut);font-size:13px;margin-top:34px;border-top:1px solid var(--bd);padding-top:14px}
+</style>
+<meta property="og:url" content="https://0xzr.github.io/freellmpool/mcp-response-diet.html">
+<meta name="twitter:card" content="summary_large_image">
+<meta property="og:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+<meta name="twitter:image" content="https://0xzr.github.io/freellmpool/assets/social-preview.png">
+</head>
+<body>
+<div class="wrap">
+
+<p class="tag"><a href="https://0xzr.github.io/freellmpool/">freellmpool</a> &rsaquo; benchmark</p>
+<h1>Cut MCP context bloat 38–97% with a reusable response diet</h1>
+
+<p class="lead"><strong>MCP servers routinely dump tens of thousands of characters per tool call
+straight into your context window. <a href="https://github.com/0xzr/freellmpool">freellmpool</a>
+ships a reusable output diet — a drop-in stdio proxy plus a Python wrapper — that compacts
+oversized tool results to a fixed budget with zero silent truncations.</strong> Below are measured
+before/after numbers on popular third-party MCP servers, not projections.</p>
+
+<pre><code>pip install freellmpool
+python -m freellmpool.mcp_diet --budget 2000 -- \
+    npx -y @modelcontextprotocol/server-filesystem /data</code></pre>
+
+<h2>Measured results</h2>
+<p>Budget 2,000 chars per text result; tokens estimated at ~4 chars/token.
+Measured 2026-09-19 by calling each server directly (baseline) and through the diet proxy:</p>
+<table>
+<tr><th>Server / call</th><th>Before</th><th>After</th><th>Saved</th></tr>
+<tr><td>filesystem <code>read_text_file</code>, 81&nbsp;KB report</td><td class="num">81,053 ch (~20,263 tok)</td><td class="num">2,067 ch (~516 tok)</td><td class="num">−97%</td></tr>
+<tr><td>filesystem <code>list_directory</code>, 60 files</td><td class="num">1,130 ch (~282 tok)</td><td class="num">1,130 ch (~282 tok)</td><td class="num">0% (untouched)</td></tr>
+<tr><td>memory <code>read_graph</code>, 30 entities</td><td class="num">36,071 ch (~9,017 tok)</td><td class="num">2,067 ch (~516 tok)</td><td class="num">−94%</td></tr>
+<tr><td>fetch <code>fetch</code>, Wikipedia article</td><td class="num">3,342 ch (~835 tok)</td><td class="num">2,066 ch (~516 tok)</td><td class="num">−38%</td></tr>
+</table>
+<div class="note">Under-budget results pass through byte-identical — the diet only touches
+responses that exceed the budget, so small tools pay nothing.</div>
+
+<h2>Zero silent truncations</h2>
+<p>Every cut carries an in-band marker with the label, the omitted character count, and the
+escape hatch. All 3 cuts above carried the marker, and re-calling with
+<code>"_full": true</code> restored the full 81,053-character report marker-free from the
+proxy cache (no second server round-trip):</p>
+<pre><code>[… 79053 chars of tool result omitted — re-run with "_full": true]</code></pre>
+
+<h2>1. Wrap a server you don't control (any language)</h2>
+<p>Point your MCP client at the proxy instead of the server. It relays JSON-RPC both ways,
+compacts oversized text results in flight, and answers <code>"_full": true</code> re-calls
+from cache. Images, resources, notifications, and errors relay untouched:</p>
+<pre><code>python -m freellmpool.mcp_diet --budget 2000 -- \
+    uvx mcp-server-fetch</code></pre>
+
+<h2>2. Compact inside your own server (Python)</h2>
+<pre><code>from freellmpool.mcp_diet import compact_content
+
+result["content"] = compact_content(result["content"], 2000,
+                                    label="quarterly report")</code></pre>
+
+<h2>FAQ</h2>
+<h3>What happens to small results?</h3>
+<p>They pass through byte-identical. The directory listing above (1,130 chars) was returned
+untouched — only over-budget text blocks are cut.</p>
+<h3>How do I get the full text back?</h3>
+<p>Re-run the same tool call with the extra argument <code>"_full": true</code>. The proxy
+serves the cached full result; a first-time <code>"_full"</code> call with nothing cached
+passes through to the server uncompacted.</p>
+<h3>Does it change non-text content?</h3>
+<p>No. Image and resource blocks, error responses, notifications, and the tool schemas
+themselves relay untouched. Only oversized <code>text</code> blocks are compacted.</p>
+
+<p class="meta">Part of <a href="https://github.com/0xzr/freellmpool">freellmpool</a> (MIT, free, open
+source). Full author reference:
+<a href="https://github.com/0xzr/freellmpool/blob/main/docs/MCP_RESPONSE_DIET.md">docs/MCP_RESPONSE_DIET.md</a>. Updated 2026-09-19.</p>
+
+</div>
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [{"@type": "ListItem", "position": 1, "name": "freellmpool", "item": "https://0xzr.github.io/freellmpool/"}, {"@type": "ListItem", "position": 2, "name": "Cut MCP context bloat 38–97% with a reusable response diet (measured)", "item": "https://0xzr.github.io/freellmpool/mcp-response-diet.html"}]}</script>
+</body>
+</html>

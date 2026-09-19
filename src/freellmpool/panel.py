@@ -251,10 +251,10 @@ def run_panel(
 
 def truncate_labeled(text: str, budget: int, *, label: str = "text") -> str:
     """Cap text at budget chars; over-budget cuts carry an in-band full-text pointer."""
-    if len(text) <= budget:
-        return text
-    return (f"{text[:budget]}\n[… {len(text) - budget} chars of {label} omitted — "
-            f're-run with "full": true]')
+    from freellmpool.mcp_diet import compact_text
+
+    return compact_text(text, budget, label=label,
+                        escape_hint='re-run with "full": true')
 
 
 def render_panel_markdown(result: PanelResult, *, title: str = "freellmpool panel",
