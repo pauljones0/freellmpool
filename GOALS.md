@@ -948,7 +948,11 @@ Benchmarked through the proxy at budget 2000 chars: filesystem
 fetch 3,342→2,066 (−38%); all 3 cuts carried the labeled `_full`
 marker and the escape restored the full 81,053-char report.
 Numbers published at
-https://0xzr.github.io/freellmpool/mcp-response-diet.html (sitemap +
+https://pauljones0.github.io/freellmpool/mcp-response-diet.html
+(HTTP 200 verified 2026-09-19; fork Pages branch-deploy since this
+session has READ-only on canonical 0xzr/freellmpool, whose sync is
+the user's step — canonical URL stays
+https://0xzr.github.io/freellmpool/mcp-response-diet.html, sitemap +
 index linked, `check_docs.py` green); author adoption docs in
 `docs/MCP_RESPONSE_DIET.md`. Full suite 2536 passed, coverage gate
 87.20%/77.68%, ruff clean, mypy clean on touched files (repo-wide
