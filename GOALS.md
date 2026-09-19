@@ -518,7 +518,31 @@ Done when:
 
 Effort: M. Fit: high — multiplies every session-survival flow G1–G6 built.
 
-## G8 — One-command $0 coding agent launcher (Status: pending)
+## G8 — One-command $0 coding agent launcher (Status: complete 2026-09-19)
+
+Shipped: `freellmpool claude [--harness opencode] [--port] [--model] --
+<agent args>` (`src/freellmpool/launcher.py` + CLI). Starts the loopback
+proxy when none is live (reuses a running one), sets `ANTHROPIC_*` /
+writes an `OPENCODE_CONFIG` provider file (verified honored), then
+exec-replaces into the agent. 9 regression tests. Docs: 1-command setup
+in INTEGRATIONS.md with free-model/429 caveats (manual 3-command kept).
+
+Fresh-container transcript (python:3.12-slim, `/tmp/g8_verify.sh`,
+G8_ELAPSED_SECONDS=386, EXIT=0):
+```
+routes: 50
+=== 4. opencode harness file-edit via launcher ===
+freellmpool: started loopback proxy on 127.0.0.1:8080
+Write g8-docker.txt / Wrote file successfully. (52s)
+--- file: docker-ok
+=== 5. claude harness file-edit via launcher ===
+Created g8-docker2.txt with the exact content "docker-ok-2". (9s)
+RESULT: both agent file-edits OK
+```
+Host spot-checks: claude Write exit 0 in 25s; opencode Write exit 0 in
+34s. Key entered via host mount, never echoed.
+Gates: full suite green, coverage 88.03/78.38, ruff + strict mypy
+clean, catalog/policy/counts/docs pass.
 
 Pain: "run Claude Code free" is a top-trend pain, but every setup is a
 fragile 10-step README. G5 proved compat; nobody can run it without
@@ -537,11 +561,11 @@ Execute:
    quality, 429 backoff behavior).
 
 Done when:
-- [ ] Fresh-container run goes from zero to a real agent file-edit via
+- [x] Fresh-container run goes from zero to a real agent file-edit via
       the launcher (transcript pasted, timed).
-- [ ] Both harnesses verified (claude exec + opencode config path).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G9 goal created in the same turn.
+- [x] Both harnesses verified (claude exec + opencode config path).
+- [x] Full suite + gates pass.
+- [x] Commit + push; G9 goal created in the same turn.
 
 Effort: S–M. Fit: high — distribution kicker for the whole series.
 

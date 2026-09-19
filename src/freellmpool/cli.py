@@ -2294,6 +2294,21 @@ def cmd_profile_doctor(args: argparse.Namespace) -> int:
     return code
 
 
+def cmd_claude(args: argparse.Namespace) -> int:
+    from .launcher import LauncherError, launch
+
+    model = args.model or ("agent" if args.harness == "opencode" else "claude-3-5-sonnet")
+    agent_args = list(args.agent_args or [])
+    if agent_args[:1] == ["--"]:
+        agent_args.pop(0)
+    try:
+        launch(args.harness, agent_args, port=args.port, model=model)
+    except LauncherError as exc:
+        print(f"freellmpool: {exc}", file=sys.stderr)
+        return 3
+    return 0  # unreachable: launch exec-replaces on success
+
+
 def cmd_code(args: argparse.Namespace) -> int:
     from .agents import list_agents, render
 
@@ -3018,6 +3033,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_code.add_argument("agent", nargs="?", help="agent id (omit to list)")
     p_code.set_defaults(func=cmd_code)
+    p_claude = sub.add_parser(
+        "claude", help="launch a coding agent on free models (starts the gateway, then execs)"
+    )
+    p_claude.add_argument("--harness", choices=("claude", "opencode"), default="claude")
+    p_claude.add_argument("--port", type=int, default=8080, help="loopback gateway port")
+    p_claude.add_argument("--model", help="model/alias (default: claude-3-5-sonnet, opencode: agent)")
+    p_claude.add_argument("agent_args", nargs=argparse.REMAINDER, help="args after -- go to the agent")
+    p_claude.set_defaults(func=cmd_claude)
 
     return parser
 

@@ -257,25 +257,33 @@ Settings → Models → enable **Override OpenAI Base URL** → `http://localhos
 API key `anything`. (Free-tier models are slower than paid frontier models.)
 
 ### Claude Code
-Claude Code runs on free models through the Anthropic bridge at `/v1/messages`
-— three commands:
+One command — the launcher starts the gateway if needed, wires the env,
+and execs straight into the agent:
 
 ```bash
-# 1. start the gateway (keep running)
+freellmpool claude -- -p "your task" --allowedTools "Write,Read"
+freellmpool claude --harness opencode -- run "your task"
+```
+
+Agent args go after `--`. Options: `--port` (default 8080; a running
+gateway is reused), `--model` (default `claude-3-5-sonnet`, opencode:
+`agent`). Manual equivalent, if you prefer two terminals:
+
+```bash
 freellmpool proxy --port 8080
-# 2-3. point Claude Code at it and go
 export ANTHROPIC_BASE_URL=http://localhost:8080 ANTHROPIC_API_KEY=dummy \
   ANTHROPIC_MODEL=claude-3-5-sonnet
 claude
 ```
 
 Use a `claude-*` model name (it aliases to a free route and silences the CLI's
-unknown-model warning). Pin a concrete backend with
-`ANTHROPIC_MODEL=provider/model` instead. Every request sends the full tool
-list, so sessions need fresh tools evidence — if calls 429, refresh the bench
-with `freellmpool verify --features tools` (`freellmpool status` warns when the
-bench is thin). Under burst load the gateway answers 429 with `Retry-After`
-and the CLI backs off and resumes on its own.
+unknown-model warning). Pin a concrete backend with `--model
+provider/model` instead. Caveats: free-tier models are slower and weaker
+than paid frontier models; every request sends the full tool list, so
+sessions need fresh tools evidence — if calls 429, refresh the bench
+with `freellmpool verify --features tools` (`freellmpool status` warns
+when the bench is thin). Under burst load the gateway answers 429 with
+`Retry-After` and the CLI backs off and resumes on its own.
 
 ### OpenAI Codex CLI
 Codex speaks the Responses API, which freellmpool shims at `/v1/responses` — see
