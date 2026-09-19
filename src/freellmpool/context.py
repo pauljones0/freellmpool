@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import re
 
+from .media import image_input_tokens
+
 # Phrases that mark a 400/413 as a *context-window* overflow specifically — kept
 # narrow so unrelated 400s ("tool description too long", "image url too long",
 # "reduce the length of the JSON schema") do not match.
@@ -50,8 +52,13 @@ def estimate_input_tokens(messages, tools=None) -> int:
             chars += len(content)
         elif isinstance(content, list):  # multimodal parts
             for part in content:
-                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                if not isinstance(part, dict):
+                    continue
+                if isinstance(part.get("text"), str):
                     chars += len(part["text"])
+                elif part.get("type") == "image_url":
+                    url = (part.get("image_url") or {}).get("url") or ""
+                    chars += image_input_tokens(url) * 4
         if m.get("tool_calls"):  # assistant function-call turns can be large
             try:
                 chars += len(json.dumps(m["tool_calls"]))

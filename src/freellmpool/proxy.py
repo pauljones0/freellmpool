@@ -912,7 +912,11 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             if not isinstance(req.get("messages"), list) or not req["messages"]:
                 self._anthropic_error(400, "'messages' must be a non-empty array")
                 return
-            chat = request_to_chat(req)
+            try:
+                chat = request_to_chat(req)
+            except ValueError as exc:
+                self._anthropic_error(400, str(exc))
+                return
             if not chat["messages"]:
                 self._anthropic_error(400, "no usable message content in request")
                 return

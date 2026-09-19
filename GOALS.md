@@ -569,7 +569,30 @@ Done when:
 
 Effort: S–M. Fit: high — distribution kicker for the whole series.
 
-## G9 — Vision on the Anthropic bridge (Status: pending)
+## G9 — Vision on the Anthropic bridge (Status: complete 2026-09-19)
+
+Shipped: Anthropic image blocks (base64 + url, user/assistant/tool_result)
+translate to OpenAI vision parts; new `media.py` with parsed PNG/JPEG/GIF
+dimensions, tile-formula token bound (512px tiles × 170 + 85), flat 2000
+for remote/unknown, 5MB decoded guard — all loud, never silent.
+Managed `_cost` accounts images (payload-blanked bytes + bound); empty
+vision bench → honest 400 naming `verify --features vision`; legacy
+estimator counts image tokens. Deliberate contract change: remote media
+now flows with the flat estimate instead of 400 (old test updated).
+13 vision tests; vision+tools routing conjunction covered (existing
+canary matrix + `required_features` test).
+
+Live transcript (real claude CLI via launcher, red-circle PNG):
+```
+# first attempt, vision+tools bench empty → honest 400 through the CLI:
+API Error: 400 No vision-verified free route is available for this
+image request. Run freellmpool verify --features vision.
+# after verifying (7 vision passes, 2 with tools):
+> What single color is the circle? → "the circle is **red**." EXIT=0 (76s)
+```
+Served via gateway vision routes (kilo step-3.7-flash ×8 in quota).
+Gates: full suite green, coverage 87.92/78.23, ruff clean, zero new
+strict-mypy errors, catalog/policy/counts/docs pass.
 
 Pain: G5's known gap — image blocks are silently dropped. Agent users
 paste screenshots, diagrams, and error photos constantly; silent
@@ -588,12 +611,12 @@ Execute:
    tests per fix; live-verify one image turn through the real CLI.
 
 Done when:
-- [ ] A live `claude` turn referencing an attached image succeeds via
+- [x] A live `claude` turn referencing an attached image succeeds via
       the gateway (transcript pasted).
-- [ ] Silent-drop path is impossible by construction (test proves the
+- [x] Silent-drop path is impossible by construction (test proves the
       error branch).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; G10 goal created in the same turn.
+- [x] Full suite + gates pass.
+- [x] Commit + push; G10 goal created in the same turn.
 
 Effort: M. Fit: high — removes the biggest "silently wrong" behavior.
 

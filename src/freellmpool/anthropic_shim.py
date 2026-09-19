@@ -6,13 +6,30 @@ The streaming path is *buffered-then-replayed*: freellmpool resolves the full
 completion (with failover + tool calls) and then emits Anthropic's exact SSE event
 sequence, so clients that require streaming work without true mid-stream failover.
 
-This is experimental — text + tool-use are covered; images/vision are not yet.
+Image blocks translate to OpenAI vision parts; oversize images are rejected
+loudly (see media.MAX_IMAGE_BYTES) — never silently dropped.
 """
 
 from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from typing import Any
+
+from .media import check_image_url
+
+
+def _image_part(block: dict[str, Any]) -> dict[str, Any]:
+    """Anthropic image block -> OpenAI image_url part (raises ValueError if bad)."""
+    source = block.get("source") or {}
+    if source.get("type") == "url" and source.get("url"):
+        url = str(source["url"])
+    elif source.get("type") == "base64" and source.get("data"):
+        url = f"data:{source.get('media_type') or 'image/png'};base64,{source['data']}"
+    else:
+        raise ValueError("image block needs source {type base64 + data} or {type url + url}")
+    check_image_url(url)
+    return {"type": "image_url", "image_url": {"url": url}}
 
 
 def _flatten_text(blocks) -> str:
@@ -63,12 +80,17 @@ def request_to_chat(body: dict) -> dict:
         text_parts: list[str] = []
         tool_calls: list[dict] = []
         tool_results: list[dict] = []
+        content_parts: list[dict[str, Any]] = []
         for b in content:
             if not isinstance(b, dict):
                 continue
             t = b.get("type")
             if t == "text":
-                text_parts.append(str(b.get("text") or ""))
+                text = str(b.get("text") or "")
+                text_parts.append(text)
+                content_parts.append({"type": "text", "text": text})
+            elif t == "image":
+                content_parts.append(_image_part(b))
             elif t == "tool_use":
                 tool_calls.append(
                     {
@@ -82,17 +104,26 @@ def request_to_chat(body: dict) -> dict:
                 )
             elif t == "tool_result":
                 rc = b.get("content")
-                rc = _flatten_text(rc) if isinstance(rc, list) else rc
+                parts: list[dict[str, Any]] | None = None
+                if isinstance(rc, list) and any(isinstance(p, dict) and p.get("type") == "image" for p in rc):
+                    parts = [
+                        {"type": "text", "text": str(p.get("text") or "")} if p.get("type") == "text"
+                        else _image_part(p)
+                        for p in rc if isinstance(p, dict) and p.get("type") in ("text", "image")
+                    ]
+                else:
+                    rc = _flatten_text(rc) if isinstance(rc, list) else rc
                 tool_results.append(
                     {
                         "role": "tool",
                         "tool_call_id": b.get("tool_use_id") or "toolu_0",
-                        "content": "" if rc is None else str(rc),
+                        "content": parts if parts is not None else ("" if rc is None else str(rc)),
                     }
                 )
-            # image blocks are ignored for now (no vision yet)
+        has_images = any(p.get("type") == "image_url" for p in content_parts)
         if role == "assistant":
-            msg: dict = {"role": "assistant", "content": "".join(text_parts) or None}
+            msg: dict = {"role": "assistant",
+                          "content": content_parts if has_images else ("".join(text_parts) or None)}
             if tool_calls:
                 msg["tool_calls"] = tool_calls
             messages.append(msg)
@@ -100,7 +131,9 @@ def request_to_chat(body: dict) -> dict:
             # Chat Completions requires every pending tool result immediately
             # after the assistant's calls, before any follow-on user message.
             messages.extend(tool_results)
-            if text_parts:
+            if has_images:
+                messages.append({"role": "user", "content": content_parts})
+            elif text_parts:
                 messages.append({"role": "user", "content": "".join(text_parts)})
 
     tools = None

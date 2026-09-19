@@ -30,10 +30,16 @@ from . import client
 from .allowances import AllowanceDenied, AllowanceLedger, Limit, default_allowance_path
 from .cache import Cache
 from .config import effective_env, load_catalog
-from .conformance import ConformanceStore, default_conformance_path, required_features
+from .conformance import (
+    FEATURE_VISION,
+    ConformanceStore,
+    default_conformance_path,
+    required_features,
+)
 from .errors import AllProvidersExhausted, ContextWindowExceeded, ProviderHTTPError
 from .free_policy import admit, credential_fingerprint, fresh, load_accounts, timestamp
 from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
+from .media import check_image_url, image_input_tokens
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply, TranscribeReply
 from .observe import EventHook
@@ -413,6 +419,9 @@ class ManagedPool(Pool):
         if not routes:
             if too_small:
                 raise ContextWindowExceeded([(r.name, "context window too small") for r in too_small], est_tokens=estimate)
+            if FEATURE_VISION in features and not probe:
+                raise AllProvidersExhausted([], client_status=400,
+                                            client_message="No vision-verified free route is available for this image request. Run freellmpool verify --features vision.")
             raise AllProvidersExhausted([], client_status=403,
                                         client_message="No current free route matches these filters/capabilities. Run freellmpool setup or verify.")
         with self._sequence_lock:
@@ -429,15 +438,33 @@ class ManagedPool(Pool):
 
     def _cost(self, route: Route, body: object) -> dict[str, float]:
         if isinstance(body, dict):
+            image_tokens = 0
+            scrubbed: list[object] = []
             for message in body.get("messages", []):
                 content = message.get("content") if isinstance(message, dict) else None
-                if isinstance(content, list) and any(not isinstance(block, dict) or block.get("type") not in {"text", "input_text"} for block in content):
-                    raise _AccountingError("Chat media needs a verified token/cost bound; currently use text and function tools.")
+                if not isinstance(content, list):
+                    scrubbed.append(message)
+                    continue
+                for block in content:
+                    if not isinstance(block, dict) or block.get("type") not in {"text", "input_text", "image_url"}:
+                        raise _AccountingError("Chat media needs a verified token/cost bound; currently use text, images, and function tools.")
+                parts = []
+                for block in content:
+                    if block.get("type") == "image_url":
+                        url = (block.get("image_url") or {}).get("url") or ""
+                        check_image_url(url)
+                        image_tokens += image_input_tokens(url)
+                        parts.append({**block, "image_url": {}})
+                    else:
+                        parts.append(block)
+                scrubbed.append({**message, "content": parts} if isinstance(message, dict) else message)
             output = body.get("max_tokens", body.get("max_completion_tokens", 0)) or 0
             if not isinstance(output, int) or isinstance(output, bool) or output < 0:
                 raise ValueError("invalid output token budget")
             inputs = {key: value for key, value in body.items() if key not in {"max_tokens", "max_completion_tokens", "stream"}}
-            input_tokens = len(json.dumps(inputs, ensure_ascii=False).encode("utf-8")) + 32
+            if image_tokens:
+                inputs = {**inputs, "messages": scrubbed}
+            input_tokens = len(json.dumps(inputs, ensure_ascii=False).encode("utf-8")) + 32 + image_tokens
         else:
             input_tokens, output = 0, 0
         amounts: dict[str, float] = {"requests": 1, "input_tokens": input_tokens, "output_tokens": output,

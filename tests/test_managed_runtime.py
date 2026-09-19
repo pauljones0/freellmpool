@@ -418,15 +418,17 @@ def test_expired_numeric_limit_evidence_disables_route(tmp_path):
     assert not pool.snapshot().routes
 
 
-def test_remote_media_is_not_accounted_as_its_small_url(tmp_path, monkeypatch):
+def test_remote_media_uses_flat_token_estimate(tmp_path, monkeypatch):
+    # G9 contract change (was: reject all media): remote images flow with a
+    # flat 2000-token estimate instead of being counted as their small URL.
+    messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.test/large.png"}}]}]
     calls = []
-    pool = make_pool(tmp_path, post=lambda *args: calls.append(args))
+    pool = make_pool(tmp_path, post=lambda *args: calls.append(args) or successful())
     monkeypatch.setattr(pool.conformance, "passes", lambda *args: True)
-    with pytest.raises(AllProvidersExhausted) as error:
-        pool.chat([{"role": "user", "content": [{"type": "image_url", "image_url": {"url": "https://example.test/large.png"}}]}])
-    assert error.value.client_status == 400
-    assert "media" in error.value.client_message
-    assert not calls
+    assert pool.chat(messages, max_tokens=10).text == "OK"
+    assert calls
+    route = pool.snapshot().routes[0]
+    assert pool._cost(route, {"messages": messages, "max_tokens": 10})["input_tokens"] >= 2000
 
 
 @pytest.mark.parametrize("usage", [None, [], "invalid"])
