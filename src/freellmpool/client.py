@@ -27,6 +27,7 @@ from email.utils import parsedate_to_datetime
 from ._version import __version__
 from .errors import ProviderHTTPError
 from .models import EmbedReply, Provider, Reply, TranscribeReply
+from .prefixcache import cached_prompt_tokens as _cached_prompt_tokens
 
 Message = dict[str, str]
 
@@ -788,6 +789,8 @@ def _call_openai(
         raw=result.body,
         prompt_tokens=usage.get("prompt_tokens"),
         completion_tokens=usage.get("completion_tokens"),
+        cached_prompt_tokens=_cached_prompt_tokens(
+            result.body.get("usage"), prompt_tokens=usage.get("prompt_tokens")),
         message=message if isinstance(message, dict) else None,
     )
 
@@ -996,4 +999,6 @@ def _call_gemini(
         raw=result.body,
         prompt_tokens=usage.get("promptTokenCount"),
         completion_tokens=usage.get("candidatesTokenCount"),
+        cached_prompt_tokens=_cached_prompt_tokens(
+            result.body.get("usageMetadata"), prompt_tokens=usage.get("promptTokenCount")),
     )

@@ -1055,6 +1055,8 @@ def _quota_summary(pool: Pool, *, full: bool = False) -> str:
     lines += [
         "",
         f"session: {s.get('requests', 0)} requests, {s.get('cache_hits', 0)} cache hits, "
+        f"{s.get('prefix_cache_hits', 0)} prefix-cache hits, "
+        f"{s.get('prefix_tokens_avoided', 0):,} prefix tokens avoided, "
         f"{s.get('completion_tokens', 0)} output tokens",
         f"estimated cost avoided vs Claude Opus 4.8: ~${usd_saved(s.get('prompt_tokens'), s.get('completion_tokens')):.4f}",
     ]
@@ -1072,6 +1074,8 @@ def _lifetime_summary(pool: Pool) -> str:
         f"  requests:   {life.get('requests', 0):,}",
         f"  tokens:     {tokens:,}",
         f"  cache hits: {life.get('cache_hits', 0):,}",
+        f"  prefix cache: {life.get('prefix_cache_hits', 0):,} hits, "
+        f"{life.get('prefix_tokens_avoided', 0):,} tokens avoided",
         f"  estimated cost avoided vs Claude Opus 4.8: ~${saved:,.2f}"
         if saved >= 1
         else f"  estimated cost avoided vs Claude Opus 4.8: ~${saved:.4f}",

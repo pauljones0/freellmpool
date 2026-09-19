@@ -83,6 +83,7 @@ class Reply:
     raw: dict
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
+    cached_prompt_tokens: int = 0  # provider-confirmed cached prefix tokens (0 = none/absent)
     attempts: int = 1  # how many providers were tried before this one succeeded
     message: dict | None = None  # raw assistant message (carries tool_calls, etc.)
     cached: bool = False  # True if served from the response cache

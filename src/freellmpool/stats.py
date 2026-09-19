@@ -41,7 +41,8 @@ except ImportError:  # pragma: no cover - non-POSIX (Windows)
 
 # The cumulative counters we persist. Anything else passed to add() is ignored,
 # so a new _bump_stats key can't silently corrupt the file.
-_FIELDS = ("requests", "prompt_tokens", "completion_tokens", "cache_hits")
+_FIELDS = ("requests", "prompt_tokens", "completion_tokens", "cache_hits",
+            "prefix_cache_hits", "prefix_tokens_avoided", "prefix_routed")
 # Schema version stamped into the file. Bump only on a *breaking* layout change
 # (additive fields don't need it); a future reader can branch on it to migrate.
 _SCHEMA = 1

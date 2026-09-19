@@ -233,11 +233,15 @@ def cmd_receipt(args: argparse.Namespace) -> int:
         print(json.dumps({"requests": stats.get("requests", 0),
                           "prompt_tokens": prompt, "completion_tokens": completion,
                           "cache_hits": stats.get("cache_hits", 0),
+                          "prefix_cache_hits": stats.get("prefix_cache_hits", 0),
+                          "prefix_tokens_avoided": stats.get("prefix_tokens_avoided", 0),
                           "baseline": BASELINE_LABEL, "would_have_cost_usd": round(avoided, 4),
                           "paid_usd": 0}, indent=2))
         return 0
     print(f"Lifetime free usage: {stats.get('requests', 0)} requests, "
-          f"{prompt + completion:,} tokens ({stats.get('cache_hits', 0)} cache hits)")
+          f"{prompt + completion:,} tokens ({stats.get('cache_hits', 0)} cache hits, "
+          f"{stats.get('prefix_cache_hits', 0)} prefix-cache hits, "
+          f"{stats.get('prefix_tokens_avoided', 0):,} prefix tokens avoided)")
     print(f"Would have cost ~${avoided:,.2f} at {BASELINE_LABEL} — you paid $0.")
     return 0
 

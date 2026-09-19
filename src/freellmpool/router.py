@@ -12,9 +12,9 @@ import os
 import threading
 import time
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
 from . import client as _client
 from .cache import Cache
@@ -50,6 +50,7 @@ from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .metrics import Metrics, Stat, score_stat
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
+from .prefixcache import PrefixRoutes, hash_prefix
 from .quota import QuotaStore
 from .route_health import (
     FailureUpdate,
@@ -68,6 +69,15 @@ from .task_quality import (
     task_evidence_table,
     validate_task,
 )
+
+
+class _NamedRoute(Protocol):
+    @property
+    def name(self) -> str: ...
+
+
+_TargetT = TypeVar("_TargetT", bound=_NamedRoute)
+
 
 # A parsed "context limit" below this is treated as garbled/implausible and not
 # learned, so one bad provider error can't poison routing pool-wide.
@@ -306,7 +316,12 @@ class Pool:
         # cumulative usage for the estimated-cost metric. `self.stats` is the
         # in-memory session counter; `_stats_store` (optional) persists lifetime
         # totals across restarts so the served-free / estimated-cost number grows.
-        self.stats = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cache_hits": 0}
+        self.stats = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0, "cache_hits": 0,
+                        "prefix_cache_hits": 0, "prefix_tokens_avoided": 0, "prefix_routed": 0}
+        # Prefix-hash -> route memory for agent loops (G22): a follow-up turn
+        # whose leading messages reproduce a remembered request is routed back
+        # to the already-warm target. Thread-safe; advisory only, never gating.
+        self._prefix_routes = PrefixRoutes()
         self._stats_store = stats_store
         self._stats_lock = threading.Lock()  # the proxy serves requests on many threads
         # Context-window limits learned from provider errors, keyed by provider/model.
@@ -324,6 +339,59 @@ class Pool:
                 self.stats[key] = self.stats.get(key, 0) + delta
         if self._stats_store is not None:
             self._stats_store.add(**deltas)
+
+    def _prefix_hashes(self, messages: Sequence[Mapping[str, Any]]) -> list[str]:
+        """Hashes identifying this turn and its stable prefixes.
+
+        An agent-loop turn appends 1-2 messages (assistant reply + next user
+        turn), so the previous turn's full request is this turn's messages
+        minus the last one or two entries.
+        """
+        seq = list(messages)
+        if not seq or not all(isinstance(m, dict) for m in seq):
+            return []
+        out = [hash_prefix(seq)]
+        if len(seq) > 1:
+            out.append(hash_prefix(seq[:-1]))
+        if len(seq) > 2:
+            out.append(hash_prefix(seq[:-2]))
+        return out
+
+    def _prefer_prefix_route(
+        self, targets: list[_TargetT], messages: Sequence[Mapping[str, Any]] | None
+    ) -> list[_TargetT]:
+        """Move the remembered warm target for this prefix first, if present.
+
+        Advisory only: an unknown prefix or an absent target leaves the order
+        untouched, so prefix memory can never gate a request.
+        """
+        if not messages or not targets:
+            return targets
+        # Only a STRICT prefix match steers routing: an identical repeat is a
+        # retry/rotation case (and the whole-response cache's job), not a loop
+        # turn, so it must keep the pool's normal fairness ordering.
+        strict = self._prefix_hashes(messages)[1:]
+        if not strict:
+            return targets
+        remembered = self._prefix_routes.lookup(strict)
+        if remembered is None:
+            return targets
+        for i, target in enumerate(targets):
+            if target.name == remembered:
+                if i:
+                    targets = [*targets[i:i + 1], *targets[:i], *targets[i + 1:]]
+                self._bump_stats(prefix_routed=1)
+                return targets
+        return targets
+
+    def _remember_prefix_route(
+        self, messages: Sequence[Mapping[str, Any]] | None, route_name: str
+    ) -> None:
+        if not messages:
+            return
+        hashes = self._prefix_hashes(messages)
+        if hashes:
+            self._prefix_routes.remember(hashes[0], route_name)
 
     def stats_snapshot(self) -> dict[str, int]:
         """A consistent copy of the session stats counters, read under the lock so
@@ -1211,6 +1279,7 @@ class Pool:
             routing=eff,
             task=resolved_task,
         )
+        targets = self._prefer_prefix_route(targets, messages)
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
@@ -1438,10 +1507,14 @@ class Pool:
             )
             self.quota.record(target.provider.id, target.model)
             reply.attempts = len(attempts) + 1
+            cached = reply.cached_prompt_tokens or 0
+            self._remember_prefix_route(messages, target.name)
             self._bump_stats(
                 requests=1,
                 prompt_tokens=reply.prompt_tokens or 0,
                 completion_tokens=reply.completion_tokens or 0,
+                prefix_cache_hits=1 if cached > 0 else 0,
+                prefix_tokens_avoided=cached,
             )
             if self._cache is not None and cache_key is not None:
                 self._cache.put(
@@ -1510,6 +1583,7 @@ class Pool:
             task=resolved_task,
         )
         targets = [t for t in targets if t.provider.adapter != "gemini"]
+        targets = self._prefer_prefix_route(targets, messages)
         if not targets:
             raise NoProvidersConfigured("no streamable (provider, model) matched the filters")
 
@@ -1693,6 +1767,7 @@ class Pool:
                 if callable(closer):
                     closer()
                 if drained:
+                    self._remember_prefix_route(messages, target.name)
                     self._bump_stats(
                         prompt_tokens=max(0, est_tokens),
                         completion_tokens=max(0, sum(len(s) for s in streamed) // 4),

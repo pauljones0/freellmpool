@@ -651,6 +651,10 @@ def cmd_stats(args: argparse.Namespace) -> int:
         f"({snap['prompt_tokens']:,} in / {snap['completion_tokens']:,} out)"
     )
     print(f"  cache hits:  {snap['cache_hits']:,}")
+    prefix_hits = snap.get("prefix_cache_hits", 0)
+    avoided = snap.get("prefix_tokens_avoided", 0)
+    rate = (100.0 * prefix_hits / snap["requests"]) if snap["requests"] else 0.0
+    print(f"  prefix cache: {prefix_hits:,} hits ({rate:.1f}%), {avoided:,} tokens avoided")
     print(f"  {format_saved(snap['prompt_tokens'], snap['completion_tokens'])}")
     if snap.get("first_seen"):
         print(f"  since:       {snap['first_seen']}")

@@ -42,6 +42,7 @@ from .errors import (
 from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .models import Provider, Reply
 from .observe import emit
+from .prefixcache import cached_prompt_tokens as _cached_prompt_tokens
 from .router import (
     Pool,
     _ChatAttempt,
@@ -400,6 +401,8 @@ class AsyncPool:
             raw=result.body,
             prompt_tokens=usage.get("prompt_tokens"),
             completion_tokens=usage.get("completion_tokens"),
+            cached_prompt_tokens=_cached_prompt_tokens(
+                result.body.get("usage"), prompt_tokens=usage.get("prompt_tokens")),
             message=message if isinstance(message, dict) else None,
         )
 
@@ -446,6 +449,9 @@ class AsyncPool:
             raw=result.body,
             prompt_tokens=usage.get("promptTokenCount"),
             completion_tokens=usage.get("candidatesTokenCount"),
+            cached_prompt_tokens=_cached_prompt_tokens(
+                result.body.get("usageMetadata"),
+                prompt_tokens=usage.get("promptTokenCount")),
         )
 
     # ---- entrypoints --------------------------------------------------

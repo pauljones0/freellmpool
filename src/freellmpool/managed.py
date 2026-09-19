@@ -48,6 +48,7 @@ from .media import check_image_url, image_input_tokens
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply, TranscribeReply
 from .observe import EventHook
+from .prefixcache import cached_prompt_tokens as _cached_prompt_tokens
 from .provider_registry import reviewed_limit_capacity
 from .quota import QuotaStore
 from .route_health import RouteHealthStore, default_route_health_path
@@ -522,20 +523,25 @@ class ManagedPool(Pool):
                   if isinstance(value := usage.get(key), int) and not isinstance(value, bool)
                   and 0 <= value <= 2**63 - 1}
         prompt, completion = counts.get("prompt_tokens"), counts.get("completion_tokens")
+        # Provider-confirmed cached prefix tokens cost nothing: the provider
+        # served them from its prefix cache, so only the delta consumes token
+        # allowances. Unconfirmed or malformed claims deduct zero.
+        cached = _cached_prompt_tokens(usage, prompt_tokens=prompt)
+        billed_prompt = (prompt - cached) if prompt is not None else None
         actual: dict[str, float] = {"requests": 1}
-        if prompt is not None:
-            actual["input_tokens"] = prompt
+        if billed_prompt is not None:
+            actual["input_tokens"] = billed_prompt
         if completion is not None:
             actual["output_tokens"] = completion
         if "total_tokens" in counts:
-            total = max(counts["total_tokens"], (prompt or 0) + (completion or 0))
+            total = max(counts["total_tokens"] - cached, (billed_prompt or 0) + (completion or 0))
             actual.update(total_tokens=total, tokens=total)
-        elif "total_tokens" not in usage and prompt is not None and completion is not None:
-            actual.update(total_tokens=prompt + completion, tokens=prompt + completion)
+        elif "total_tokens" not in usage and billed_prompt is not None and completion is not None:
+            actual.update(total_tokens=billed_prompt + completion, tokens=billed_prompt + completion)
         else:
             # Incomplete usage cannot justify a refund, but any known part
             # above the estimate must still consume its allowance.
-            known_tokens = (prompt or 0) + (completion or 0)
+            known_tokens = (billed_prompt or 0) + (completion or 0)
             for unit in ("total_tokens", "tokens"):
                 actual[unit] = max(reserved.get(unit, 0), known_tokens)
         if prompt is not None or completion is not None:
@@ -744,8 +750,11 @@ class ManagedPool(Pool):
     def _success(self, route: Route, reply: Reply | EmbedReply | TranscribeReply | None, started: float) -> None:
         self.metrics.record_success(route.name, (time.monotonic() - started) * 1000)
         self.quota.record(route.provider.id, route.model)
+        cached = getattr(reply, "cached_prompt_tokens", 0) or 0
         self._bump_stats(requests=1, prompt_tokens=getattr(reply, "prompt_tokens", 0) or 0,
-                         completion_tokens=getattr(reply, "completion_tokens", 0) or 0)
+                         completion_tokens=getattr(reply, "completion_tokens", 0) or 0,
+                         prefix_cache_hits=1 if cached > 0 else 0,
+                         prefix_tokens_avoided=cached)
         with self._sequence_lock:
             self._request_sequence[0] += 1
             self._last_used[route.name] = self._last_used[route.provider.id] = self._request_sequence[0]
@@ -777,6 +786,9 @@ class ManagedPool(Pool):
             wait_budget = 5
         waiting = 0.0
         queue = list(candidates)
+        if modality == "chat":
+            queue = self._prefer_prefix_route(
+                queue, cast(list[JSON], payload) if isinstance(payload, list) else None)
         retryable: list[tuple[Route, float]] = []
         while queue:
             self._check_cancelled()
@@ -825,6 +837,8 @@ class ManagedPool(Pool):
                                                       timeout=min(remaining, 30), post=self._multipart_for(route, state))
                         self._check_cancelled()
                         self._success(route, reply, started)
+                        if modality == "chat" and isinstance(payload, list):
+                            self._remember_prefix_route(cast(list[JSON], payload), route.name)
                         if hasattr(reply, "attempts"):
                             reply.attempts = len(attempts) + 1
                         if redactions and hasattr(reply, "redactions"):

@@ -1137,7 +1137,7 @@ degraded for later runs (since recovered).
 
 Effort: M–L. Fit: medium-high — completes the G7 story at run level.
 
-## G22 — Agent-loop cache (Status: pending)
+## G22 — Agent-loop cache (Status: complete 2026-09-19)
 
 Pain: agentic loops resend the same growing prefix every turn,
 burning free quotas 2–5x faster than needed; prompt caching (up to
@@ -1156,12 +1156,31 @@ Execute:
    quota spend pasted.
 
 Done when:
-- [ ] Before/after quota spend shows large savings on a realistic
+- [x] Before/after quota spend shows large savings on a realistic
       multi-turn loop with identical outputs (numbers pasted).
-- [ ] Full suite + gates pass.
-- [ ] Commit + push; chain complete — report the series result.
+- [x] Full suite + gates pass.
+- [x] Commit + push; chain complete — report the series result.
+
+Result: prefix-hash routing memory + provider-confirmed cache harvest
+(`src/freellmpool/prefixcache.py`, `Reply.cached_prompt_tokens`,
+`ManagedPool._actual_cost` deduction, stats/CLI/MCP/proxy surfaces,
+`docs/PREFIX_CACHE.md`, `tests/test_prefixcache.py` 23 tests incl. a
+rotation regression test). Live 5-turn loop on mistral/codestral-latest:
+busted-prefix leg net 3,958 tokens vs stable-prefix leg net 830 (−79.0%),
+RESULT verdicts byte-identical 5/5, full text 3/5 with model-side jitter
+proven cache-independent. Full suite 2605 passed; ruff clean; mypy zero
+new; check_docs green; coverage 87.16/77.86.
 
 Effort: M. Fit: medium — quota multiplier for every agent user.
+
+## Chain G15–G22 series report (2026-09-19)
+
+All 8 goals shipped, each with live transcripts, regression tests, and
+green gates: G15 Claude Code $0 mode, G16 privacy routing + redaction,
+G17 MCP diet as a weapon, G18 live free-tier status page, G19
+security-hardening sprint, G20 free-embedding leaderboard, G21 run
+survivor (resume), G22 agent-loop prefix cache. No further goal:
+the chain is complete.
 
 ## Killed bets (accepted 2026-09-18)
 

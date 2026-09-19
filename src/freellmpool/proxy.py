@@ -433,6 +433,8 @@ def _status_payload(pool: Pool, recent: Sequence[dict], tokenmax: dict | None = 
             "prompt_tokens": s.get("prompt_tokens", 0),
             "completion_tokens": s.get("completion_tokens", 0),
             "cache_hits": s.get("cache_hits", 0),
+            "prefix_cache_hits": s.get("prefix_cache_hits", 0),
+            "prefix_tokens_avoided": s.get("prefix_tokens_avoided", 0),
             "usd_saved": saved,
         },
         # lifetime (persisted across restarts) — the growing "served free" number
@@ -441,6 +443,8 @@ def _status_payload(pool: Pool, recent: Sequence[dict], tokenmax: dict | None = 
             "prompt_tokens": life.get("prompt_tokens", 0),
             "completion_tokens": life.get("completion_tokens", 0),
             "cache_hits": life.get("cache_hits", 0),
+            "prefix_cache_hits": life.get("prefix_cache_hits", 0),
+            "prefix_tokens_avoided": life.get("prefix_tokens_avoided", 0),
             "usd_saved": usd_saved(life.get("prompt_tokens", 0), life.get("completion_tokens", 0)),
             "first_seen": life.get("first_seen"),
         },
@@ -2150,6 +2154,7 @@ def _dashboard_html(pool) -> str:
     cards = [
         ("requests served", str(s.get("requests", 0))),
         ("cache hits", str(s.get("cache_hits", 0))),
+        ("prefix tokens avoided", str(s.get("prefix_tokens_avoided", 0))),
         ("healthy providers", f"{capacity.healthy_count}/{capacity.target}"),
         ("estimated not spent (Claude Opus 4.8)", f"${saved:,.2f}"),
     ]
