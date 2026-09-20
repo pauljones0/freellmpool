@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -68,6 +69,16 @@ def test_store_is_append_only_and_last_uses_append_order(tmp_path):
     assert store.report_path(second.run_id, "html") == tmp_path / "data" / "reports" / (
         second.run_id + ".html"
     )
+
+
+def test_run_records_file_and_dir_are_owner_only(tmp_path):
+    store = _store(tmp_path)
+    store.append_new(kind="ask", title="t", prompt="p", output="o")
+
+    assert store.last() is not None
+    if hasattr(os, "fchmod"):
+        assert oct(store.path.stat().st_mode & 0o777) == "0o600"
+        assert oct(store.path.parent.stat().st_mode & 0o777) == "0o700"
 
 
 def test_markdown_preserves_prose_but_redacts_obvious_secrets():

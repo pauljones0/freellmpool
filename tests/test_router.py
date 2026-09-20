@@ -29,8 +29,8 @@ def test_failover_skips_429(providers, env, quota):
     reply = pool.ask("hello", providers=["alpha", "beta"])
     assert reply.text == "from beta"
     assert reply.provider_id == "beta"
-    # alpha-small 429s → alpha's other model is skipped this request → beta wins.
-    # So only 2 calls (alpha-small, beta), not 3.
+    # alpha-small 429s → diversity first-wave tries beta next and wins, so the
+    # fallback sibling (alpha-big) is never reached. Only 2 calls, not 3.
     assert len(post.calls) == 2
 
 
@@ -750,3 +750,82 @@ def test_authorized_retry_can_recover_newly_opened_route(quota, tmp_path, monkey
     assert calls == ["alpha", "beta", "alpha"]
     assert row.state == "closed"
     assert row.failures == 1 and row.successes == 1
+
+
+def test_key_rotation_advance_uses_full_slot_count(env, quota):
+    """advance() must stride over every configured key, not the cooled-filtered
+    trial subset, or the sticky cursor collapses into a smaller range."""
+    provider = Provider(
+        id="alpha",
+        label="Alpha",
+        adapter="openai",
+        base_url="https://alpha.test/v1",
+        key_env="ALPHA_KEY",
+        models=(Model("m", rpd=0),),
+    )
+    full_env = {**env, "ALPHA_KEY": "k1", "ALPHA_KEY_2": "k2", "ALPHA_KEY_3": "k3"}
+    calls: list[int] = []
+
+    def rule(url, headers, body):
+        calls.append(len(calls))
+        if len(calls) in (1, 3):  # first key, then the second key on request two
+            return 429, {"error": {"message": "slow down"}}
+        return 200, openai_body("ok")
+
+    pool = Pool(
+        [provider], quota=quota, env=full_env, post=make_post({"alpha.test": rule})
+    )
+    assert pool.ask("one").text == "ok"  # k1 429s, k2 serves
+    assert pool.ask("two").text == "ok"  # k2 429s, k3 serves
+    assert len(calls) == 4
+    assert pool._key_rotator._cursor["alpha"] == 2
+
+
+def _solo_two_model_provider():
+    return Provider(
+        id="solo",
+        label="Solo",
+        adapter="openai",
+        base_url="https://solo.test/v1",
+        auth="none",
+        models=(Model("m1", rpd=0), Model("m2", rpd=0)),
+    )
+
+
+def test_plain_429_does_not_suppress_sibling_model(quota):
+    """A per-model 429 deprioritizes via cooldown; the untried sibling model on
+    the same provider must still be attempted within the request."""
+    solo = _solo_two_model_provider()
+
+    def rule(url, headers, body):
+        if body["model"] == "m1":
+            return 429, {"error": {"message": "rate limited"}}
+        return 200, openai_body("from m2")
+
+    post = make_post({"solo.test": rule})
+    pool = Pool([solo], quota=quota, env={}, post=post, clock=lambda: 100.0)
+    reply = pool.ask("hi")
+    assert reply.model == "m2"
+    assert len(post.calls) == 2
+    assert pool._cooldown_until["solo"] == 100.0 + pool.cooldown_seconds
+
+
+def test_stream_plain_429_does_not_suppress_sibling_model(quota):
+    """Stream failover likewise tries the sibling model after a per-model 429."""
+    solo = _solo_two_model_provider()
+    seen: list[str] = []
+
+    def stream_post(url, headers, body, timeout):
+        seen.append(body["model"])
+        if body["model"] == "m1":
+            return 429, iter(['{"error":{"message":"rate limited"}}'])
+        return 200, iter(
+            ['data: {"choices":[{"delta":{"content":"ok"}}]}', "data: [DONE]"]
+        )
+
+    pool = Pool([solo], quota=quota, env={}, stream_post=stream_post,
+                clock=lambda: 100.0)
+    chunks = list(pool.stream_chat([{"role": "user", "content": "hi"}]))
+    assert chunks[0] == {"provider": "solo", "model": "m2", "attempts": 2}
+    assert "ok" in "".join(c for c in chunks[1:] if isinstance(c, str))
+    assert seen == ["m1", "m2"]

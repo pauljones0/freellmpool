@@ -69,6 +69,51 @@ def test_redact_scrubs_secrets_and_pii(text, secret, kind):
     assert kind in hits
 
 
+def test_redact_covers_provider_key_shapes():
+    for secret in (
+        "AIzaSyAbcDefGhIjKlMnOpQrStUvWx",
+        "csk-abcDEF1234567890abcdef",
+        "hf_abcDEF1234567890abcdef",
+        "sk-or-abcDEF1234567890abcdef",
+    ):
+        scrubbed, hits = privacy.redact_text(f"key value {secret} here")
+        assert secret not in scrubbed, secret
+        assert "API_KEY" in hits, secret
+
+
+def test_redact_messages_scrubs_tool_calls_and_function_call():
+    secret = "sk-abcDEF1234567890abcdef"
+    other = "csk-zyxWVU9876543210fedcba"
+    messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call-1",
+                    "type": "function",
+                    "function": {"name": "lookup", "arguments": f'{{"query": "{secret}"}}'},
+                }
+            ],
+        },
+        {
+            "role": "assistant",
+            "content": None,
+            "function_call": {"name": "lookup", "arguments": f"key={secret}"},
+        },
+        {"role": "tool", "tool_call_id": "call-1", "content": f"result {secret}"},
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": f"https://x.test/?q={other}"}}],
+        },
+    ]
+    scrubbed, hits = privacy.redact_messages(messages)
+    dumped = json.dumps(scrubbed)
+    assert secret not in dumped
+    assert other not in dumped
+    assert "API_KEY" in hits
+
+
 def test_redact_private_key_block():
     block = "-----BEGIN RSA PRIVATE KEY-----\nMIIBsecret\n-----END RSA PRIVATE KEY-----"
     scrubbed, hits = privacy.redact_text("use " + block)

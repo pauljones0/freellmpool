@@ -511,8 +511,19 @@ def stream_call(
                 obj = json.loads(line)
             except (json.JSONDecodeError, ValueError):
                 continue
+            if not isinstance(obj, dict):
+                continue
             choices = obj.get("choices") or [{}]
-            delta = (choices[0].get("delta") or {}).get("content")
+            if (
+                not isinstance(choices, list)
+                or not choices
+                or not isinstance(choices[0], dict)
+            ):
+                continue
+            delta_obj = choices[0].get("delta") or {}
+            if not isinstance(delta_obj, dict):
+                continue
+            delta = delta_obj.get("content")
             if delta:
                 yield delta
         if not done:

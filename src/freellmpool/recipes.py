@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import glob
 import json
+import os
 from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
@@ -15,6 +16,12 @@ from .roles import RoleSpec, get_role
 from .router import Pool
 
 RECIPE_SCHEMA_VERSION = "1.0.0"
+
+# Bounds for `--path` glob reads. Matched contents are inlined into prompts sent
+# to external providers, so cap what a single glob can pull in.
+MAX_PATH_FILES = 100
+MAX_PATH_FILE_BYTES = 200_000
+MAX_PATH_TOTAL_BYTES = 1_000_000
 
 
 class RecipeError(ValueError):
@@ -142,13 +149,18 @@ def collect_recipe_input(
     stdin: str = "",
     input_file: str | None = None,
     path: str | None = None,
+    root: str | Path | None = None,
 ) -> tuple[str, str | None]:
+    """Gather a recipe's `input` text. When `root` is given, a `path` glob is
+    treated as untrusted (model-controlled): it must be relative, must not use
+    `..` or `~`, and every match must resolve inside `root`. Omit `root` only
+    for trusted local callers (CLI, jobs)."""
     if recipe.input_mode == "path":
         if not path:
             raise MissingRecipeInputError(
                 f"recipe '{recipe.name}' requires --path <glob>; prompt/stdin/--input are not enough"
             )
-        return _path_payload(path), path
+        return _path_payload(path, root=root), path
 
     if input_file:
         return Path(input_file).read_text(encoding="utf-8"), None
@@ -260,14 +272,37 @@ def _load_recipe(path: Any) -> Recipe:
         return Recipe.from_dict(json.load(fh))
 
 
-def _path_payload(pattern: str) -> str:
+def _path_payload(pattern: str, *, root: str | Path | None = None) -> str:
+    confined = Path(root).resolve() if root is not None else None
+    if confined is not None:
+        _check_confined_pattern(pattern)
     matches = [Path(p) for p in sorted(glob.glob(pattern, recursive=True))]
     if not matches:
         raise MissingRecipeInputError(f"--path matched no files: {pattern}")
+    if confined is not None:
+        matches = [path for path in matches if _is_within(path, confined)]
+    files = [path for path in matches if not path.is_dir()]
+    if len(files) > MAX_PATH_FILES:
+        raise MissingRecipeInputError(
+            f"--path matched too many files ({len(files)} > {MAX_PATH_FILES}): {pattern}"
+        )
+    total = 0
+    for path in files:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            size = 0
+        if size > MAX_PATH_FILE_BYTES:
+            raise MissingRecipeInputError(
+                f"--path file too large ({size} > {MAX_PATH_FILE_BYTES} bytes): {path}"
+            )
+        total += size
+        if total > MAX_PATH_TOTAL_BYTES:
+            raise MissingRecipeInputError(
+                f"--path matched too large a payload (>{MAX_PATH_TOTAL_BYTES} bytes): {pattern}"
+            )
     parts: list[str] = []
-    for path in matches:
-        if path.is_dir():
-            continue
+    for path in files:
         try:
             text = path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -278,6 +313,27 @@ def _path_payload(pattern: str) -> str:
     if not parts:
         raise MissingRecipeInputError(f"--path matched no readable files: {pattern}")
     return "\n\n".join(parts)
+
+
+def _check_confined_pattern(pattern: str) -> None:
+    if pattern.startswith("~"):
+        raise MissingRecipeInputError(
+            f"--path must not use home expansion: {pattern}"
+        )
+    if os.path.isabs(pattern):
+        raise MissingRecipeInputError(
+            f"--path must be relative (absolute paths rejected): {pattern}"
+        )
+    if ".." in Path(pattern).parts:
+        raise MissingRecipeInputError(f"--path must not escape with '..': {pattern}")
+
+
+def _is_within(candidate: Path, root: Path) -> bool:
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        return False
+    return resolved == root or resolved.is_relative_to(root)
 
 
 def _role_max_tokens(role: RoleSpec | None) -> int:

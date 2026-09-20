@@ -293,10 +293,51 @@ def test_immediate_quota_replaces_inherited_lock_after_fork(tmp_path):
     assert os.waitstatus_to_exitcode(status) == 0
 
 
+def test_used_reflects_other_process_writes(tmp_path):
+    a = _store(tmp_path, 2)
+    b = _store(tmp_path, 2)
+    a.record("groq", "m", 1)
+    b.record("groq", "m", 2)
+    assert a.used("groq", "m") == 3
+    assert a.over_budget("groq", "m", rpd=3) is True
+
+
+def test_immediate_record_retries_after_save_failure(tmp_path, monkeypatch):
+    import json
+
+    store = QuotaStore(path=tmp_path / "q.json", clock=lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC),
+                       flush_interval=60)
+    calls = []
+    original = store._save
+    def flaky() -> None:
+        calls.append(1)
+        if len(calls) == 1:
+            raise OSError("disk full")
+        original()
+    monkeypatch.setattr(store, "_save", flaky)
+    assert store.record("groq", "m") == 1  # advisory: no raise
+    assert store.used("groq", "m") == 1  # failed increment stays visible
+    assert store.record("groq", "m") == 2
+    data = json.loads((tmp_path / "q.json").read_text())
+    assert data["2026-06-02"]["groq::m"] == 2
+
+
 @pytest.mark.skipif(not hasattr(os, "register_at_fork"), reason="requires at-fork hooks")
 def test_immediate_quota_at_fork_registry_does_not_retain_store(tmp_path):
     store = QuotaStore(path=tmp_path / "quota.json", flush_every=1)
     reference = weakref.ref(store)
+
+    del store
+    gc.collect()
+
+    assert reference() is None
+
+
+def test_batched_quota_store_does_not_leak_via_atexit(tmp_path):
+    """atexit must not hold a strong bound-method ref that defeats _LIVE_STORES."""
+    store = QuotaStore(path=tmp_path / "quota.json", flush_every=100, flush_interval=60)
+    reference = weakref.ref(store)
+    assert reference() is not None
 
     del store
     gc.collect()

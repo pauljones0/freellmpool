@@ -968,3 +968,47 @@ def test_tools_call_quota_wise_never_leaks_keys_or_tokens(providers, env, quota)
     text = resp["result"]["content"][0]["text"]
     for needle in ("GROQ_API_KEY", "CEREBRAS_API_KEY", "bearer", "Authorization:"):
         assert needle not in text
+
+
+def test_tools_call_recipe_rejects_absolute_path(providers, env, quota, tmp_path):
+    """Model-controlled `path` must not read absolute locations (e.g. /etc, ~/.ssh)."""
+    pool = _pool(providers, env, quota)
+    secret = tmp_path / "secret.py"
+    secret.write_text("API_KEY = 'mcp-abs-sentinel-9f3c'\n", encoding="utf-8")
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 160,
+            "method": "tools/call",
+            "params": {
+                "name": "free_llm_recipe",
+                "arguments": {"name": "repo-summary", "path": str(secret)},
+            },
+        },
+    )
+    assert resp["result"]["isError"] is True
+    assert "mcp-abs-sentinel-9f3c" not in resp["result"]["content"][0]["text"]
+
+
+def test_tools_call_recipe_rejects_parent_escape(providers, env, quota, tmp_path, monkeypatch):
+    """`..` globs must not escape the working directory into adjacent secrets."""
+    pool = _pool(providers, env, quota)
+    work = tmp_path / "work"
+    work.mkdir()
+    (tmp_path / "secret.py").write_text("API_KEY = 'mcp-dotdot-sentinel-7a1e'\n", encoding="utf-8")
+    monkeypatch.chdir(work)
+    resp = handle_message(
+        pool,
+        {
+            "jsonrpc": "2.0",
+            "id": 161,
+            "method": "tools/call",
+            "params": {
+                "name": "free_llm_recipe",
+                "arguments": {"name": "repo-summary", "path": "../*.py"},
+            },
+        },
+    )
+    assert resp["result"]["isError"] is True
+    assert "mcp-dotdot-sentinel-7a1e" not in resp["result"]["content"][0]["text"]

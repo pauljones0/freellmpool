@@ -220,17 +220,30 @@ class RunRecordStore:
         return f"{stamp}-{seq:04d}"
 
     def _append_locked(self, record: RunRecord) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as fh:
-            json.dump(record.to_dict(), fh, sort_keys=True)
-            fh.write("\n")
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(self.path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o600)
+        try:
+            if hasattr(os, "fchmod"):
+                with contextlib.suppress(OSError):
+                    os.fchmod(fd, 0o600)
+            else:
+                with contextlib.suppress(OSError):
+                    os.chmod(self.path, 0o600)
+            with os.fdopen(fd, "a", encoding="utf-8") as fh:
+                fd = -1
+                json.dump(record.to_dict(), fh, sort_keys=True)
+                fh.write("\n")
+        finally:
+            if fd >= 0:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
 
     @contextlib.contextmanager
     def _file_lock(self):
         if fcntl is None:
             yield
             return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         lock_path = self.path.with_suffix(self.path.suffix + ".lock")
         try:
             fh = open(lock_path, "w")

@@ -54,6 +54,20 @@ def test_redact_secrets_common_shapes():
     assert redact_secrets(text) == "before [redacted] after"
 
 
+def test_redact_secrets_covers_bearer_aws_slack_assignments_and_hf():
+    cases = [
+        "token AKIAIOSFODNN7EXAMPLE end",
+        "hook xoxb-123456789012-abcdefghij here",
+        "auth Bearer abcdefghijklmnop here",
+        "OPENAI_API_KEY=supersecretvalue123 here",
+        "model hf_abcDEF1234567890abcdef here",
+    ]
+    for text in cases:
+        redacted = redact_secrets(text)
+        assert redacted != text, text
+        assert "[redacted]" in redacted, text
+
+
 def test_upsert_config_key_creates_new_file(tmp_path):
     path = tmp_path / "config.toml"
 
@@ -96,6 +110,17 @@ def test_append_inventory_record_deduplicates_provider_env_pair(tmp_path):
     assert records[0].provider == "groq"
     assert records[0].env_var == "GROQ_API_KEY"
     assert records[0].label == "main"
+
+
+def test_append_inventory_record_is_owner_only(tmp_path):
+    path = tmp_path / "sub" / "keys.toml"
+
+    append_inventory_record(KeyRecord(provider="groq", env_var="GROQ_API_KEY"), path)
+
+    assert load_inventory(path)[0].provider == "groq"
+    if hasattr(os, "fchmod"):
+        assert oct(path.stat().st_mode & 0o777) == "0o600"
+        assert oct(path.parent.stat().st_mode & 0o777) == "0o700"
 
 
 def test_key_record_safe_notes_redacts_secrets():

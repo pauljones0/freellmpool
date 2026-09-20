@@ -616,3 +616,229 @@ def test_async_close_flushes_underlying_pool_telemetry(tmp_path):
     assert (tmp_path / "quota.json").exists()
     assert (tmp_path / "stats.json").exists()
     assert (tmp_path / "health.json").exists()
+
+
+def test_async_plain_429_does_not_suppress_sibling_model(quota):
+    """Async failover likewise tries the sibling model after a per-model 429."""
+    from helpers import openai_body
+
+    solo = Provider(
+        id="solo",
+        label="Solo",
+        adapter="openai",
+        base_url="https://solo.test/v1",
+        auth="none",
+        models=(Model("m1", rpd=0), Model("m2", rpd=0)),
+    )
+
+    def rule(url, headers, body):
+        if body["model"] == "m1":
+            return 429, {"error": {"message": "rate limited"}}
+        return 200, openai_body("from m2")
+
+    apost = _async_post({"solo.test": rule})
+    pool = AsyncPool(Pool([solo], quota=quota, env={}), apost=apost)
+    reply = asyncio.run(pool.achat([{"role": "user", "content": "hi"}]))
+    assert reply.model == "m2"
+    assert len(apost.calls) == 2
+
+
+def test_async_openai_scalar_choice_raises_retryable_502(providers, env, quota):
+    """Scalar choices[0] must fail over like sync, not raise AttributeError."""
+
+    async def apost(url, headers, body, timeout):
+        return sync_client.HTTPResult(200, {"choices": ["oops"]}, "")
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env), apost=apost)
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        asyncio.run(
+            pool._acall_openai(
+                providers[0], "alpha-small", [{"role": "user", "content": "hi"}],
+                api_key="a", max_tokens=16, temperature=0.0, timeout=10.0,
+                tools=None, tool_choice=None, response_format=None,
+                max_transport_attempts=None,
+            )
+        )
+    assert exc_info.value.status == 502
+    assert exc_info.value.retryable is True
+
+
+def test_async_openai_scalar_message_raises_retryable_502(providers, env, quota):
+    """Scalar message must fail over like sync, not raise AttributeError."""
+
+    async def apost(url, headers, body, timeout):
+        return sync_client.HTTPResult(200, {"choices": [{"message": "hi"}]}, "")
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env), apost=apost)
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        asyncio.run(
+            pool._acall_openai(
+                providers[0], "alpha-small", [{"role": "user", "content": "hi"}],
+                api_key="a", max_tokens=16, temperature=0.0, timeout=10.0,
+                tools=None, tool_choice=None, response_format=None,
+                max_transport_attempts=None,
+            )
+        )
+    assert exc_info.value.status == 502
+    assert exc_info.value.retryable is True
+
+
+def test_async_gemini_scalar_candidate_raises_retryable_502(providers, env, quota):
+    """Scalar candidates[0] must fail over like sync, not raise AttributeError."""
+
+    async def apost(url, headers, body, timeout):
+        return sync_client.HTTPResult(200, {"candidates": ["x"]}, "")
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env), apost=apost)
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        asyncio.run(
+            pool._acall_gemini(
+                providers[2], "gee-flash", [{"role": "user", "content": "hi"}],
+                api_key="g", max_tokens=16, temperature=0.0, timeout=10.0,
+                max_transport_attempts=None,
+            )
+        )
+    assert exc_info.value.status == 502
+    assert exc_info.value.retryable is True
+
+
+def test_async_gemini_scalar_parts_are_skipped(providers, env, quota):
+    """Non-dict gemini parts must be skipped like sync, not crash the join."""
+
+    async def apost(url, headers, body, timeout):
+        return sync_client.HTTPResult(
+            200,
+            {"candidates": [{"content": {"parts": ["x", {"text": "ok"}]}}]},
+            "",
+        )
+
+    pool = AsyncPool(Pool(providers, quota=quota, env=env), apost=apost)
+    reply = asyncio.run(
+        pool._acall_gemini(
+            providers[2], "gee-flash", [{"role": "user", "content": "hi"}],
+            api_key="g", max_tokens=16, temperature=0.0, timeout=10.0,
+            max_transport_attempts=None,
+        )
+    )
+    assert reply.text == "ok"
+
+
+def test_async_loop_second_turn_prefers_warm_target(providers, env, quota):
+    """Async follow-up turns steer to the warmed target like sync chat."""
+    pool = AsyncPool(Pool(providers[:2], quota=quota, env=env), apost=_async_post({}))
+    turn1 = [{"role": "system", "content": "s"}, {"role": "user", "content": "u1"}]
+    turn2 = [*turn1, {"role": "assistant", "content": "ok"},
+             {"role": "user", "content": "u2"}]
+
+    async def run():
+        first = await pool.achat(turn1, providers=["beta"])
+        second = await pool.achat(turn2)
+        return first, second
+
+    first, second = asyncio.run(run())
+    assert first.provider_id == "beta"
+    assert second.provider_id == "beta"
+    assert pool.stats["prefix_routed"] == 1
+
+
+def test_async_success_records_prefix_cache_stats(providers, env, quota):
+    """Async prompt-cache savings must surface in stats like sync chat."""
+    usage = {"prompt_tokens": 100, "completion_tokens": 5,
+             "prompt_tokens_details": {"cached_tokens": 80}}
+
+    async def apost(url, headers, body, timeout):
+        return sync_client.HTTPResult(
+            200, {"choices": [{"message": {"content": "ok"}}], "usage": usage}, ""
+        )
+
+    pool = AsyncPool(Pool(providers[:2], quota=quota, env=env), apost=apost)
+    reply = asyncio.run(pool.aask("hi"))
+    assert reply.cached_prompt_tokens == 80
+    assert pool.stats["prefix_cache_hits"] == 1
+    assert pool.stats["prefix_tokens_avoided"] == 80
+
+
+def test_async_gemini_keyless_sends_no_api_key_header(quota):
+    """Keyless gemini-shape calls must omit x-goog-api-key like sync."""
+    from helpers import gemini_body
+
+    provider = Provider(
+        id="kg", label="KG", adapter="gemini",
+        base_url="https://kg.test/v1beta", auth="none",
+        models=(Model("kg-1"),),
+    )
+    seen: dict = {}
+
+    async def apost(url, headers, body, timeout):
+        seen.update(headers)
+        return sync_client.HTTPResult(200, gemini_body("ok"), "")
+
+    pool = AsyncPool(Pool([provider], quota=quota, env={}), apost=apost)
+    reply = asyncio.run(pool.aask("hi"))
+    assert reply.text == "ok"
+    assert "x-goog-api-key" not in seen
+
+
+def test_async_key_rotation_shares_sync_pool_state(providers, env, quota):
+    """An async 429 rotation must advance the sync pool's rotator (shared)."""
+    from helpers import openai_body
+
+    full_env = {**env, "ALPHA_KEY": "k1", "ALPHA_KEY_2": "k2"}
+
+    async def apost(url, headers, body, timeout):
+        if headers.get("Authorization") == "Bearer k1":
+            return sync_client.HTTPResult(429, {"error": {"message": "slow"}}, "")
+        return sync_client.HTTPResult(200, openai_body("ok"), "")
+
+    inner = Pool(providers[:1], quota=quota, env=full_env)
+    pool = AsyncPool(inner, apost=apost)
+    reply = asyncio.run(
+        pool.achat([{"role": "user", "content": "hi"}],
+                   providers=["alpha"], model="alpha-small")
+    )
+    assert reply.text == "ok"
+    trials = inner._key_trials(providers[0])
+    assert trials[0][0] == 1  # sync view starts on the rotated-to slot
+
+
+def test_async_acall_tolerates_pool_stub_without_key_trials(providers, env):
+    """Duck-typed pool stubs still rotate through configured slots once each."""
+    from types import SimpleNamespace
+
+    from helpers import openai_body
+
+    full_env = {**env, "ALPHA_KEY": "k1", "ALPHA_KEY_2": "k2"}
+
+    async def apost(url, headers, body, timeout):
+        if headers.get("Authorization") == "Bearer k1":
+            return sync_client.HTTPResult(429, {"error": {"message": "slow"}}, "")
+        return sync_client.HTTPResult(200, openai_body("ok"), "")
+
+    pool = AsyncPool(SimpleNamespace(env=full_env), apost=apost)
+    reply = asyncio.run(
+        pool._acall(
+            providers[0], "alpha-small", [{"role": "user", "content": "hi"}],
+            max_tokens=16, temperature=0.0, timeout=10.0,
+            tools=None, tool_choice=None, response_format=None,
+        )
+    )
+    assert reply.text == "ok"
+
+
+def test_async_cache_hit_reports_zero_attempts(providers, env, quota, tmp_path):
+    """An async cache hit tries no providers, so attempts is 0."""
+    from freellmpool.cache import Cache
+
+    apost = _async_post({})
+    cache = Cache(ttl=60, path=tmp_path / "cache.sqlite")
+    pool = AsyncPool(Pool(providers, quota=quota, env=env, cache=cache), apost=apost)
+
+    async def run():
+        first = await pool.aask("same question")
+        second = await pool.aask("same question")
+        return first, second
+
+    first, second = asyncio.run(run())
+    assert first.attempts == 1
+    assert second.cached is True
+    assert second.attempts == 0

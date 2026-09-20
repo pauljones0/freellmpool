@@ -509,6 +509,8 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
     def tokenmax_snapshot() -> dict:
         with tokenmax_lock:
             snap = dict(tokenmax_state)
+        # /status is world-readable: never surface prompt fragments there.
+        snap.pop("prompt", None)
         if snap.get("active") and snap.get("started_at") is not None:
             snap["elapsed_s"] = round(max(0.0, pool._clock() - snap["started_at"]), 1)
         return snap
@@ -878,7 +880,6 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                     tokenmax_state.update(
                         {
                             "active": True,
-                            "prompt": prompt[:120],
                             "done": 0,
                             "total": total,
                             "n_providers": n_providers,

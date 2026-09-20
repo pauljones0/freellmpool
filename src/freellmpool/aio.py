@@ -15,7 +15,6 @@ and reused for the pool's lifetime; close it with ``await pool.aclose()`` or an
 from __future__ import annotations
 
 import asyncio
-import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Iterable
 
@@ -39,7 +38,7 @@ from .errors import (
     NoProvidersConfigured,
     ProviderHTTPError,
 )
-from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
+from .key_rotation import ROTATE_STATUSES
 from .models import Provider, Reply
 from .observe import emit
 from .prefixcache import cached_prompt_tokens as _cached_prompt_tokens
@@ -85,7 +84,6 @@ class AsyncPool:
 
     def __init__(self, pool: Pool, *, apost: AsyncPostFn | None = None):
         self._pool = pool
-        self._key_rotator = KeyRotator()
         self._apost_fn = apost
         self._aclient = None  # lazy httpx.AsyncClient
         self._aclient_loop = None  # the loop the client is bound to
@@ -243,14 +241,16 @@ class AsyncPool:
     ) -> Reply:
         if _is_thinking(model) and max_tokens < _THINKING_FLOOR:
             max_tokens = _THINKING_FLOOR
-        keys = provider.api_keys(self.env)
-        now = time.time()
-        slots = self._key_rotator.usable_slots(provider.id, len(keys), now) if keys else [-1]
-        if keys and not slots:
-            slots = [self._key_rotator.usable_slots(provider.id, len(keys), float("inf"))[0]]
+        key_trials = getattr(self._pool, "_key_trials", None)
+        if key_trials is None:  # duck-typed pool stub: no shared rotation state
+            keys = provider.api_keys(self.env)
+            trials = [(-1, None)] if not keys else list(enumerate(keys))
+            cool_slot = None
+        else:
+            trials = key_trials(provider)
+            cool_slot = self._pool._cool_key_slot
         last: ProviderHTTPError | None = None
-        for trial, slot in enumerate(slots):
-            api_key = keys[slot] if slot >= 0 else None
+        for trial, (slot, api_key) in enumerate(trials):
             try:
                 return await self._acall_with_key(
                     provider, model, messages, api_key=api_key, max_tokens=max_tokens,
@@ -260,11 +260,11 @@ class AsyncPool:
                 )
             except ProviderHTTPError as exc:
                 last = exc
-                if slot < 0 or exc.status not in ROTATE_STATUSES or trial + 1 >= len(slots):
+                if slot < 0 or exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                     raise
-                self._key_rotator.cool(provider.id, slot, now + cool_delay(exc.status, exc.retry_after))
-                self._key_rotator.advance(provider.id, len(keys))
-        assert last is not None  # slots is never empty; body returns or raises
+                if cool_slot is not None:
+                    cool_slot(provider.id, slot, len(provider.api_keys(self.env)), exc)
+        assert last is not None  # trials is never empty; body returns or raises
         raise last
 
     async def _acall_with_key(
@@ -391,8 +391,12 @@ class AsyncPool:
         choices = result.body.get("choices") or []
         if not choices:
             raise ProviderHTTPError(502, "no choices in response", retryable=True)
+        if not isinstance(choices[0], dict):
+            raise ProviderHTTPError(502, "malformed choice in response", retryable=True)
         message = choices[0].get("message") or {}
-        text = _strip_think(message.get("content") or "")
+        if not isinstance(message, dict):
+            raise ProviderHTTPError(502, "malformed message in response", retryable=True)
+        text = _strip_think(_client._content_text(message.get("content")))
         usage = _client._usage_counts(result.body.get("usage"))
         return Reply(
             text=text,
@@ -420,7 +424,9 @@ class AsyncPool:
     ) -> Reply:
         system_instruction, contents = _to_gemini_contents(messages)
         url = f"{provider.base_url}/models/{model}:generateContent"
-        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
+        headers = {"Content-Type": "application/json"}
+        if api_key:  # keyless gemini-shape providers send no auth header
+            headers["x-goog-api-key"] = api_key
         body: dict = {
             "contents": contents,
             "generationConfig": _gemini_generation_config(model, max_tokens, temperature),
@@ -439,8 +445,10 @@ class AsyncPool:
         candidates = result.body.get("candidates") or []
         if not candidates:
             raise ProviderHTTPError(502, "no candidates in response", retryable=True)
+        if not isinstance(candidates[0], dict):
+            raise ProviderHTTPError(502, "malformed candidate in response", retryable=True)
         parts = (candidates[0].get("content") or {}).get("parts") or []
-        text = _strip_think("".join(p.get("text", "") for p in parts))
+        text = _strip_think("".join(p.get("text") or "" for p in parts if isinstance(p, dict)))
         usage = _client._usage_counts(result.body.get("usageMetadata"))
         return Reply(
             text=text,
@@ -556,6 +564,7 @@ class AsyncPool:
                     completion_tokens=hit.get("completion_tokens"),
                     message=hit.get("message"),
                     cached=True,
+                    attempts=0,  # no provider was tried
                 )
             emit(p._on_event, "cache_miss", key=cache_key)
 
@@ -566,6 +575,9 @@ class AsyncPool:
             difficulty,
             eff,
             resolved_task,
+        )
+        targets = await asyncio.to_thread(
+            p._prefer_prefix_route, targets, messages, routing=eff
         )
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
@@ -693,8 +705,9 @@ class AsyncPool:
                     and not account_exhausted
                 )
                 if exc.status == 429:
+                    # A per-model 429 only cools down (tried last, not skipped):
+                    # same-provider siblings are still attempted this request.
                     p._mark_cooldown(target.provider.id, p._clock())
-                    unavailable_providers.add(target.provider.id)
                     emit(p._on_event, "cooldown", target=target.name, status=429)
                 if account_exhausted:
                     p._mark_account_backoff(target.provider.id, p._clock())
@@ -767,11 +780,15 @@ class AsyncPool:
             # stall other in-flight async requests.
             await asyncio.to_thread(p.quota.record, target.provider.id, target.model)
             reply.attempts = len(attempts) + 1
+            cached = reply.cached_prompt_tokens or 0
+            await asyncio.to_thread(p._remember_prefix_route, messages, target.name)
             await asyncio.to_thread(
                 p._bump_stats,
                 requests=1,
                 prompt_tokens=reply.prompt_tokens or 0,
                 completion_tokens=reply.completion_tokens or 0,
+                prefix_cache_hits=1 if cached > 0 else 0,
+                prefix_tokens_avoided=cached,
             )
             if p._cache is not None and cache_key is not None:
                 await asyncio.to_thread(

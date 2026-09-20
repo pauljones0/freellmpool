@@ -109,7 +109,7 @@ _PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("PRIVATE", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----.*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", re.DOTALL)),
     ("SECRET", re.compile(r"(?i)\b(password|passwd|pwd|secret|api[_-]?key|token|auth[_-]?token|client[_-]?secret|key)\b[\"']?\s*([:=])\s*[\"']?([^\s\"'`;,}&]{8,})")),
     ("BEARER", re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")),
-    ("API_KEY", re.compile(r"\b(?:sk-[A-Za-z0-9-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|xox[baprs]-[A-Za-z0-9-]{8,}|AKIA[0-9A-Z]{16}|gsk_[A-Za-z0-9]{8,}|nvapi-[A-Za-z0-9_-]{8,})")),
+    ("API_KEY", re.compile(r"\b(?:sk-or-[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|xox[baprs]-[A-Za-z0-9-]{8,}|AKIA[0-9A-Z]{16}|gsk_[A-Za-z0-9]{8,}|nvapi-[A-Za-z0-9_-]{8,}|csk-[A-Za-z0-9_-]{8,}|AIza[A-Za-z0-9_-]{8,}|hf_[A-Za-z0-9]{8,})")),
     ("EMAIL", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
     ("PHONE", re.compile(r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b")),
     ("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
@@ -139,29 +139,23 @@ def redact_text(text: str) -> tuple[str, list[str]]:
     return text, sorted(hits)
 
 
+def _scrub_value(value: Any, hits: set[str]) -> Any:
+    """Recursively scrub every string in a message (content, tool calls, outputs)."""
+    if isinstance(value, str):
+        new_text, found = redact_text(value)
+        hits.update(found)
+        return new_text
+    if isinstance(value, dict):
+        return {key: _scrub_value(item, hits) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_scrub_value(item, hits) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_scrub_value(item, hits) for item in value)
+    return value
+
+
 def redact_messages(messages: list[Any]) -> tuple[list[Any], list[str]]:
-    """Redact text parts of chat messages (str content or text blocks); report kinds hit."""
+    """Redact every string in chat messages (content, blocks, tool calls); report kinds hit."""
     hits: set[str] = set()
-    scrubbed: list[Any] = []
-    for message in messages:
-        if not isinstance(message, dict):
-            scrubbed.append(message)
-            continue
-        content = message.get("content")
-        if isinstance(content, str):
-            new_text, found = redact_text(content)
-            hits.update(found)
-            scrubbed.append({**message, "content": new_text})
-        elif isinstance(content, list):
-            blocks: list[Any] = []
-            for block in content:
-                if isinstance(block, dict) and block.get("type") in {"text", "input_text"} and isinstance(block.get("text"), str):
-                    new_text, found = redact_text(block["text"])
-                    hits.update(found)
-                    blocks.append({**block, "text": new_text})
-                else:
-                    blocks.append(block)
-            scrubbed.append({**message, "content": blocks})
-        else:
-            scrubbed.append(message)
+    scrubbed: list[Any] = [_scrub_value(message, hits) for message in messages]
     return scrubbed, sorted(hits)

@@ -358,13 +358,24 @@ class Pool:
         return out
 
     def _prefer_prefix_route(
-        self, targets: list[_TargetT], messages: Sequence[Mapping[str, Any]] | None
+        self,
+        targets: list[_TargetT],
+        messages: Sequence[Mapping[str, Any]] | None,
+        *,
+        routing: str | None = None,
     ) -> list[_TargetT]:
         """Move the remembered warm target for this prefix first, if present.
 
         Advisory only: an unknown prefix or an absent target leaves the order
-        untouched, so prefix memory can never gate a request.
+        untouched, so prefix memory can never gate a request. Capability modes
+        (quality/agent) skip steering entirely so follow-up turns keep their
+        capability ordering instead of pinning to the first turn's model.
         """
+        if routing is not None and normalize_routing_mode(routing) in (
+            "quality",
+            "agent",
+        ):
+            return targets
         if not messages or not targets:
             return targets
         # Only a STRICT prefix match steers routing: an identical repeat is a
@@ -466,6 +477,7 @@ class Pool:
         return [(slot, keys[slot]) for slot in slots]
 
     def _cool_key_slot(self, provider_id: str, slot: int, count: int, exc: ProviderHTTPError) -> None:
+        """Cool one slot; ``count`` is the full configured key count (not trials)."""
         now = self._clock()
         self._key_rotator.cool(provider_id, slot, now + cool_delay(exc.status, exc.retry_after))
         self._key_rotator.advance(provider_id, count)
@@ -762,7 +774,7 @@ class Pool:
                         except ProviderHTTPError as key_exc:
                             if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                                 raise
-                            self._cool_key_slot(emb.id, slot, len(trials), key_exc)
+                            self._cool_key_slot(emb.id, slot, len(emb.api_keys(self.env)), key_exc)
                             attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
                     assert reply is not None  # trials is never empty; body returns or raises
                 except Exception as exc:  # noqa: BLE001 — try the next embedder
@@ -850,7 +862,7 @@ class Pool:
                         except ProviderHTTPError as key_exc:
                             if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                                 raise
-                            self._cool_key_slot(tr.id, slot, len(trials), key_exc)
+                            self._cool_key_slot(tr.id, slot, len(tr.api_keys(self.env)), key_exc)
                             attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
                     assert reply is not None  # trials is never empty; body returns or raises
                 except Exception as exc:  # noqa: BLE001 — try the next transcriber
@@ -1269,6 +1281,7 @@ class Pool:
                     completion_tokens=hit.get("completion_tokens"),
                     message=hit.get("message"),
                     cached=True,
+                    attempts=0,  # no provider was tried
                 )
             emit(self._on_event, "cache_miss", key=cache_key)
 
@@ -1279,7 +1292,7 @@ class Pool:
             routing=eff,
             task=resolved_task,
         )
-        targets = self._prefer_prefix_route(targets, messages)
+        targets = self._prefer_prefix_route(targets, messages, routing=eff)
         if not targets:
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
@@ -1407,7 +1420,10 @@ class Pool:
                     except ProviderHTTPError as key_exc:
                         if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                             raise
-                        self._cool_key_slot(target.provider.id, slot, len(trials), key_exc)
+                        self._cool_key_slot(
+                            target.provider.id, slot,
+                            len(target.provider.api_keys(self.env)), key_exc,
+                        )
                         attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
                 assert reply is not None  # trials is never empty; body returns or raises
             except ProviderHTTPError as exc:
@@ -1429,8 +1445,9 @@ class Pool:
                     and not account_exhausted
                 )
                 if exc.status == 429:
+                    # A per-model 429 only cools down (tried last, not skipped):
+                    # same-provider siblings are still attempted this request.
                     self._mark_cooldown(target.provider.id, self._clock())
-                    unavailable_providers.add(target.provider.id)
                     emit(self._on_event, "cooldown", target=target.name, status=429)
                 if account_exhausted:
                     self._mark_account_backoff(target.provider.id, self._clock())
@@ -1583,7 +1600,7 @@ class Pool:
             task=resolved_task,
         )
         targets = [t for t in targets if t.provider.adapter != "gemini"]
-        targets = self._prefer_prefix_route(targets, messages)
+        targets = self._prefer_prefix_route(targets, messages, routing=eff)
         if not targets:
             raise NoProvidersConfigured("no streamable (provider, model) matched the filters")
 
@@ -1655,7 +1672,10 @@ class Pool:
                 except ProviderHTTPError as key_exc:
                     getattr(gen, "close", lambda: None)()
                     if slot >= 0 and key_exc.status in ROTATE_STATUSES and trial + 1 < len(trials):
-                        self._cool_key_slot(target.provider.id, slot, len(trials), key_exc)
+                        self._cool_key_slot(
+                            target.provider.id, slot,
+                            len(target.provider.api_keys(self.env)), key_exc,
+                        )
                         attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
                         continue
                     open_error = key_exc
@@ -1683,8 +1703,9 @@ class Pool:
                     )
                     continue
                 if exc.status == 429:
+                    # A per-model 429 only cools down (tried last, not skipped):
+                    # same-provider siblings are still attempted this request.
                     self._mark_cooldown(target.provider.id, self._clock())
-                    unavailable_providers.add(target.provider.id)
                     emit(self._on_event, "cooldown", target=target.name, status=429)
                 account_exhausted = _is_account_quota_exhaustion(exc, target.provider.id)
                 if account_exhausted:

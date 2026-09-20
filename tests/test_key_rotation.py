@@ -265,3 +265,22 @@ def test_legacy_async_rotates_to_second_key_on_429(providers, quota):
     pool = AsyncPool(sync, apost=_async_post({"alpha.test": rule}))
     assert asyncio.run(pool.aask("hi")).text == "via-two"
     assert seen == ["Bearer a", "Bearer b"]
+
+
+def test_rotator_advance_is_thread_safe():
+    """Concurrent advances must not lose cursor updates (cf. PrefixRoutes)."""
+    import threading
+
+    rot = KeyRotator()
+    assert hasattr(rot, "_lock")
+
+    def hammer():
+        for _ in range(2000):
+            rot.advance("alpha", 7)
+
+    threads = [threading.Thread(target=hammer) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert rot.usable_slots("alpha", 7, now=0.0)[0] == (8 * 2000) % 7

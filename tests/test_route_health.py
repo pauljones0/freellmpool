@@ -267,7 +267,9 @@ def test_hostile_maximum_length_integer_cannot_break_health_update(tmp_path):
 
     assert older is not None
     assert newer is not None
-    assert older.generations["crafted/model"] < newer.generations["crafted/model"]
+    # Closed-circuit attempts share one generation; the hostile integer above
+    # clamps to _MAX_INTEGER for both leases without breaking the update.
+    assert older.generations["crafted/model"] == newer.generations["crafted/model"]
 
     store.record_success("crafted/model", 10.0, lease=newer)
     store.record_failure(
@@ -277,7 +279,7 @@ def test_hostile_maximum_length_integer_cannot_break_health_update(tmp_path):
     )
     row = store.state("crafted/model")
     assert row.state == "closed"
-    assert row.consecutive_failures == 0
+    assert row.consecutive_failures == 1
 
 
 def test_state_is_size_bounded_and_contains_only_sanitized_fields(tmp_path):
@@ -419,33 +421,32 @@ def test_older_failure_cannot_reopen_after_newer_request_succeeds(tmp_path):
     assert row.failures == 1
 
 
-def test_same_timestamp_closed_leases_have_distinct_generations(tmp_path):
+def test_same_timestamp_closed_leases_share_a_generation(tmp_path):
+    """Overlapping closed-circuit attempts (even across processes at the same
+    clock tick) share ownership, so concurrent failures all count and the
+    breaker opens once the threshold is reached."""
     now = [100.0]
     path = tmp_path / "health.json"
     older_store = RouteHealthStore(
         path=path,
         clock=lambda: now[0],
-        failure_threshold=1,
+        failure_threshold=2,
     )
     newer_store = RouteHealthStore(
         path=path,
         clock=lambda: now[0],
-        failure_threshold=1,
+        failure_threshold=2,
     )
     older = older_store.acquire_many(("alpha/model",))
     newer = newer_store.acquire_many(("alpha/model",))
-    assert older.generations["alpha/model"] < newer.generations["alpha/model"]
+    assert older.generations["alpha/model"] == newer.generations["alpha/model"]
 
-    newer_store.record_success("alpha/model", 10.0, lease=newer)
-    older_store.record_failure(
-        "alpha/model",
-        "availability",
-        lease=older,
-    )
+    older_store.record_failure("alpha/model", "availability", lease=older)
+    newer_store.record_failure("alpha/model", "availability", lease=newer)
 
     row = RouteHealthStore(path=path, clock=lambda: now[0]).state("alpha/model")
-    assert row.state == "closed"
-    assert row.consecutive_failures == 0
+    assert row.state == "open"
+    assert row.consecutive_failures == 2
 
 
 def test_missing_fchmod_and_non_fcntl_instances_remain_safe(
@@ -1282,3 +1283,60 @@ def test_route_health_preserves_future_fields_and_quarantines_corruption(tmp_pat
     store = RouteHealthStore(path=path, clock=lambda: 1_001)
     store.record_failure("beta/model", "availability")
     assert path.with_suffix(path.suffix + ".corrupt").read_text(encoding="utf-8") == "{not-json"
+
+
+def test_overlapping_closed_acquires_both_count_toward_breaker(tmp_path):
+    """Concurrent closed-circuit attempts share ownership: every genuine
+    failure counts, so the breaker still opens under proxy concurrency."""
+    now = [100.0]
+    store = RouteHealthStore(
+        path=tmp_path / "health.json", clock=lambda: now[0], failure_threshold=2
+    )
+    first = store.acquire_many(("alpha/model",))
+    now[0] = 101.0
+    second = store.acquire_many(("alpha/model",))
+    assert first is not None and second is not None
+    assert first.generations["alpha/model"] == second.generations["alpha/model"]
+
+    now[0] = 102.0
+    store.record_failure("alpha/model", "availability", lease=first)
+    now[0] = 103.0
+    store.record_failure("alpha/model", "availability", lease=second)
+
+    row = store.state("alpha/model")
+    assert row.consecutive_failures == 2
+    assert row.state == "open"
+
+
+def test_closed_acquire_does_not_rewrite_state(tmp_path):
+    """A no-op acquire on a closed circuit must not force an atomic rewrite."""
+
+    class CountingStore(RouteHealthStore):
+        writes = 0
+
+        def _write(self, routes):
+            self.writes += 1
+            return super()._write(routes)
+
+    store = CountingStore(path=tmp_path / "health.json", clock=lambda: 100.0)
+    assert store.acquire_many(("alpha/model",)) is not None  # creates the row
+    assert store.writes == 1
+
+    store.writes = 0
+    assert store.acquire_many(("alpha/model",)) is not None  # closed: no-op
+    assert store.writes == 0
+    assert store.state("alpha/model").lease_generation == 1
+
+
+def test_batched_health_store_does_not_leak_via_atexit(tmp_path):
+    """atexit must not hold a strong bound-method ref that defeats _LIVE_STORES."""
+    store = RouteHealthStore(
+        path=tmp_path / "health.json", success_flush_every=100, success_flush_interval=60
+    )
+    reference = weakref.ref(store)
+    assert reference() is not None
+
+    del store
+    gc.collect()
+
+    assert reference() is None

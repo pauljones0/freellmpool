@@ -177,3 +177,32 @@ def test_store_closes_every_connection(tmp_path, monkeypatch):
     assert store.search(_vec(1), k=1)[0]["path"] == "a.md"
     assert opened, "expected connections to be tracked"
     assert all(p.closed for p in opened), "leaked sqlite connection"
+
+
+def test_rag_connections_use_wal_and_busy_timeout(tmp_path):
+    """Mirror cache.py: WAL journal + explicit busy timeout so a concurrent
+    index write txn cannot SQLITE_BUSY a reader."""
+    import sqlite3 as _sqlite3
+
+    store = rag.RagStore(tmp_path / "r.sqlite3")
+    with store._connect() as db:
+        assert db.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
+    con = _sqlite3.connect(tmp_path / "r.sqlite3")
+    try:
+        assert con.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+    finally:
+        con.close()
+
+
+def test_search_refuses_corpus_over_documented_cap(tmp_path, monkeypatch):
+    """Brute-force scoring is O(corpus) per query: fail honestly past the cap
+    instead of running a multi-GB scan."""
+    monkeypatch.setattr(rag, "MAX_SEARCH_CHUNKS", 2)
+    store = rag.RagStore(tmp_path / "r.sqlite3")
+    store.index(
+        [(f"{i}.md", 0, "some indexable text") for i in range(3)],
+        [_vec(i) for i in range(3)],
+        model="m",
+    )
+    with pytest.raises(ValueError, match="[Cc]ap"):
+        store.search(_vec(1), k=1)

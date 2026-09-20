@@ -11,7 +11,7 @@ import threading
 import time
 import weakref
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, TypeVar
@@ -50,6 +50,21 @@ _UNKNOWN_SCORE = 0.5
 _PATH_LOCKS: dict[str, threading.RLock] = {}
 _PATH_LOCKS_GUARD = threading.Lock()
 _LIVE_STORES: weakref.WeakSet[RouteHealthStore] = weakref.WeakSet()
+_ATEXIT_REGISTERED = False
+
+
+def _flush_live_stores() -> None:
+    for store in tuple(_LIVE_STORES):
+        # One store's exit-time flush failure must not starve the rest.
+        with suppress(Exception):
+            store.flush()
+
+
+def _ensure_atexit() -> None:
+    global _ATEXIT_REGISTERED
+    if not _ATEXIT_REGISTERED:
+        atexit.register(_flush_live_stores)
+        _ATEXIT_REGISTERED = True
 
 
 def _reset_path_locks_after_fork() -> None:
@@ -168,7 +183,10 @@ class RouteHealthStore:
         self._quarantine_on_write = False
         _LIVE_STORES.add(self)
         if self.success_flush_every > 1:
-            atexit.register(self.flush)
+            # Register the module-level flusher, not self.flush: a bound
+            # method would pin this store alive until interpreter exit and
+            # defeat the WeakSet above.
+            _ensure_atexit()
 
     def _after_fork_child(self) -> None:
         """Drop parent-owned success samples and reset child-local locks."""
@@ -300,24 +318,29 @@ class RouteHealthStore:
                     return None, False
                 if state == "half_open" and half_open_until > now:
                     return None, False
+            dirty = False
             for key in requested:
                 created = key not in routes
                 row = routes.setdefault(key, {})
-                generation = _integer(row.get("lease_generation"))
-                row["lease_generation"] = (
-                    1 if generation >= _MAX_INTEGER else generation + 1
-                )
-                if _state(row.get("state")) != "closed":
+                entering_half_open = _state(row.get("state")) != "closed"
+                if created or entering_half_open:
+                    # Closed circuits share one generation across concurrent
+                    # attempts so every genuine failure counts; only a new row
+                    # or a half-open probe needs a distinct generation.
+                    generation = _integer(row.get("lease_generation"))
+                    row["lease_generation"] = (
+                        1 if generation >= _MAX_INTEGER else generation + 1
+                    )
+                    row["updated_at"] = now
+                    dirty = True
+                if entering_half_open:
                     row["state"] = "half_open"
                     row["half_open_until"] = now + self.half_open_lease
-                    row["updated_at"] = now
-                elif created:
-                    row["updated_at"] = now
             generations = {
                 key: _integer(routes.get(key, {}).get("lease_generation"))
                 for key in requested
             }
-            return HealthLease(now, generations), True
+            return HealthLease(now, generations), dirty
 
         return self._update(mutate)
 
@@ -419,7 +442,7 @@ class RouteHealthStore:
                 if previous is None
                 else self.alpha * event.latency_ms + (1.0 - self.alpha) * previous
             )
-            if _owns_transition(row, key, event.lease):
+            if _owns_result(row, key, event.lease, success=True):
                 row.update(
                     {
                         "state": "closed",
@@ -484,7 +507,7 @@ class RouteHealthStore:
                     retry = max(0.0, retry)
                 row = routes.setdefault(key, {})
                 state = _state(row.get("state"))
-                owns_transition = _owns_transition(row, key, lease)
+                owns_transition = _owns_result(row, key, lease, success=False)
                 if update.counts_for_health:
                     _roll_counts(row)
                     row["failures"] = _integer(row.get("failures")) + 1
@@ -804,3 +827,28 @@ def _owns_transition(
     if _state(row.get("state")) == "half_open":
         return lease.generations.get(key) == _integer(row.get("lease_generation"))
     return True
+
+
+def _owns_result(
+    row: dict[str, Any],
+    key: str,
+    lease: HealthLease | None,
+    *,
+    success: bool,
+) -> bool:
+    """Whether a success/failure result is fresh enough to move the circuit.
+
+    Closed-circuit attempts share one lease generation, so concurrent results
+    of the same kind must all count. Only a *conflicting* outcome recorded
+    after this attempt started — a success for a failure, a failure for a
+    success — or a newer half-open probe generation marks a result stale.
+    """
+    if lease is None:
+        return True
+    if lease.generations.get(key) != _integer(row.get("lease_generation")):
+        return False
+    if success:
+        newer = _number(row.get("last_failure")) or 0.0
+    else:
+        newer = _number(row.get("last_success")) or 0.0
+    return newer <= lease.started_at

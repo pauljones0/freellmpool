@@ -47,6 +47,21 @@ _FIELDS = ("requests", "prompt_tokens", "completion_tokens", "cache_hits",
 # (additive fields don't need it); a future reader can branch on it to migrate.
 _SCHEMA = 1
 _LIVE_STORES: weakref.WeakSet[StatsStore] = weakref.WeakSet()
+_ATEXIT_REGISTERED = False
+
+
+def _flush_live_stores() -> None:
+    for store in tuple(_LIVE_STORES):
+        # One store's exit-time flush failure must not starve the rest.
+        with contextlib.suppress(Exception):
+            store.flush()
+
+
+def _ensure_atexit() -> None:
+    global _ATEXIT_REGISTERED
+    if not _ATEXIT_REGISTERED:
+        atexit.register(_flush_live_stores)
+        _ATEXIT_REGISTERED = True
 
 
 def _reset_live_stores_after_fork() -> None:
@@ -100,7 +115,10 @@ class StatsStore:
         self._data: dict = self._load()
         _LIVE_STORES.add(self)
         if self.flush_every > 1:
-            atexit.register(self.flush)
+            # Register the module-level flusher, not self.flush: a bound
+            # method would pin this store alive until interpreter exit and
+            # defeat the WeakSet above.
+            _ensure_atexit()
 
     def _after_fork_child(self) -> None:
         """Drop parent-owned batches and locks in a freshly forked child."""

@@ -29,13 +29,14 @@ from typing import Any, Literal, TypedDict, Unpack, cast
 from . import client
 from .allowances import AllowanceDenied, AllowanceLedger, Limit, default_allowance_path
 from .cache import Cache
-from .config import effective_env, load_catalog
+from .config import effective_env, load_catalog, settings
 from .conformance import (
     FEATURE_VISION,
     ConformanceStore,
     default_conformance_path,
     required_features,
 )
+from .context import estimate_input_tokens
 from .errors import (
     AllProvidersExhausted,
     ContextWindowExceeded,
@@ -47,12 +48,13 @@ from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
 from .media import check_image_url, image_input_tokens
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply, TranscribeReply
-from .observe import EventHook
+from .observe import EventHook, emit
 from .prefixcache import cached_prompt_tokens as _cached_prompt_tokens
 from .provider_registry import reviewed_limit_capacity
 from .quota import QuotaStore
 from .route_health import RouteHealthStore, default_route_health_path
 from .router import Pool, Target, _is_account_quota_exhaustion
+from .routing_modes import normalize_routing_mode
 from .stats import StatsStore
 
 JSON = dict[str, Any]  # Validated provider/config/protocol schema boundaries.
@@ -151,6 +153,19 @@ def _automatic_tool_conflict(provider_id: str, model: str, grant: JSON) -> str:
     return ""
 
 
+def _stream_usage_reply(route: Route, usage: object) -> Reply:
+    """A usage-carrying reply for stream stats (same validation as settle)."""
+    counters: dict[str, int] = {}
+    if isinstance(usage, dict):
+        for key in ("prompt_tokens", "completion_tokens"):
+            value = usage.get(key)
+            if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 2**63 - 1:
+                counters[key] = value
+    return Reply(text="", provider_id=route.provider.id, model=route.model, raw={},
+                 prompt_tokens=counters.get("prompt_tokens"),
+                 completion_tokens=counters.get("completion_tokens"))
+
+
 class ManagedPool(Pool):
     """Strict-free default runtime; an exact model selection never bypasses policy."""
 
@@ -184,7 +199,10 @@ class ManagedPool(Pool):
     @classmethod
     def from_default_config(cls, *, env: dict[str, str] | None = None, quota: QuotaStore | None = None,
                             post: client.PostFn = client.default_post, on_event: EventHook | None = None) -> ManagedPool:
-        return cls(env=env, quota=quota, post=post, on_event=on_event)
+        request_env = effective_env(env)
+        ttl = float(request_env.get("FREELLMPOOL_CACHE_TTL") or settings(request_env).get("cache_ttl", 0) or 0)
+        return cls(env=env, quota=quota, post=post, on_event=on_event,
+                   cache=Cache(ttl) if ttl > 0 else None)
 
     def _operator_rows(self, env: dict[str, str] | None = None) -> dict[tuple[str, str], Provider]:
         if self._catalog_override is not None:
@@ -434,7 +452,7 @@ class ManagedPool(Pool):
         if features and not probe:
             routes = [r for r in routes if self.conformance is not None and
                       self.conformance.passes(r.provider, r.model, features)]
-        estimate = len(json.dumps(messages or [], ensure_ascii=False).encode()) + max_tokens
+        estimate = estimate_input_tokens(messages, tools) + max_tokens
         too_small = [r for r in routes if r.metadata.get("context") and estimate > r.metadata["context"]]
         routes = [r for r in routes if r not in too_small]
         if not routes:
@@ -722,6 +740,7 @@ class ManagedPool(Pool):
         return trials, skipped
 
     def _cool_key_slot(self, provider_id: str, slot: int, count: int, exc: ProviderHTTPError) -> None:
+        """Cool one slot; ``count`` is the full configured key count (not trials)."""
         now = self._wall_clock()
         self._key_rotator.cool(provider_id, slot, now + cool_delay(exc.status, exc.retry_after))
         self._key_rotator.advance(provider_id, count)
@@ -776,6 +795,32 @@ class ManagedPool(Pool):
                                       cast(list[JSON], payload) if modality == "chat" else None, tools, response_format,
                                       protocol, probe, max_tokens if modality == "chat" else 0, stream=stream,
                                       private=private)
+        cache_key: str | None = None
+        if modality == "chat" and not stream and not probe and self._cache is not None:
+            # Probes are canary traffic: they must always reach the provider so
+            # a cached success can never mask an outage from health checks.
+            routing = unused.get("routing")
+            cache_key = self._cache.make_key(
+                payload, model, list(providers) if providers else None, max_tokens,
+                temperature, tools, tool_choice,
+                normalize_routing_mode(routing if isinstance(routing, str) else None, self.routing),
+                response_format=response_format, protocol=protocol,
+                task=unused.get("task") if isinstance(unused.get("task"), str) else None,
+            )
+            hit = self._cache.get(cache_key)
+            features = required_features(cast(list[JSON], payload), tools=tools,
+                                         response_format=response_format)
+            if hit is not None and (not features or self.conformance is None or any(
+                    r.provider.id == hit.get("provider_id") and r.model == hit.get("model")
+                    for r in candidates)):
+                emit(self._on_event, "cache_hit", key=cache_key)
+                self._bump_stats(cache_hits=1)
+                return Reply(text=hit.get("text", ""), provider_id=hit.get("provider_id", "cache"),
+                             model=hit.get("model", "?"), raw={},
+                             prompt_tokens=hit.get("prompt_tokens"),
+                             completion_tokens=hit.get("completion_tokens"),
+                             message=hit.get("message"), cached=True, attempts=0)
+            emit(self._on_event, "cache_miss", key=cache_key)
         attempts: list[tuple[str, str]] = []
         deadlines: list[float] = []
         failures: list[Exception] = []
@@ -843,11 +888,23 @@ class ManagedPool(Pool):
                             reply.attempts = len(attempts) + 1
                         if redactions and hasattr(reply, "redactions"):
                             reply.redactions = tuple(redactions)
+                        if modality == "chat" and isinstance(reply, Reply) and cache_key is not None \
+                                and self._cache is not None:
+                            self._cache.put(cache_key, {
+                                "text": reply.text, "provider_id": reply.provider_id,
+                                "model": reply.model, "prompt_tokens": reply.prompt_tokens,
+                                "completion_tokens": reply.completion_tokens,
+                                "message": reply.message,
+                            })
+                            emit(self._on_event, "cache_store", key=cache_key, target=route.name)
                         return reply
                     except ProviderHTTPError as key_exc:
                         if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                             raise
-                        self._cool_key_slot(route.provider.id, slot, len(trials), key_exc)
+                        self._cool_key_slot(
+                            route.provider.id, slot,
+                            len(route.provider.api_keys(route.env)), key_exc,
+                        )
                         attempts.append((route.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
             except Exception as exc:
                 self._check_cancelled()
@@ -856,7 +913,8 @@ class ManagedPool(Pool):
                 if delay is not None:
                     wake = time.monotonic() + max(.01, delay)
                     deadlines.append(wake)
-                    if isinstance(exc, AllowanceDenied) or (isinstance(exc, ProviderHTTPError) and exc.status == 429):
+                    if isinstance(exc, AllowanceDenied) or (isinstance(exc, ProviderHTTPError)
+                            and (exc.status == 429 or (500 <= exc.status <= 599 and exc.retryable))):
                         retryable.append((route, wake))
                 # Error types/statuses are enough for diagnostics; never persist
                 # an upstream body that may echo credentials or request content.
@@ -902,7 +960,7 @@ class ManagedPool(Pool):
             yield first
             yield from gen
             completed = True
-            self._success(route, None, started)
+            self._success(route, _stream_usage_reply(route, state.get("usage", {})), started)
         except Exception as exc:
             self._failure(route, exc)
             raise
@@ -1036,4 +1094,6 @@ def _duration(value: str) -> float:
         result = sum(float(number) * {"ms": .001, "s": 1, "m": 60, "h": 3600, "d": 86400}[unit] for number, unit in parts)
     if not math.isfinite(result) or result < 0:
         raise ValueError("invalid reset duration")
-    return result
+    # Reset headers feed reserve() denials; clamp absurd values so one header
+    # cannot wedge an allowance for decades (32d matches the unknown-monthly ceiling).
+    return min(result, 32 * 86400)

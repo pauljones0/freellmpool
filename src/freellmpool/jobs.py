@@ -8,6 +8,10 @@ it composes with restart-safe replay.
 
 The first slice runs jobs synchronously in the foreground (no daemon); see
 ``freellmpool jobs run`` for the entry point.
+
+Because the log only grows, ``JobStore.compact()`` rewrites it to one
+snapshot event per terminal job (active jobs keep full history), so steady
+operation stays O(active) instead of O(lifetime).
 """
 
 from __future__ import annotations
@@ -351,7 +355,7 @@ class JobStore:
             return materialized
 
     def events(self) -> list[JobEvent]:
-        with self._lock:
+        with self._lock, self._file_lock():
             return list(self._events_locked())
 
     def jobs(self) -> list[Job]:
@@ -363,7 +367,7 @@ class JobStore:
         append time) and use ``created_at`` as a stable tiebreaker so the
         observed order matches the order callers added jobs in.
         """
-        with self._lock:
+        with self._lock, self._file_lock():
             return self._jobs_locked()
 
     def pending(self) -> list[Job]:
@@ -382,8 +386,49 @@ class JobStore:
         return self.jobs_map().get(job_id)
 
     def jobs_map(self) -> dict[str, Job]:
-        with self._lock:
+        with self._lock, self._file_lock():
             return dict(self._replay_locked())
+
+    def compact(self) -> int:
+        """Rewrite the log to one snapshot event per terminal job.
+
+        The queue is append-only, so without compaction every add/cancel
+        replays an ever-growing file. Compaction keeps every event of
+        active (non-terminal) jobs untouched and collapses each terminal
+        job to a single event carrying its materialized state (status,
+        spec, attempt, error, run/output/provider/model). The snapshot
+        reuses the job's first seq, so FIFO order and ``_next_seq_locked``
+        monotonicity survive; malformed and unknown-future lines (already
+        skipped on replay) are dropped. Returns the number of events
+        removed; 0 when there is nothing terminal to collapse.
+        """
+        with self._lock, self._file_lock():
+            replay = self._replay_locked()
+            terminal = [job for job in replay.values() if job.is_terminal]
+            if not terminal:
+                return 0
+            active_events = [
+                event
+                for job in replay.values()
+                if not job.is_terminal
+                for event in job.events
+            ]
+            snapshots = [_terminal_snapshot(job) for job in terminal]
+            merged = sorted([*active_events, *snapshots], key=lambda e: e.seq)
+            removed = sum(len(job.events) for job in terminal) - len(snapshots)
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(
+                f"{self.path.suffix}.{os.getpid()}.{threading.get_ident()}.tmp"
+            )
+            try:
+                with tmp.open("w", encoding="utf-8") as fh:
+                    for event in merged:
+                        json.dump(event.to_dict(), fh, sort_keys=True)
+                        fh.write("\n")
+                os.replace(tmp, self.path)
+            finally:
+                tmp.unlink(missing_ok=True)
+            return removed
 
     # ---- internal ---------------------------------------------------
 
@@ -981,6 +1026,35 @@ def _materialize_event(event: JobEvent, prior: Job | None) -> Job:
         output=output,
         provider_id=provider_id,
         model=model,
+    )
+
+
+def _terminal_snapshot(job: Job) -> JobEvent:
+    """Collapse a terminal job's history to one replay-equivalent event.
+
+    The snapshot carries the job's materialized state and reuses its first
+    seq, so replaying the compacted log yields the same status/spec/attempt
+    and the same FIFO position. Only the (terminal) event history shrinks.
+    """
+    event_type = {
+        JOB_STATUS_COMPLETED: JOB_EVENT_COMPLETED,
+        JOB_STATUS_FAILED: JOB_EVENT_FAILED,
+        JOB_STATUS_CANCELLED: JOB_EVENT_CANCELLED,
+    }[job.status]
+    return JobEvent(
+        seq=_first_event_seq(job),
+        event=event_type,
+        job_id=job.job_id,
+        created_at=job.created_at,
+        status=job.status,
+        spec=dict(job.spec),
+        attempt=job.attempt,
+        attempt_metadata=dict(job.attempt_metadata),
+        error=job.last_error,
+        run_id=job.run_id,
+        output=job.output,
+        provider_id=job.provider_id,
+        model=job.model,
     )
 
 

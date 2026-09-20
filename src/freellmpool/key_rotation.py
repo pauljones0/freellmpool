@@ -10,6 +10,8 @@ logical session across accounts.
 
 from __future__ import annotations
 
+import threading
+
 MAX_SLOTS = 9
 
 # Key-slot failures worth rotating to the next slot for: rate limits and
@@ -30,9 +32,14 @@ def slot_env_names(key_env: str) -> tuple[str, ...]:
 
 
 class KeyRotator:
-    """Per-provider sticky cursor + per-slot cooldowns (no key material)."""
+    """Per-provider sticky cursor + per-slot cooldowns (no key material).
+
+    Thread-safe like :class:`PrefixRoutes`: the pool serves many threads and
+    cursor read-modify-write races would otherwise lose updates.
+    """
 
     def __init__(self) -> None:
+        self._lock = threading.Lock()
         self._cursor: dict[str, int] = {}
         self._cooled: dict[tuple[str, int], float] = {}
 
@@ -40,15 +47,18 @@ class KeyRotator:
         """Slot indices in try order: sticky cursor first, cooled slots skipped."""
         if count <= 0:
             return []
-        start = self._cursor.get(provider_id, 0) % count
-        ordered = [(start + i) % count for i in range(count)]
-        return [s for s in ordered if self._cooled.get((provider_id, s), 0.0) <= now]
+        with self._lock:
+            start = self._cursor.get(provider_id, 0) % count
+            ordered = [(start + i) % count for i in range(count)]
+            return [s for s in ordered if self._cooled.get((provider_id, s), 0.0) <= now]
 
     def cool(self, provider_id: str, slot: int, until: float) -> None:
-        self._cooled[(provider_id, slot)] = until
+        with self._lock:
+            self._cooled[(provider_id, slot)] = until
 
     def advance(self, provider_id: str, count: int) -> None:
         """Move the sticky cursor to the next slot (call only on slot failure)."""
         if count <= 0:
             return
-        self._cursor[provider_id] = (self._cursor.get(provider_id, 0) + 1) % count
+        with self._lock:
+            self._cursor[provider_id] = (self._cursor.get(provider_id, 0) + 1) % count

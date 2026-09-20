@@ -38,6 +38,50 @@ def test_cache_uses_wal_and_prunes_to_max_entries(tmp_path):
     assert [row[0] for row in rows] == ["k2", "k3"]
 
 
+def test_cache_eviction_breaks_created_ties_by_insert_order(tmp_path, monkeypatch):
+    """Pruning must keep the newest entries even when `created` ties.
+
+    With a frozen/coarse clock every row shares one timestamp, so
+    `ORDER BY created DESC` alone leaves the victim to SQLite's
+    unspecified tie order (the just-inserted key can be evicted). The
+    eviction query therefore needs a deterministic tiebreak, pinned at
+    the SQL level because this SQLite build's backward index scan
+    happens to break ties by rowid and would mask a purely behavioral
+    check.
+    """
+    t = [100.0]
+    c = Cache(ttl=999.0, path=tmp_path / "c.db", clock=lambda: t[0], max_entries=2)
+    statements: list[str] = []
+    real_new_conn = c._conn
+
+    class RecordingConn:
+        def __init__(self, con):
+            self._con = con
+
+        def execute(self, *args, **kwargs):
+            statements.append(args[0])
+            return self._con.execute(*args, **kwargs)
+
+        def __enter__(self):
+            return self._con.__enter__()
+
+        def __exit__(self, *exc):
+            return self._con.__exit__(*exc)
+
+        def close(self):
+            return self._con.close()
+
+    monkeypatch.setattr(c, "_conn", lambda: RecordingConn(real_new_conn()))
+    for key in ("k1", "k2", "k3"):
+        c.put(key, {"text": key})  # frozen clock → identical `created`
+    evictions = [sql for sql in statements if "NOT IN" in sql]
+    assert evictions
+    assert all("rowid DESC" in sql for sql in evictions)
+    with closing(sqlite3.connect(c.path)) as con:
+        rows = con.execute("SELECT key FROM cache ORDER BY rowid").fetchall()
+    assert [row[0] for row in rows] == ["k2", "k3"]
+
+
 def test_cache_concurrent_get_put_is_best_effort(tmp_path):
     c = Cache(ttl=999.0, path=tmp_path / "c.db", max_entries=100)
 
@@ -287,3 +331,18 @@ def test_cache_disabled_by_default(providers, env, quota):
     pool.ask("hello")
     pool.ask("hello")
     assert len(post.calls) == 2  # both hit the provider
+
+
+def test_cache_hit_reports_zero_attempts(providers, env, quota, tmp_path):
+    """A cache hit tries no providers, so attempts is 0, not the default 1."""
+    cache = Cache(ttl=999.0, path=tmp_path / "c.db")
+    post = make_post({})
+    pool = Pool(providers, quota=quota, env=env, post=post, cache=cache)
+
+    first = pool.ask("hello")
+    assert first.attempts == 1 and not first.cached
+
+    second = pool.ask("hello")
+    assert second.cached
+    assert second.attempts == 0
+    assert len(post.calls) == 1

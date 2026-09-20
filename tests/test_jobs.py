@@ -2153,3 +2153,55 @@ def test_run_after_partial_trailing_fragment_appends_valid_event(tmp_path):
     parsed = [json.loads(line) for line in raw_lines if line != "{not json"]
     events = [row["event"] for row in parsed]
     assert events == [JOB_EVENT_QUEUED, JOB_EVENT_STARTED, JOB_EVENT_COMPLETED]
+
+
+def test_reads_hold_file_lock(tmp_path, monkeypatch):
+    """events()/jobs()/jobs_map() must take _file_lock like writers do, so a
+    read cannot observe a torn tail while another process appends."""
+    import contextlib
+
+    store = JobStore(tmp_path / "j.jsonl")
+    entered: list[str] = []
+    real_file_lock = store._file_lock
+
+    @contextlib.contextmanager
+    def recording():
+        entered.append("x")
+        with real_file_lock():
+            yield
+
+    monkeypatch.setattr(store, "_file_lock", recording)
+    store.add(JobSpec(kind=JOB_KIND_ASK, payload={"kind": JOB_KIND_ASK, "prompt": "hi"}))
+    entered.clear()
+    store.events()
+    assert entered, "events() skipped _file_lock"
+    entered.clear()
+    store.jobs()
+    assert entered, "jobs() skipped _file_lock"
+    entered.clear()
+    store.jobs_map()
+    assert entered, "jobs_map() skipped _file_lock"
+
+
+def test_compact_collapses_terminal_jobs_and_preserves_views(tmp_path):
+    """compact() rewrites the append-only log to one snapshot event per
+    terminal job, preserving materialized views and FIFO order."""
+    store = JobStore(tmp_path / "j.jsonl")
+    first = store.add(JobSpec(kind=JOB_KIND_ASK, payload={"kind": JOB_KIND_ASK, "prompt": "one"}))
+    store.cancel(first.job_id)
+    second = store.add(JobSpec(kind=JOB_KIND_ASK, payload={"kind": JOB_KIND_ASK, "prompt": "two"}))
+    before = (tmp_path / "j.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(before) == 3
+    removed = store.compact()
+    assert removed == 1
+    after = (tmp_path / "j.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(after) == 2
+    cancelled = store.get(first.job_id)
+    assert cancelled is not None and cancelled.status == JOB_STATUS_CANCELLED
+    assert cancelled.spec.get("prompt") == "one"
+    assert cancelled.spec.get("kind") == JOB_KIND_ASK
+    assert [job.job_id for job in store.jobs()] == [first.job_id, second.job_id]
+    pending = store.get(second.job_id)
+    assert pending is not None and pending.status == JOB_STATUS_PENDING
+    third = store.add(JobSpec(kind=JOB_KIND_ASK, payload={"kind": JOB_KIND_ASK, "prompt": "three"}))
+    assert [job.job_id for job in store.jobs()] == [first.job_id, second.job_id, third.job_id]

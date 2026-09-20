@@ -28,6 +28,21 @@ except ImportError:  # pragma: no cover - non-POSIX (Windows)
     fcntl = None  # type: ignore[assignment]
 
 _LIVE_STORES: weakref.WeakSet[QuotaStore] = weakref.WeakSet()
+_ATEXIT_REGISTERED = False
+
+
+def _flush_live_stores() -> None:
+    for store in tuple(_LIVE_STORES):
+        # One store's exit-time flush failure must not starve the rest.
+        with contextlib.suppress(Exception):
+            store.flush()
+
+
+def _ensure_atexit() -> None:
+    global _ATEXIT_REGISTERED
+    if not _ATEXIT_REGISTERED:
+        atexit.register(_flush_live_stores)
+        _ATEXIT_REGISTERED = True
 
 
 def _reset_live_stores_after_fork() -> None:
@@ -85,7 +100,10 @@ class QuotaStore:
         self._data: dict[str, Any] = self._load()
         _LIVE_STORES.add(self)
         if self.flush_every > 1:
-            atexit.register(self.flush)
+            # Register the module-level flusher, not self.flush: a bound
+            # method would pin this store alive until interpreter exit and
+            # defeat the WeakSet above.
+            _ensure_atexit()
 
     def _after_fork_child(self) -> None:
         """Drop parent-owned batches and locks in a freshly forked child."""
@@ -170,10 +188,23 @@ class QuotaStore:
     def _key(provider_id: str, model: str) -> str:
         return f"{provider_id}::{model}"
 
+    def _refresh_locked(self) -> dict[str, Any]:
+        """Reload today's bucket from disk, overlaying local pending increments.
+
+        Shared by reads so a long-running process sees other writers; reading
+        never forces a write. Caller must hold ``self._lock``."""
+        current_day = _utc_day(self._clock())
+        loaded = self._load()
+        bucket = dict(loaded.get(current_day, {}))
+        for key, amount in self._pending_counts.get(current_day, {}).items():
+            bucket[key] = int(bucket.get(key, 0)) + amount
+        self._data = {current_day: bucket}
+        return bucket
+
     def used(self, provider_id: str, model: str) -> int:
         with self._lock:
             self._prepare_after_fork_locked()
-            return int(self._today().get(self._key(provider_id, model), 0))
+            return int(self._refresh_locked().get(self._key(provider_id, model), 0))
 
     def record(self, provider_id: str, model: str, n: int = 1) -> int:
         with self._lock:
@@ -203,13 +234,24 @@ class QuotaStore:
             bucket = self._today()
             key = self._key(provider_id, model)
             bucket[key] = int(bucket.get(key, 0)) + n
+            # Fold in increments whose earlier save failed so this write retries them.
+            day = _utc_day(self._clock())
+            carried = self._pending_counts.pop(day, {})
+            for pending_key, amount in carried.items():
+                bucket[pending_key] = int(bucket.get(pending_key, 0)) + amount
             count: int = bucket[key]
             try:
                 self._save()
             except OSError:
                 # Quota is advisory — never let a persistence hiccup abort an
-                # otherwise-successful completion.
-                pass
+                # otherwise-successful completion. Retain the increment as
+                # pending so a later record or flush retries it.
+                stash = self._pending_counts.setdefault(day, {})
+                stash[key] = int(stash.get(key, 0)) + n
+                for pending_key, amount in carried.items():
+                    stash[pending_key] = int(stash.get(pending_key, 0)) + amount
+                self._pending_ops += 1
+                self._schedule_flush_locked()
             return count
 
     def flush(self) -> None:
@@ -268,10 +310,4 @@ class QuotaStore:
         overlays local pending increments in memory. Reading never forces a write."""
         with self._lock:
             self._prepare_after_fork_locked()
-            current_day = _utc_day(self._clock())
-            loaded = self._load()
-            bucket = dict(loaded.get(current_day, {}))
-            for key, amount in self._pending_counts.get(current_day, {}).items():
-                bucket[key] = int(bucket.get(key, 0)) + amount
-            self._data = {current_day: bucket}
-            return bucket
+            return cast(dict[str, int], self._refresh_locked())

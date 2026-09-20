@@ -139,7 +139,7 @@ class Cache:
                         """
                         DELETE FROM cache
                         WHERE key NOT IN (
-                            SELECT key FROM cache ORDER BY created DESC LIMIT ?
+                            SELECT key FROM cache ORDER BY created DESC, rowid DESC LIMIT ?
                         )
                         """,
                         (self.max_entries,),

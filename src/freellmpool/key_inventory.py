@@ -15,6 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from .client_setup import atomic_write
 from .credential_store import save_key_values
 from .toml_utils import toml_escape
 
@@ -24,14 +25,23 @@ _SECRET_PATTERNS = [
     re.compile(r"\bgsk_[A-Za-z0-9_\-]{8,}\b"),
     re.compile(r"\bcsk-[A-Za-z0-9_\-]{8,}\b"),
     re.compile(r"\bnvapi-[A-Za-z0-9_\-]{8,}\b"),
-    re.compile(r"\bghp_[A-Za-z0-9_]{8,}\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{8,}\b"),
     re.compile(r"\bAIza[A-Za-z0-9_\-]{8,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9_\-]{8,}\b"),
+    re.compile(r"\bhf_[A-Za-z0-9_]{8,}\b"),
+    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
 ]
+_KEY_ASSIGN_RE = re.compile(
+    r"\b([A-Za-z0-9_]*(?:API_KEY|TOKEN|SECRET|PASSWORD|KEY)[A-Za-z0-9_]*\s*[:=]\s*)"
+    r"([\"']?)[^\"'\s]{8,}\2",
+    re.IGNORECASE,
+)
 
 
 def redact_secrets(text: str) -> str:
     """Return text with common API-key shapes redacted."""
-    redacted = text
+    redacted = _KEY_ASSIGN_RE.sub(r"\1[redacted]", text)
     for pattern in _SECRET_PATTERNS:
         redacted = pattern.sub("[redacted]", redacted)
     return redacted
@@ -147,8 +157,8 @@ def append_inventory_record(record: KeyRecord, path: Path | None = None) -> Path
     exists = any(r.provider == record.provider and r.env_var == record.env_var for r in records)
     if not exists:
         records.append(record)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_dump_inventory(records), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    atomic_write(path, _dump_inventory(records))
     return path
 
 

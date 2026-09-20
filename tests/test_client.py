@@ -509,3 +509,31 @@ def test_upstream_error_message_is_length_capped():
     result = C.HTTPResult(500, {"error": {"message": "E" * 100_000}}, "E" * 100_000)
     err = C._provider_http_error(result)
     assert len(str(err)) <= 500
+
+
+def test_stream_skips_malformed_sse_data_lines():
+    """Scalar/list SSE payloads must be skipped, not crash mid-stream."""
+    lines = [
+        "data: 5",
+        "data: [1, 2]",
+        'data: {"choices": "nope"}',
+        'data: {"choices": ["x"]}',
+        'data: {"choices": [{"delta": "nope"}]}',
+        'data: {"choices": [{"delta": {"content": "ok"}}]}',
+        "data: [DONE]",
+    ]
+
+    def stream_post(url, headers, body, timeout):
+        return 200, iter(lines)
+
+    deltas = list(
+        C.stream_call(
+            P,
+            "zai-glm-4.7",
+            [{"role": "user", "content": "hi"}],
+            api_key="k",
+            env={},
+            stream_post=stream_post,
+        )
+    )
+    assert deltas == ["ok"]

@@ -306,3 +306,15 @@ def test_immediate_stats_at_fork_registry_does_not_retain_store(tmp_path):
     gc.collect()
 
     assert reference() is None
+
+
+def test_batched_stats_store_does_not_leak_via_atexit(tmp_path):
+    """atexit must not hold a strong bound-method ref that defeats _LIVE_STORES."""
+    store = StatsStore(tmp_path / "stats.json", flush_every=100, flush_interval=60)
+    reference = weakref.ref(store)
+    assert reference() is not None
+
+    del store
+    gc.collect()
+
+    assert reference() is None

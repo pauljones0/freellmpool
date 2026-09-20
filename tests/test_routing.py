@@ -651,3 +651,38 @@ def test_achat_routing_override_end_to_end(tmp_path, monkeypatch, quota):
     apool = AsyncPool(pool, apost=apost)
     assert asyncio.run(apool.achat(_HARD, routing="quality")).model == "big"
     assert pool.routing == "fast"
+
+
+def test_prefer_prefix_route_skips_capability_modes(providers, env, quota):
+    """Prefix memory steers fairness modes but never overrides capability
+    (quality/agent) ordering."""
+    pool = Pool(providers, quota=quota, env=env, post=make_post({}))
+    targets = pool._all_targets(include=["alpha", "beta"])[:2]
+    assert len(targets) == 2
+    messages = [{"role": "user", "content": "hi"}]
+    pool._remember_prefix_route(messages, targets[1].name)
+    followup = [
+        *messages,
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": "next"},
+    ]
+    assert pool._prefer_prefix_route(list(targets), followup)[0] == targets[1]
+    assert pool._prefer_prefix_route(list(targets), followup, routing="fair")[0] == targets[1]
+    assert pool._prefer_prefix_route(list(targets), followup, routing="agent") == targets
+    assert pool._prefer_prefix_route(list(targets), followup, routing="quality") == targets
+
+
+def test_prefix_steering_skipped_in_capability_modes(tmp_path, monkeypatch, quota):
+    """Agent loops must not pin follow-ups to the first turn's model when the
+    caller asked for capability ordering (quality/agent modes)."""
+    pool = _qpool(tmp_path, monkeypatch, quota)
+    assert pool.chat(_EASY).model == "small"  # remembers prefix -> x/small
+    turn2 = [
+        *_EASY,
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": _HARD[0]["content"]},
+    ]
+    # Control: fairness modes still prefer the already-warm target.
+    assert pool.chat(turn2, routing="fair").model == "small"
+    assert pool.chat(turn2, routing="agent").model == "big"
+    assert pool.chat(turn2, routing="quality").model == "big"

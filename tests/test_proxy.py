@@ -2850,3 +2850,15 @@ def test_proxy_error_never_echoes_upstream_key(providers, env, quota):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_status_tokenmax_omits_prompt_after_run(server):
+    """A finished swarm must not leave the user's prompt fragment in /status."""
+    sentinel = "tokenmax-prompt-sentinel-q8w2-secret-fragment"
+    status, _ = _post_json(server + "/tokenmax", {"prompt": sentinel, "max_models": 1})
+    assert status == 200
+    with urllib.request.urlopen(server + "/status") as resp:  # noqa: S310 (localhost test)
+        payload = json.load(resp)
+    assert payload["tokenmax"]["active"] is False
+    assert "prompt" not in payload["tokenmax"]
+    assert sentinel not in json.dumps(payload)

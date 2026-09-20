@@ -513,3 +513,114 @@ def test_anonymous_grant_omits_even_an_existing_paid_credential(tmp_path):
     pool._post = post
     assert pool.ask("hi").text == "OK"
     assert "Authorization" not in observed[0]
+
+
+def test_reset_duration_clamps_absurd_values():
+    from freellmpool.managed import _duration
+
+    assert _duration("90") == 90
+    assert _duration("1h30m") == 5400
+    assert _duration("100d") == 32 * 86400
+    assert _duration("999999999") == 32 * 86400
+    with pytest.raises(ValueError):
+        _duration("never")
+
+
+def test_candidate_prefilter_uses_token_estimate_not_byte_length(tmp_path):
+    from freellmpool.errors import ContextWindowExceeded
+
+    pool = make_pool(tmp_path, ids=("alpha",))
+    snapshot = pool.snapshot()
+    # 33k chars ≈ 8250 tokens: fits the 32k window though bytes exceed it.
+    fitting = [{"role": "user", "content": "x" * 33000}]
+    assert pool._candidates(snapshot, "chat", None, None, fitting, max_tokens=1024)
+    # A genuinely oversized prompt is still rejected.
+    with pytest.raises(ContextWindowExceeded):
+        pool._candidates(snapshot, "chat", None, None,
+                         [{"role": "user", "content": "x" * 200000}], max_tokens=1024)
+
+
+def test_retryable_server_error_waits_and_retries_within_budget(tmp_path, monkeypatch):
+    import time as time_mod
+
+    now = [time_mod.time() + 5]
+    monkeypatch.setattr(time_mod, "monotonic", lambda: now[0])
+    monkeypatch.setattr(time_mod, "sleep", lambda delay: now.__setitem__(0, now[0] + delay))
+    calls = []
+    def post(url, headers, body, timeout):
+        calls.append(url)
+        if len(calls) == 1:
+            return HTTPResult(500, {}, "boom")
+        return successful()
+    pool = make_pool(tmp_path, ids=("alpha",), capacity=100, post=post)
+    pool._base_env["FREELLMPOOL_WAIT_SECONDS"] = "30"
+    pool._wall_clock = lambda: now[0]
+    pool.ledger.clock = lambda: now[0]
+    assert pool.ask("hi", timeout=60).text == "OK"
+    assert len(calls) == 2
+
+
+def test_non_retryable_error_does_not_wait_and_retry(tmp_path):
+    calls = []
+    def post(url, headers, body, timeout):
+        calls.append(url)
+        return HTTPResult(400, {}, "bad request")
+    pool = make_pool(tmp_path, ids=("alpha",), post=post)
+    pool._base_env["FREELLMPOOL_WAIT_SECONDS"] = "30"
+    with pytest.raises(AllProvidersExhausted):
+        pool.ask("hi", timeout=5)
+    assert len(calls) == 1
+
+
+def test_completed_stream_records_reported_usage_in_stats(tmp_path):
+    def stream(*args):
+        return 200, {}, iter(['data: {"choices":[{"delta":{"content":"OK"}}]}',
+                              'data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":1}}',
+                              'data: [DONE]'])
+    pool = make_pool(tmp_path, ids=("alpha",), stream_post=stream)
+    assert list(pool.stream_chat([{"role": "user", "content": "hi"}]))[1] == "OK"
+    assert pool.stats["requests"] == 1
+    assert pool.stats["prompt_tokens"] == 5
+    assert pool.stats["completion_tokens"] == 1
+
+
+def test_chat_uses_response_cache_when_configured(tmp_path):
+    from freellmpool.cache import Cache
+
+    calls = []
+    def post(url, headers, body, timeout):
+        calls.append(url)
+        return successful()
+    pool = make_pool(tmp_path, ids=("alpha",), post=post,
+                     cache=Cache(60, path=tmp_path / "cache.db"))
+    first = pool.ask("hi")
+    second = pool.ask("hi")
+    assert first.text == "OK" and second.text == "OK"
+    assert len(calls) == 1
+    assert second.cached is True
+    assert pool.stats["cache_hits"] == 1
+
+
+def test_default_config_builds_cache_from_ttl_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("FREELLMPOOL_CACHE_PATH", str(tmp_path / "cache.db"))
+    pool = ManagedPool.from_default_config(env={"FREELLMPOOL_CACHE_TTL": "60"})
+    assert pool._cache is not None
+    assert pool._cache.ttl == 60
+    pool = ManagedPool.from_default_config(env={})
+    assert pool._cache is None
+
+
+def test_probe_calls_bypass_response_cache(tmp_path):
+    from freellmpool.cache import Cache
+
+    calls = []
+    pool = make_pool(tmp_path, ids=("alpha",),
+                     post=lambda *args: calls.append(args) or successful(),
+                     cache=Cache(60, path=tmp_path / "cache.db"))
+    route = pool.snapshot().routes[0]
+    messages = [{"role": "user", "content": "hi"}]
+    pool.probe_call(route.provider, route.model, messages)
+    pool.probe_call(route.provider, route.model, messages)
+    assert len(calls) == 2
+

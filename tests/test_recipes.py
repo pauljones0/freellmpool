@@ -4,6 +4,8 @@ import json
 import tomllib
 from pathlib import Path
 
+import pytest
+
 from freellmpool.artifacts import RunRecordStore
 from freellmpool.models import Reply
 from freellmpool.panel import PanelAnswer, PanelResult
@@ -306,3 +308,86 @@ def test_recipe_package_data_is_in_build_config():
         source = f"src/freellmpool/recipes/{name}.json"
         assert source in wheel_force_include
         assert source in sdist_force_include
+
+
+def test_path_payload_rejects_too_many_files(tmp_path, monkeypatch):
+    from freellmpool.recipes import MissingRecipeInputError, _path_payload
+
+    for i in range(150):
+        (tmp_path / f"f{i:03d}.py").write_text("x = 1\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(MissingRecipeInputError, match="too many"):
+        _path_payload("*.py")
+
+
+def test_path_payload_rejects_oversize_file(tmp_path, monkeypatch):
+    from freellmpool.recipes import MissingRecipeInputError, _path_payload
+
+    (tmp_path / "big.py").write_text("x = 1  # padding\n" * 20_000, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(MissingRecipeInputError, match="too large"):
+        _path_payload("*.py")
+
+
+def test_path_payload_rejects_oversize_total(tmp_path, monkeypatch):
+    from freellmpool.recipes import MissingRecipeInputError, _path_payload
+
+    for i in range(6):
+        (tmp_path / f"chunk{i}.py").write_text("y = 2  # padding\n" * 10_000, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(MissingRecipeInputError, match="too large"):
+        _path_payload("chunk*.py")
+
+
+def test_collect_recipe_input_confines_untrusted_glob_to_root(tmp_path):
+    from freellmpool.recipes import (
+        MissingRecipeInputError,
+        collect_recipe_input,
+        get_recipe,
+    )
+
+    recipe = get_recipe("repo-summary")
+    work = tmp_path / "work"
+    work.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("SECRET = 1\n", encoding="utf-8")
+
+    with pytest.raises(MissingRecipeInputError, match="absolute"):
+        collect_recipe_input(recipe, path=str(outside), root=work)
+    with pytest.raises(MissingRecipeInputError, match="escape"):
+        collect_recipe_input(recipe, path="../*.py", root=work)
+    with pytest.raises(MissingRecipeInputError, match="home"):
+        collect_recipe_input(recipe, path="~/*.py", root=work)
+
+
+def test_collect_recipe_input_rejects_symlink_escape(tmp_path):
+    from freellmpool.recipes import (
+        MissingRecipeInputError,
+        collect_recipe_input,
+        get_recipe,
+    )
+
+    recipe = get_recipe("repo-summary")
+    work = tmp_path / "work"
+    work.mkdir()
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP-SECRET\n", encoding="utf-8")
+    (work / "link.txt").symlink_to(secret)
+
+    with pytest.raises(MissingRecipeInputError):
+        collect_recipe_input(recipe, path="link.txt", root=work)
+
+
+def test_collect_recipe_input_allows_relative_glob_within_root(tmp_path, monkeypatch):
+    from freellmpool.recipes import collect_recipe_input, get_recipe
+
+    recipe = get_recipe("repo-summary")
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "a.py").write_text("print('hi')\n", encoding="utf-8")
+    monkeypatch.chdir(work)
+
+    text, used = collect_recipe_input(recipe, path="*.py", root=work)
+
+    assert "print('hi')" in text
+    assert used == "*.py"

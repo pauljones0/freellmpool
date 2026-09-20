@@ -4,6 +4,11 @@ Embedded store is plain sqlite3 (stdlib) with float32 vector BLOBs and
 brute-force cosine retrieval — no services, no new dependencies, no paid
 path. Embeddings and chat both flow through the managed pool, so free
 admission and allowance accounting apply unchanged.
+
+Retrieval scores every chunk in Python per query (O(corpus)), streamed in
+batches to bound peak memory. Corpora past MAX_SEARCH_CHUNKS are refused
+with an honest error: re-index a smaller folder instead of paying for a
+multi-GB scan on every question.
 """
 
 from __future__ import annotations
@@ -21,6 +26,11 @@ MAX_FILES = 500
 MAX_FILE_BYTES = 200_000
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
+# Brute-force retrieval scores every chunk per query, so an unbounded corpus
+# turns each question into a multi-GB scan (~100k chunks x 1.5KB vectors).
+# search() refuses past this cap with an honest re-index-smaller error.
+MAX_SEARCH_CHUNKS = 50_000
+_SEARCH_BATCH = 2000
 # G20 measured winner (2026-09-19 leaderboard, fixture v1: recall@3 1.000,
 # MRR 1.000 — the only perfect score). `rag index` uses this unless
 # --embed-model overrides it; re-run `rag leaderboard` to re-measure.
@@ -82,18 +92,25 @@ class RagStore:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            db.execute("PRAGMA busy_timeout=5000")
             db.execute("CREATE TABLE IF NOT EXISTS chunks "
                        "(id INTEGER PRIMARY KEY, path TEXT NOT NULL, ord INTEGER NOT NULL, text TEXT NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS vectors "
                        "(chunk_id INTEGER PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL, vec BLOB NOT NULL)")
             db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
 
+    def _conn(self) -> sqlite3.Connection:
+        con = sqlite3.connect(self.path, timeout=5)
+        con.execute("PRAGMA busy_timeout=5000")
+        return con
+
     @contextmanager
     def _connect(self):
         # `with sqlite3.connect()` commits but does NOT close; pair it with
         # closing (same idiom as cache.py) so every connection is committed
         # AND closed deterministically (CI runs with -W error::ResourceWarning).
-        with closing(sqlite3.connect(self.path)) as db, db:
+        with closing(self._conn()) as db, db:
             yield db
 
     def __len__(self) -> int:
@@ -124,19 +141,33 @@ class RagStore:
         return len(docs)
 
     def search(self, vec: list[float], *, k: int = 4) -> list[dict[str, Any]]:
-        if len(self) == 0:
+        total = len(self)
+        if total == 0:
             raise ValueError("vector store is empty — run: freellmpool rag index <folder>")
-        with self._connect() as db:
-            rows = db.execute("SELECT c.path, c.ord, c.text, v.vec, v.dim FROM chunks c "
-                              "JOIN vectors v ON v.chunk_id = c.id").fetchall()
-        if not rows:
-            raise ValueError("vector store is empty — run: freellmpool rag index <folder>")
-        if any(dim != len(vec) for _, _, _, _, dim in rows):
-            raise ValueError(f"query dimension {len(vec)} does not match indexed vectors")
+        if total > MAX_SEARCH_CHUNKS:
+            raise ValueError(
+                f"vector store holds {total} chunks (cap {MAX_SEARCH_CHUNKS}) — "
+                "re-index a smaller folder: freellmpool rag index <folder>"
+            )
         scored = []
-        for path, ord_, text, blob, dim in rows:
-            stored = list(struct.unpack(f"<{dim}f", blob))
-            scored.append({"path": path, "chunk": ord_, "text": text, "score": _cosine(vec, stored)})
+        seen = 0
+        with self._connect() as db:
+            cursor = db.execute("SELECT c.path, c.ord, c.text, v.vec, v.dim FROM chunks c "
+                                "JOIN vectors v ON v.chunk_id = c.id")
+            while batch := cursor.fetchmany(_SEARCH_BATCH):
+                for path, ord_, text, blob, dim in batch:
+                    seen += 1
+                    if dim != len(vec):
+                        raise ValueError(
+                            f"query dimension {len(vec)} does not match indexed vectors"
+                        )
+                    stored = list(struct.unpack(f"<{dim}f", blob))
+                    scored.append(
+                        {"path": path, "chunk": ord_, "text": text,
+                         "score": _cosine(vec, stored)}
+                    )
+        if not seen:
+            raise ValueError("vector store is empty — run: freellmpool rag index <folder>")
         scored.sort(key=lambda h: h["score"], reverse=True)
         return scored[: max(1, k)]
 

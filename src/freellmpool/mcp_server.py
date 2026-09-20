@@ -40,6 +40,7 @@ import logging
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any, cast
 
 from .battle import render_battle_markdown, run_battle
@@ -267,7 +268,11 @@ TOOLS = [
                 },
                 "path": {
                     "type": "string",
-                    "description": "Optional glob for path-input recipes (e.g. `repo-summary --path 'src/**/*.py'`).",
+                    "description": (
+                        "Optional glob for path-input recipes, relative to the working "
+                        "directory (e.g. `repo-summary --path 'src/**/*.py'`). Absolute "
+                        "paths, `~`, and `..` escapes are rejected."
+                    ),
                 },
                 "input": {
                     "type": "string",
@@ -763,12 +768,16 @@ def _tool_recipe(pool: Pool, args: dict) -> dict:
         return _text("'path' must be a string", is_error=True)
 
     try:
+        # Model-controlled: confine the glob to the working directory so a
+        # prompt-injected `path` cannot exfiltrate /etc/*, ~/.ssh/*, or .env
+        # contents into the recipe prompt sent to external providers.
         input_text, path_used = collect_recipe_input(
             recipe,
             prompt=inline_prompt,
             stdin="",
             input_file=None,
             path=path_arg,
+            root=Path.cwd(),
         )
     except MissingRecipeInputError as exc:
         return _text(f"{type(exc).__name__}: {exc}", is_error=True)
