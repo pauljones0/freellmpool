@@ -528,10 +528,14 @@ def _stop_tls_server(server, thread):
 
 
 def _run_bounded(label, func, timeout):
-    """Run func() in a worker thread under an outer hard timeout.
+    """Run func() in a worker thread under a bounded wait (not a hard timeout).
 
-    A hang fails loudly (with faulthandler stacks) instead of wedging the
-    suite; the worker always joins before this returns or fails.
+    thread.join(timeout) only bounds how long THIS CALL waits: on timeout the
+    worker is neither killed nor joined -- it keeps running as a daemon until
+    func() returns or the interpreter exits -- while this call fails loudly
+    with faulthandler stacks instead of wedging the suite. Remaining work is
+    therefore limited to func()'s own bounds plus daemon abandonment at exit;
+    a process hard bound needs a real outer subprocess timeout (timeout(1)).
     """
     outcome = {}
 
@@ -616,13 +620,16 @@ def test_actual_transport_repeat_cancel_retry(monkeypatch, tmp_path):
     assert results["retry"] == "deferred"
 
 
-def test_tls_fixture_survives_half_open_handshake(monkeypatch, tmp_path):
-    """Half-open TLS peer: handshake times out, retry succeeds, teardown lands.
+def test_tls_fixture_survives_held_open_handshake(monkeypatch, tmp_path):
+    """Held-open TLS peer: retry queues behind the live handshake, then lands.
 
-    Regression proof for the accepted-handshake wedge (listener timeouts do
-    not bound it): hold a connected-but-silent TCP peer past the 5s accepted
-    handshake timeout, then prove the serve loop still answers and teardown
-    completes, all under an outer hard timeout with real transport.
+    Discriminating regression proof for the accepted-handshake wedge
+    (listener timeouts do not bound it): the first peer stays
+    connected-but-silent for the WHOLE retry -- closing it first would
+    release even the old broken fixture's unlimited handshake, proving
+    nothing. The single-threaded server must therefore serve this fetch only
+    after its 5s accepted-handshake wait on the held peer expires, all with
+    real transport under a bounded wait.
     """
     for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
         monkeypatch.delenv(var, raising=False)
@@ -635,26 +642,31 @@ def test_tls_fixture_survives_half_open_handshake(monkeypatch, tmp_path):
     path = tmp_path / "c.json"
 
     def body():
-        # Half-open peer: TCP connected, zero bytes, held past the handshake
-        # timeout, then closed. The serve loop must drop it and stay alive.
         peer = socket.create_connection(("127.0.0.1", port))
         try:
-            time.sleep(7.0)
+            time.sleep(1.0)  # let the server enter the handshake wait
+
+            async def runner():
+                return await d.arefresh_catalog({}, ["openrouter"], path=path,
+                                                time_budget_seconds=10.0)
+
+            start = time.monotonic()
+            status = asyncio.run(runner())["providers"]["openrouter"]["status"]
+            elapsed = time.monotonic() - start
+            assert peer.fileno() != -1  # held open across the whole retry
         finally:
             peer.close()
-
-        async def runner():
-            return await d.arefresh_catalog({}, ["openrouter"], path=path,
-                                            time_budget_seconds=6.0)
-
-        return asyncio.run(runner())["providers"]["openrouter"]["status"]
+        return status, elapsed
 
     try:
-        status = _run_bounded("half-open-handshake", body, timeout=60.0)
+        status, elapsed = _run_bounded("held-open-handshake", body, timeout=60.0)
     finally:
         teardown_start = time.monotonic()
         _stop_tls_server(server, thread)
         teardown_secs = time.monotonic() - teardown_start
     assert status == "ok"
+    # Queued behind the live 5s handshake wait (the no-queue fast path would
+    # be <1.5s), yet bounded well inside the 10s fetch budget.
+    assert 3.0 < elapsed < 10.0
     assert "/fast" in _DripHandler.hits
     assert teardown_secs < 15.0
