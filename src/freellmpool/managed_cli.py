@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import shlex
 import shutil
 import subprocess
@@ -62,14 +63,36 @@ _UPDATE_BUSY_RENEW_SKIP = "freellmpool: evidence renewal skipped (catalog refres
 
 
 def _read_last_good(path: Path) -> dict[str, Any]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"providers": {}}
-    if not isinstance(data, dict) or not isinstance(data.get("providers"), dict):
-        return {"providers": {}}
+    from .discovery import _load
+
+    data = _load(path)
     data["providers"] = {pid: row for pid, row in data["providers"].items() if isinstance(row, dict)}
     return data
+
+
+_FALLBACK_RENDER_SAFE = re.compile(r"[^A-Za-z0-9_.:/-]+")
+
+
+def _render_fallback_id(value: Any) -> str | None:
+    """Slash-preserving single-line id for fallback display (defense in depth)."""
+    if not isinstance(value, str):
+        return None
+    return _FALLBACK_RENDER_SAFE.sub("_", value)[:256] or None
+
+
+def _fallback_line(row: dict[str, Any]) -> str | None:
+    """Bounded per-row fallback line for blocked rows; None when nothing to show."""
+    if not isinstance(row, dict) or row.get("status") != "blocked":
+        return None
+    names = row.get("fallback_models", [])
+    if not isinstance(names, list):
+        return None
+    rendered = [text for text in (_render_fallback_id(name) for name in names) if text]
+    if not rendered:
+        return None
+    suffix = f" +{len(rendered) - 10} more" if len(rendered) > 10 else ""
+    return ("    reviewed fallback candidates (availability unverified): "
+            + ", ".join(rendered[:10]) + suffix)
 
 
 def cmd_update(args: argparse.Namespace) -> int:
@@ -106,14 +129,29 @@ def cmd_update(args: argparse.Namespace) -> int:
     for pid, row in shown.items():
         models = row.get("models", [])
         safe_print(f"{sanitize_pid(pid):<14} {row.get('status', 'unknown'):<16} {len(models) if isinstance(models, list) else 0:>4} catalog routes")
+        line = _fallback_line(row) if isinstance(row, dict) else None
+        if line is not None:
+            safe_print(line)
     ok, deferred, failed = count_snapshot({"providers": shown})
     # Never print "updated" unless this run refreshed every requested provider to ok.
     if refreshed and failed == 0 and deferred == 0:
         safe_print(_UPDATE_FOOTER_OK)
     else:
-        safe_print(f"Discovery incomplete: {ok} ok, {deferred} deferred, {failed} failed; "
-                   "run `freellmpool update` to retry. Pricing, account eligibility, and protocol "
+        blocked = any(isinstance(row, dict) and row.get("status") == "blocked"
+                      for row in shown.values())
+        retryable = deferred > 0 or any(not isinstance(row, dict) or row.get("status") not in {"ok", "deferred", "blocked"}
+                                        for row in shown.values())
+        trailer = ("run `freellmpool update` to retry. Pricing, account eligibility, and protocol "
                    "evidence remain separate checks.")
+        if blocked and not retryable:
+            trailer = ("blocked listings re-verdict on a later `freellmpool update --provider PROVIDER` "
+                       "re-check, verdict may persist. Pricing, account eligibility, and protocol "
+                       "evidence remain separate checks.")
+        elif blocked:
+            trailer = ("run `freellmpool update` to retry, but blocked listings re-verdict on a later "
+                       "re-check and the verdict may persist. Pricing, account eligibility, and protocol "
+                       "evidence remain separate checks.")
+        safe_print(f"Discovery incomplete: {ok} ok, {deferred} deferred, {failed} failed; {trailer}")
     return 0
 
 
@@ -364,7 +402,10 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     add_maintenance(sub)
     setup = sub.add_parser("setup", help="guided, private, resumable free-access setup")
     setup.add_argument("--provider")
-    setup.add_argument("--resume", action="store_true", default=True)
+    setup.add_argument("--resume", action="store_true", default=True,
+                       help="resume saved setup progress (default): pass over already-checked and skipped providers")
+    setup.add_argument("--no-resume", action="store_false", dest="resume",
+                       help="re-check every provider, ignoring saved progress")
     setup.add_argument("--no-clients", action="store_true")
     setup.add_argument("--no-start", action="store_true")
     setup.set_defaults(func=cmd_setup)

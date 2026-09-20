@@ -227,7 +227,7 @@ class ManagedPool(Pool):
 
     def snapshot(self) -> Snapshot:
         """Each caller receives one immutable generation; no network work occurs."""
-        from .discovery import load_discovery
+        from .discovery import _sanitize_fallback_models, load_discovery
         from .provider_registry import load_registry
         request_env = effective_env(self._base_env)
         registry = copy.deepcopy(self._registry_override) if self._registry_override is not None else load_registry(env=request_env)
@@ -271,6 +271,12 @@ class ManagedPool(Pool):
                 reason = "API key or required account field missing"
             elif row.get("status") == "deferred" and row.get("complete") is not True:
                 reason = "model discovery deferred (time budget); run freellmpool update"
+            elif row.get("status") == "blocked" and row.get("complete") is not True:
+                count = len(_sanitize_fallback_models(row.get("fallback_models")))
+                candidates = (f"{count} reviewed fallback candidates (availability unverified; "
+                              "names in update table)" if count else "no reviewed fallback candidates")
+                reason = (f"model listing blocked; {candidates}; run freellmpool update "
+                          "--provider PROVIDER later to re-check (re-verdicts; verdict may persist)")
             elif row.get("complete") is not True:
                 reason = "complete model discovery needed; run freellmpool update"
             elif checked is None or checked > now or now - checked > max_age:

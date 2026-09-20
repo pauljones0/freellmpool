@@ -3311,6 +3311,9 @@ _TIER_TRANSPORT = ("freellmpool: could not reach providers (check network connec
                    "proxy settings); retry the command, or run `freellmpool update` when online.")
 _TIER_DEFERRED = ("freellmpool: model discovery deferred (time budget); "
                   "run `freellmpool update` to complete it.")
+_TIER_BLOCKED = ("freellmpool: model listings blocked; a later re-check via "
+                 "`freellmpool update --provider PROVIDER` re-verdicts (verdict may persist; "
+                 "run `freellmpool status` for the reason).")
 _TIER_GENERIC = ("freellmpool: no free routes found - check connectivity, then run "
                  "`freellmpool update` to refresh the model catalog.")
 _BOOTSTRAP_BUSY_LINE = ("freellmpool: another catalog refresh is running; proceeding without fresh "
@@ -3329,6 +3332,8 @@ def _bootstrap_tier_line(snapshot: dict[str, Any]) -> str:
         return _TIER_TRANSPORT
     if any(row.get("status") == "deferred" for row in rows):
         return _TIER_DEFERRED
+    if any(row.get("status") == "blocked" for row in rows):
+        return _TIER_BLOCKED
     return _TIER_GENERIC
 
 

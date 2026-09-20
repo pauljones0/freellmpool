@@ -40,6 +40,7 @@ _STATUS_TEXT = {
     "partial": "The catalog check was incomplete. Your key is saved; maintenance can retry.",
     "error": "The check could not complete. Your key is saved; follow the diagnostic and retry this provider.",
     "deferred": "Discovery deferred (time budget); run freellmpool update, then retry this provider.",
+    "blocked": "The model listing was blocked; a later re-check via freellmpool update --provider PROVIDER re-verdicts and the verdict may persist. Your progress is saved; continue with other providers.",
 }
 
 
@@ -243,6 +244,32 @@ def _already_checked(provider_id: str, entry: JSON, grants: Sequence[JSON],
     )
 
 
+def _resumed_skip(provider_id: str, entry: JSON, credentials: dict[str, str], progress: JSON) -> bool:
+    """A skipped provider stays skipped while its credential set is unchanged.
+
+    Age-immune (skips verify nothing, so no expiry applies) and
+    rotation-sensitive (the ref binds the credential set). Entries saved
+    before refs existed mismatch and re-prompt safely.
+    """
+    return bool(progress.get("status") == "skipped"
+                and progress.get("credential_ref") == _setup_ref(provider_id, entry, credentials))
+
+
+def _resume_recap(checked: int, skipped: list[str], registry: dict[str, JSON]) -> str | None:
+    from .discovery import sanitize_pid
+
+    names = ", ".join(sanitize_pid(pid) for pid in skipped if pid in registry)
+    if checked and skipped:
+        return (f"Resumed: passed over {checked} already-checked and {len(skipped)} skipped provider(s). "
+                f"Skipped: {names}. Retry one: freellmpool setup --provider PROVIDER")
+    if checked:
+        return f"Resumed: passed over {checked} already-checked provider(s)."
+    if skipped:
+        return (f"Resumed: passed over {len(skipped)} skipped provider(s). "
+                f"Skipped: {names}. Retry one: freellmpool setup --provider PROVIDER")
+    return None
+
+
 def _open_setup_page(url: str | None, opener: BrowserOpener, output: Output) -> None:
     parsed = urlsplit(str(url or ""))
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
@@ -329,9 +356,17 @@ def run_onboarding(
         return "continue"
 
     try:
+        passed_checked = 0
+        passed_skipped: list[str] = []
         for index, (provider_id, entry, grants) in enumerate(selected, 1):
-            if resume and provider is None and _already_checked(provider_id, entry, grants, credentials, state["providers"].get(provider_id, {})):
-                continue
+            if resume and provider is None:
+                progress = state["providers"].get(provider_id, {})
+                if _already_checked(provider_id, entry, grants, credentials, progress):
+                    passed_checked += 1
+                    continue
+                if _resumed_skip(provider_id, entry, credentials, progress):
+                    passed_skipped.append(provider_id)
+                    continue
             setup = entry.get("setup", {})
             output(f"\n{index}/{len(selected)} — {entry.get('display_name', provider_id)}")
             output(str(setup.get("signup_url") or setup.get("key_url") or "See the provider's official account page."))
@@ -386,7 +421,7 @@ def run_onboarding(
                 if status == "ok" and attested == "s":
                     final_status = "account_unverified"
                 save(provider_id, final_status, note)
-                if status in {"ok", "unsupported"}:
+                if status in {"ok", "unsupported", "blocked"}:
                     break
                 while True:
                     answer = input_fn("Enter=next provider, r=retry check, k=replace key, o=open key page, q=quit: ").strip().lower()
@@ -404,6 +439,9 @@ def run_onboarding(
                         return 1
                     if replaced == "s":
                         break
+        recap = _resume_recap(passed_checked, passed_skipped, registry)
+        if recap is not None:
+            output(recap)
         output("\nSetup progress saved. Authentication/listing checks never enable paid or unverified routes.")
         output("Resume: freellmpool setup --resume   Retry one: freellmpool setup --provider PROVIDER")
         return 0
@@ -415,7 +453,10 @@ def run_onboarding(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--provider")
-    parser.add_argument("--resume", action="store_true", default=True)
+    parser.add_argument("--resume", action="store_true", default=True,
+                        help="resume saved setup progress (default): pass over already-checked and skipped providers")
+    parser.add_argument("--no-resume", action="store_false", dest="resume",
+                        help="re-check every provider, ignoring saved progress")
     parser.add_argument("--clipboard", action="store_true", help="save this provider's key from the clipboard")
     parser.add_argument("--stdin", action="store_true", help="read a key privately from standard input")
     args = parser.parse_args(argv)

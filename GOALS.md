@@ -1353,7 +1353,7 @@ Closeout 2026-09-20:
   hard bound (system-resolver shutdown lag characterized, not
   bounded).
 
-## G25 — Runner-up consumer-trust gap (Status: active 2026-09-20)
+## G25 — Runner-up consumer-trust gap (Status: complete 2026-09-20)
 
 Pain: kilo-403 status→update→status loop (parent LIVE, multi-obs)
 from the G24 slate, plus --resume no-op and resume re-asking
@@ -1370,8 +1370,25 @@ gates; TDD implement with adversarial review; prove from a
 clean environment; gates green; commit/push. Same gates and
 evidence rules as G24.
 
-Done when: kilo loop reproduced, fixed TDD, adversarially
-reviewed, proven from a clean environment; gates green; pushed.
+Done when:
+- [x] Kilo-403 loop + resume gaps reproduced live in isolated
+  empty HOME (curl 200/462KB vs httpx persistent 403
+  x-vercel-mitigated; skip llm7 + quit re-prompts; --resume
+  store_true default True is a no-op).
+- [x] Verdict semantics (blocked vs auth_failed, 4-rule K1) +
+  fallback-candidate contract (reviewed names shown, never
+  served) + observable DoD defined; design gate 5/5 PASS
+  (v2+v2.1+v2.2+v2.3+word3), plan gate 3/3 PASS (v1+v1.1+v1.2).
+- [x] Implemented TDD (33 tests: U1 classifier 10, U2 ripple 11,
+  U3 fallback 5, U4 resume 7); adversarially reviewed
+  (TTL-overflow hardening, S4/F7 slash conflict resolved for
+  F7, merge/branch simplifications); proven live from clean
+  env (update --provider kilo -> blocked N1 + fallback line +
+  F footer; status -> R reason; repeat identical; zero
+  auth_failed in live state).
+- [x] Full suite green, ruff/mypy-strict/docs/coverage gates
+  green (2 ruff UP031s pre-existing at base, untouched);
+  commit pushed.
 
 Effort: M. Fit: high — compounds G24.
 

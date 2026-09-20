@@ -50,6 +50,13 @@ _REFRESH_IN_LOOP = ("freellmpool: refresh_catalog cannot run inside a running ev
                     "loop; await arefresh_catalog instead.")
 _CHECK_IN_LOOP = "freellmpool: check_provider cannot run inside a running event loop."
 _ACCOUNT_ID = re.compile(r"[a-fA-F0-9]{32}\Z")
+# Edge-mitigation refusal markers. Presence of one of these headers on a 403
+# means the provider edge refused the listing; no account action applies.
+# 401 ignores the header: the status itself reports missing authentication.
+_MITIGATION_HEADERS = ("x-vercel-mitigated",)
+_BLOCKED_RECHECK = ("A later re-check via `freellmpool update --provider PROVIDER` "
+                    "re-verdicts; the verdict may persist. Run `freellmpool status` "
+                    "for the reason.")
 
 
 class DiscoveryBusy(OSError):
@@ -226,6 +233,9 @@ def _load(path: Path) -> dict[str, Any]:
                or len({row["id"] for row in v.get("models", [])}) != len(v.get("models", []))
                for v in result["providers"].values()):
             return _empty_snapshot()
+        for row in result["providers"].values():
+            if "fallback_models" in row:
+                row["fallback_models"] = _sanitize_fallback_models(row["fallback_models"])
         return result
     except (OSError, ValueError, TypeError):
         return _empty_snapshot()
@@ -629,11 +639,92 @@ def _prepare_attempt(provider: dict[str, Any], env: dict[str, str], result: dict
                            authenticated=authenticated, key=key)
 
 
+_FALLBACK_ID = re.compile(r"[A-Za-z0-9_.:/-]{1,256}\Z")
+
+
+def _sanitize_fallback_models(value: Any) -> list[str]:
+    """Fail-closed fallback-id filter: malformed entries are dropped."""
+    if not isinstance(value, list):
+        return []
+    return [entry for entry in value
+            if isinstance(entry, str) and _FALLBACK_ID.fullmatch(entry)][:64]
+
+
+def _grant_fallback_models(provider: dict[str, Any]) -> list[str]:
+    """Reviewed-policy model names usable as fallback candidates.
+
+    Verbatim selector.models entries from verified grants (any kind, any
+    selector kind); grant exclusions and provider-level blocks are honored.
+    Callers sanitize via _sanitize_fallback_models: entries are never used
+    raw. The names do not establish availability, account access, or
+    conformance.
+    """
+    grants = provider.get("grants")
+    if not isinstance(grants, list):
+        return []
+    blocked = provider.get("blocked_models", [])
+    blocked = blocked if isinstance(blocked, list) else []
+    names: list[str] = []
+    for grant in grants:
+        if not isinstance(grant, dict) or grant.get("status") != "verified":
+            continue
+        selector = grant.get("model_selector")
+        if not isinstance(selector, dict):
+            continue
+        configured = selector.get("models", [])
+        excluded = selector.get("exclude", [])
+        if not isinstance(configured, list) or not isinstance(excluded, list):
+            continue
+        for name in configured:
+            if name not in excluded and name not in blocked and name not in names:
+                names.append(name)
+    return names
+
+
+def _classify_denied(status: int, headers: Any, *, key_env: str | None, key_present: bool,
+                     authenticated: bool, supports_public: bool) -> tuple[str, str]:
+    """Verdict for a 401/403 listing refusal: (status, note).
+
+    Edge-mitigation headers and keyless-403 refusals are provider-side
+    refusals (blocked); everything else keeps today's auth_failed wording.
+    """
+    mitigated = status == 403 and any(headers.get(marker) is not None
+                                      for marker in _MITIGATION_HEADERS)
+    if mitigated:
+        return ("blocked", f"HTTP {status}: provider edge refused the listing "
+                           "[Vercel mitigation observed]; no account action applies. " + _BLOCKED_RECHECK)
+    if status == 403 and supports_public and not authenticated:
+        if key_present:
+            return ("blocked", "HTTP 403: keyless public listing refused (no edge-mitigation "
+                               "header observed); keyed listing not attempted. " + _BLOCKED_RECHECK)
+        return ("blocked", "HTTP 403: keyless public listing refused (no edge-mitigation "
+                           "header observed); no account action applies. " + _BLOCKED_RECHECK)
+    if status == 401 and supports_public and not authenticated:
+        if key_env is None:
+            return ("auth_failed", "HTTP 401: keyless public listing refused; the provider now "
+                                   "requires authentication and no credential applies to this provider.")
+        if key_present:
+            return ("auth_failed", f"HTTP 401: keyless public listing refused; the provider now "
+                                   f"requires authentication via {key_env} (keyed listing not "
+                                   "attempted). Run `freellmpool status` for the reason.")
+        return ("auth_failed", f"HTTP 401: keyless public listing refused; the provider now "
+                               f"requires authentication via {key_env}. Add the credential, "
+                               "then run `freellmpool update` to retry.")
+    return ("auth_failed", f"HTTP {status}: authentication, permissions or account "
+                           "verification failed; listing did not establish entitlement.")
+
+
 async def _afetch_page(client: httpx.AsyncClient, url: str, headers: dict[str, str],
-                       timeout: httpx.Timeout, result: dict[str, Any]) -> Any:
+                       timeout: httpx.Timeout, result: dict[str, Any], *,
+                       key_env: str | None, key_present: bool, authenticated: bool,
+                       supports_public: bool) -> Any:
     async with client.stream("GET", url, headers=headers, timeout=timeout) as response:
         if response.status_code in {401, 403}:
-            raise _DoneEarly({**result, "status": "auth_failed", "note": f"HTTP {response.status_code}: authentication, permissions or account verification failed; listing did not establish entitlement."})
+            status, note = _classify_denied(response.status_code, response.headers,
+                                            key_env=key_env, key_present=key_present,
+                                            authenticated=authenticated,
+                                            supports_public=supports_public)
+            raise _DoneEarly({**result, "status": status, "note": note})
         if response.status_code == 429:
             raise _DoneEarly({**result, "status": "rate_limited", "note": "Listing rate limited; prior evidence age is unchanged."})
         if 300 <= response.status_code < 400:
@@ -675,12 +766,20 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                                                     write=min(5.0, remaining), pool=min(2.0, remaining))
                     try:
                         body = await asyncio.wait_for(
-                            _afetch_page(client, url, context.headers, request_timeout, result),
+                            _afetch_page(client, url, context.headers, request_timeout, result,
+                                         key_env=provider.get("credential_env"),
+                                         key_present=bool(context.key),
+                                         authenticated=context.authenticated,
+                                         supports_public=spec["supports_public"]),
                             timeout=remaining)
                     except TimeoutError:
                         raise _BudgetExhausted(_deferred_row(now, _deferred_page_note(page))) from None
                 else:
-                    body = await _afetch_page(client, url, context.headers, _IDLE_TIMEOUT, result)
+                    body = await _afetch_page(client, url, context.headers, _IDLE_TIMEOUT, result,
+                                              key_env=provider.get("credential_env"),
+                                              key_present=bool(context.key),
+                                              authenticated=context.authenticated,
+                                              supports_public=spec["supports_public"])
                 if not isinstance(body, dict):
                     raise ValueError("Malformed catalog document")
                 raw_rows = _raw_rows(provider["id"], body)
@@ -717,7 +816,14 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                 url = next_url
             raise ValueError("Catalog exceeded pagination budget")
     except _DoneEarly as done:
-        return done.row
+        if done.row["status"] != "blocked":
+            return done.row
+        row = dict(done.row)
+        row["catalog_ttl_seconds"] = spec.get("catalog_ttl_seconds", 86400)
+        if spec["supports_public"]:
+            row["catalog_access"] = "public"
+        row["fallback_models"] = _sanitize_fallback_models(_grant_fallback_models(provider))
+        return row
     except (ValueError, TypeError, KeyError, OverflowError):
         return {**result, "status": "partial", "note": "Incomplete, empty or malformed catalog; last-good evidence preserved."}
     except httpx.HTTPStatusError as error:
@@ -862,12 +968,24 @@ async def _arefresh_impl(env: dict[str, str], registry: dict[str, dict[str, Any]
         for provider_id in requested:
             attempted = rows[provider_id]
             previous = snapshot["providers"].get(provider_id)
-            if attempted["status"] != "ok" and previous:
+            if attempted["status"] == "blocked" and previous:
+                # Blocked is a durable refusal verdict, not transient like
+                # deferred: stale models must not serve under it. The display
+                # is fallback candidates, so the merge fails closed.
+                merged = dict(previous)
+                merged.update({key: attempted[key] for key in ("status", "last_attempt_at", "note")})
+                merged.update(complete=False, models=[], checked_at=None)
+                merged["fallback_models"] = _sanitize_fallback_models(
+                    attempted.get("fallback_models", []))
+                snapshot["providers"][provider_id] = merged
+            elif attempted["status"] != "ok" and previous:
                 # CTO-4: preserved rows (including preserved-deferred) keep
                 # complete + models and serve while fresh; only the attempt
                 # facts are overwritten. Fresh-deferred keeps complete False.
                 preserved = dict(previous)
                 preserved.update({key: attempted[key] for key in ("status", "last_attempt_at", "note")})
+                # A stale fallback list must not outlive a fresh verdict.
+                preserved.pop("fallback_models", None)
                 snapshot["providers"][provider_id] = preserved
             else:
                 snapshot["providers"][provider_id] = attempted

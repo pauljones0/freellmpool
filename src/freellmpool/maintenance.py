@@ -46,7 +46,7 @@ _PRICES = frozenset({"input", "output", "request", "image", "audio", "video", "c
 _STATUSES = frozenset({"ok", "unchanged", "not_checked", "unsupported", "auth_missing", "auth_failed",
     "rate_limited", "partial", "error", "review_required", "check_failed", "expired", "stale",
     "credential_changed", "malformed", "official", "verified", "observed", "disabled", "requires_client_update",
-    "deferred"})
+    "deferred", "blocked"})
 _MESSAGES = {
     "catalog_failed": "Model catalog check failed; previous evidence has not been renewed.",
     "catalog_stale": "Model discovery is missing or expired.",
@@ -349,12 +349,36 @@ def _deadline(provider: str, prefix: str, expires: Any, now: datetime, subject: 
     return None
 
 
-def _catalog_summary(row: JSON) -> JSON:
+def _verdict_ttl(row: JSON, spec: JSON) -> float:
+    """Blocked re-verdict schedule: row TTL, else spec TTL, else one day."""
+    for value in (row.get("catalog_ttl_seconds"),
+                  spec.get("discovery", {}).get("catalog_ttl_seconds") if isinstance(spec.get("discovery"), dict) else None):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        if math.isfinite(value) and value > 0:
+            return float(value)
+    return 86400.0
+
+
+def _verdict_due(row: JSON, spec: JSON) -> str | None:
+    start = timestamp(row.get("last_attempt_at"))
+    if start is None:
+        return None
+    try:
+        return datetime.fromtimestamp(start + _verdict_ttl(row, spec), UTC).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _catalog_summary(row: JSON, spec: JSON) -> JSON:
     checked = timestamp(row.get("checked_at"))
-    return {"status": _status(row.get("status", "not_checked")), "complete": row.get("complete") is True,
-            "checked_at": _stamp(row.get("checked_at")), "last_attempt_at": _stamp(row.get("last_attempt_at")),
-            "expires_at": datetime.fromtimestamp(checked + 172800, UTC).isoformat() if checked is not None else None,
-            "model_count": len(row.get("models", [])) if isinstance(row.get("models", []), list) else 0}
+    summary = {"status": _status(row.get("status", "not_checked")), "complete": row.get("complete") is True,
+               "checked_at": _stamp(row.get("checked_at")), "last_attempt_at": _stamp(row.get("last_attempt_at")),
+               "expires_at": datetime.fromtimestamp(checked + 172800, UTC).isoformat() if checked is not None else None,
+               "model_count": len(row.get("models", [])) if isinstance(row.get("models", []), list) else 0}
+    if summary["status"] == "blocked":
+        summary["expires_at"] = _verdict_due(row, spec)
+    return summary
 
 
 def _renewed_source(spec: JSON, source: JSON, overlay: JSON, now: datetime) -> JSON:
@@ -403,7 +427,7 @@ def build_public_report(registry: JSON, catalog: JSON, *, evidence: JSON | None 
         accessible = _private or (spec.get("discovery", {}).get("supports_public") is True and row.get("catalog_access") in {None, "public"})
         if not accessible:
             row = {"status": "unsupported"}
-        summary = _catalog_summary(row)
+        summary = _catalog_summary(row, spec)
         report["providers"][pid] = {"catalog": summary, "sources": [], "coverage": "public" if accessible else "unsupported"}
         valid = accessible and row.get("status") == "ok" and row.get("complete") is True and summary["checked_at"] is not None
         valid = valid and 0 <= current.timestamp() - (timestamp(summary["checked_at"]) or 0) < 172800
@@ -415,7 +439,7 @@ def build_public_report(registry: JSON, catalog: JSON, *, evidence: JSON | None 
                 valid = False
                 summary["status"] = "partial"
         if accessible:
-            if summary["status"] not in {"ok", "auth_missing", "unsupported", "not_checked", "deferred"}:
+            if summary["status"] not in {"ok", "auth_missing", "unsupported", "not_checked", "deferred", "blocked"}:
                 add(_finding(pid, "catalog_failed"))
             if summary["status"] != "deferred":
                 expiry = _deadline(pid, "catalog", summary["expires_at"], current)
