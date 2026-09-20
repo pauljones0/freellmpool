@@ -1457,6 +1457,48 @@ arefresh_catalog docstring).
 
 Effort: M. Fit: high — completes the G24 boundedness promise.
 
+## G27 — bounded async discovery (Status: complete 2026-09-20)
+
+Pain: `arefresh_catalog` without `deadline` was fetch-unbounded;
+in-loop server/notebook callers could hang forever with no failure
+row and no recovery signal.
+
+Bet: carrying the sync default-budget policy into the async entry
+point gives bounded failure/recovery to every caller, including
+ones that omit the bound.
+
+Execute: small design + adversarial review (GO-WITH-CHANGES, all
+folded); TDD implement (red-first); actual-transport loopback proof
+for repeat/cancel/retry; gates green; commit/push.
+
+Done when:
+- [x] Default policy carried over: omit both params ->
+  `now + budget_seconds(env)` (40s unless env-tuned); stricter
+  caller `deadline`/`time_budget_seconds` wins via min(); strict
+  finite validation (ValueError on NaN/inf/non-numeric/bool);
+  past/zero/negative fast-defer-all (stated, pinned).
+- [x] No implicit unbounded mode (review-blessed; big budgets cover
+  backfill); timeout degrades to deferred rows over preserved
+  last-good with progress intact.
+- [x] Cancellation proven safe: entry-gated cancel surfaces
+  CancelledError with byte-identical destination and an
+  immediately re-acquirable gate; second writer gets DiscoveryBusy
+  (small-budget probe documented) and retry succeeds.
+- [x] Loop/executor non-interference pinned (same open loop, same
+  default executor, no daemon-pool use, dispatch still works);
+  bounds explicitly RETURN bounds, shutdown belongs to the caller.
+- [x] 27 API-level tests green incl. actual-TLS-loopback
+  repeat/cancel/retry with controlled resolver delay; full suite
+  (CI flags) + ruff + strict mypy + docs + coverage green; pushed.
+
+Honesty residuals (unchanged from G26, restated): glibc per-source
+OS time unbounded by code; trust_env proxy variance out of scope;
+LOCK_EX waits qualitative modulo glibc residual; inference streams
+out of scope; whole-process shutdown guarantees disclaimed for
+caller-owned loops.
+
+Effort: S. Fit: high — closes the last G26-listed residual.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

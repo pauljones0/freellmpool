@@ -12,6 +12,7 @@ import errno
 import fcntl
 import hashlib
 import json
+import math
 import os
 import queue
 import re
@@ -89,6 +90,22 @@ def budget_seconds(env: dict[str, str]) -> float:
     """Discovery wall budget from env, clamped so typos cannot wedge first run."""
     return finite_float(env.get("FREELLMPOOL_DISCOVERY_BUDGET_SECONDS"), 40.0,
                         minimum=5.0, maximum=45.0)
+
+
+def _finite_seconds(value: float | None, name: str) -> float | None:
+    """Strict caller-param check: None passes through, anything else must be finite.
+
+    Unlike the env path (typos coerce to the default), explicit caller params
+    fail loud: NaN poisons min()/comparisons and inf would silently unbind.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be a finite number of seconds")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be a finite number of seconds")
+    return result
 
 
 def _ensure_no_running_loop(message: str) -> None:
@@ -1205,19 +1222,38 @@ def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
                                       deadline=deadline, progress=progress))
 
 
-# G27-candidate: arefresh deadline wiring (automatic bound for in-loop callers).
 async def arefresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
                            public_only: bool = False, path: Path | str | None = None, *,
                            deadline: float | None = None,
+                           time_budget_seconds: float | None = None,
                            progress: Callable[..., None] | None = None) -> dict[str, Any]:
-    """Async twin of refresh_catalog for consumers inside a running loop.
+    """Bounded async twin of refresh_catalog for consumers inside a running loop.
 
-    Server callers must pass `deadline` explicitly; without it the fetch
-    is unbounded (drip/DNS-in-worker) by design until G27 wires it.
+    Server callers should pass `deadline` (absolute monotonic seconds) or
+    `time_budget_seconds` (relative budget) to control the bound; when both
+    are omitted the sync default policy (budget_seconds(env), 40s unless
+    tuned) applies. The effective bound is the earliest of the candidates,
+    so a stricter caller value always wins. There is no implicit unbounded
+    mode: past/zero/negative inputs fast-defer all providers, and
+    non-finite inputs raise ValueError.
+
+    Timeout degrades to deferred rows over preserved last-good; a second
+    concurrent writer gets DiscoveryBusy (probe with a small budget to fail
+    fast) and can retry. These are RETURN bounds only: this call never
+    touches the caller's loop or default executor, and shutdown behavior
+    belongs to the caller's loop.
     """
+    deadline = _finite_seconds(deadline, "deadline")
+    time_budget_seconds = _finite_seconds(time_budget_seconds, "time_budget_seconds")
+    now = time.monotonic()
+    candidates = [c for c in (deadline, None if time_budget_seconds is None else now + time_budget_seconds)
+                  if c is not None]
+    if not candidates:
+        candidates = [now + budget_seconds(env)]
+    effective = min(candidates)
     destination, registry, requested = _prepare_refresh(env, provider_ids, public_only, path)
     return await _arefresh_impl(env, registry, requested, public_only, destination,
-                                deadline=deadline, progress=progress)
+                                deadline=effective, progress=progress)
 
 
 class _SourceText(HTMLParser):
