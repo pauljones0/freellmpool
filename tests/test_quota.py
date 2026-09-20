@@ -378,7 +378,7 @@ def test_sigterm_flushes_batched_quota(tmp_path) -> None:
         "from pathlib import Path",
         "if _install is not None:",
         "    _install()",
-        "q = QuotaStore(path=Path(r'%s'), flush_every=100, flush_interval=3600)" % store_path,
+        f"q = QuotaStore(path=Path(r'{store_path}'), flush_every=100, flush_interval=3600)",
         "q.record('qx', 'm1')",
         "print('ready', flush=True)",
         "signal.pause()",

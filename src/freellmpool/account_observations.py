@@ -10,6 +10,7 @@ import json
 import os
 import re
 import tempfile
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -23,7 +24,12 @@ from uuid import UUID
 import httpx
 
 from .free_policy import credential_fingerprint
-from .http_read import ACCEPT_ENCODING, bounded_response_bytes
+from .http_read import (
+    _SOURCE_TOTAL_SECONDS,
+    ACCEPT_ENCODING,
+    ReadDeadlineExceeded,
+    bounded_response_bytes,
+)
 from .provider_registry import load_registry
 
 JSON = dict[str, Any]
@@ -449,7 +455,8 @@ def _read_endpoint(client: httpx.Client, endpoint: _Endpoint, headers: dict[str,
             return "rate_limited", None
         if response.status_code != 200:
             return "error", None
-        data = bounded_response_bytes(response, _MAX_BYTES)
+        data = bounded_response_bytes(response, _MAX_BYTES,
+                                        deadline=time.monotonic() + _SOURCE_TOTAL_SECONDS)
         return "ok", json.loads(data, object_pairs_hook=_unique, parse_constant=_invalid_constant)
 
 
@@ -483,6 +490,8 @@ def _attempt(provider_id: str, env: Mapping[str, str], now: datetime) -> JSON:
                             raise ValueError("Reflected credential")
                         if status == "ok":
                             result.update(checked_at=now.isoformat(), expires_at=(now + _TTL).isoformat(), observations=rows)
+            except ReadDeadlineExceeded:
+                status = "error"
             except (ValueError, TypeError, KeyError, OverflowError, RecursionError):
                 status = "malformed"
             except httpx.HTTPError:
@@ -506,6 +515,8 @@ def refresh_accounts(env: Mapping[str, str], provider_ids: Sequence[str] | None 
     with _lock(path):
         now = _now()
         snapshot = _read(env, providers, now)
+        # Per-read ceiling 60s Python-phase + glibc (10 conn + 30 body +
+        # 20 read; default clients only); <=2 reads/provider, 120s/provider.
         for pid in requested:
             previous = snapshot["providers"][pid]
             captured_env = dict(env)

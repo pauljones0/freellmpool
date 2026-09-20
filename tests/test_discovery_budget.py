@@ -208,20 +208,25 @@ def test_arefresh_catalog_parity(monkeypatch, tmp_path):
     assert [m["id"] for m in row["models"]] == ["example:free"]
 
 
-def test_dns_residual_characterization(monkeypatch, tmp_path):
-    """A stalled system resolver delays loop shutdown past fetch failure (v5.2 residual).
+def test_dns_stall_no_longer_delays_refresh_return(monkeypatch, tmp_path):
+    """G26 closure of the v5.2 shutdown-lag residual (contract changed by goal).
 
-    With R=5.5 the pinned connect clamp (min(5,R)=5) fails the fetch at ~5s
-    (error + network note per the A4 mapping) but asyncio.run returns only
-    after the executor thread finishes (~6.5s). This pins the acknowledged
-    boundary; it must never be rewritten as a hard-bound pass. See
+    slow_resolve still stalls 10s; the fetch still fails at the pinned
+    connect clamp (error + network note) but refresh now returns at ~5s
+    without joining the stalled resolver thread (daemon, abandoned).
+    Non-vacuous: a resolver thread must be alive at return and gone after
+    its stall elapses. Pre-G26 evidence kept at
     docs/evidence/httpx-async-dns-deadline-2026-09-20.json.
     """
     real_getaddrinfo = socket.getaddrinfo
 
     def slow_resolve(*args, **kwargs):
-        time.sleep(6.5)
+        time.sleep(10)
         return real_getaddrinfo("127.0.0.1", 443, type=socket.SOCK_STREAM)
+
+    def resolver_threads():
+        return [thread for thread in threading.enumerate()
+                if thread.name.startswith("freellmpool-resolver-")]
 
     monkeypatch.setattr(socket, "getaddrinfo", slow_resolve)
     spec = provider("https://dns-stall.invalid/catalog")
@@ -233,8 +238,13 @@ def test_dns_residual_characterization(monkeypatch, tmp_path):
     row = snapshot["providers"]["openrouter"]
     assert row["status"] == "error"
     assert row["note"] == d._NOTE_NETWORK_FAILURE
-    assert elapsed >= 6.0  # the residual: shutdown waited on the resolver thread
-    assert elapsed < 6.5 + 8.0
+    assert elapsed < 6.5  # G26: return does not wait on the resolver thread
+    assert elapsed >= 4.9  # the fetch itself still ran to the connect clamp
+    assert resolver_threads()  # the stall was really in flight at return
+    deadline = time.monotonic() + 15
+    while resolver_threads():
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
 
 
 def test_refresh_lock_busy_raises_discovery_busy(monkeypatch, tmp_path):

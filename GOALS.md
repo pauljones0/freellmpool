@@ -1392,7 +1392,7 @@ Done when:
 
 Effort: M. Fit: high — compounds G24.
 
-## G26 — DNS hard bound + drip-bounded source reads (Status: active 2026-09-20)
+## G26 — DNS hard bound + drip-bounded source reads (Status: complete 2026-09-20)
 
 Pain: stalled system-resolver delay is a documented whole-machine
 residual (shutdown lag characterized, not bounded); public-sources
@@ -1408,8 +1408,52 @@ TDD implement with adversarial review; prove from a clean
 environment; gates green; commit/push. Same gates and
 evidence rules as G24/G25.
 
-Done when: stall/drip reproduced, fixed TDD, adversarially
-reviewed, proven from a clean environment; gates green; pushed.
+Done when:
+- [x] Stall/drip reproduced live in isolated empty HOME
+  (blackhole-DNS netns refresh: fetch ~5s, return lagged to
+  glibc ~30s; localhost TLS 1B/7s drip read with no bound).
+- [x] Bound semantics + observable DoD defined; design gate
+  5/5 PASS (v2+v3+v3.1), plan gate 3/3 PASS (v1+v1.1).
+- [x] Implemented TDD (U1 drip helper + ReadDeadlineExceeded 6
+  incl. chunk-granularity; U2 five-site wiring + mappings 9;
+  U3 daemon executor + _run_sync + wizard bound 19 + 2 guards;
+  v5.2 residual test rewritten to the closure contract).
+  Adversarial review GO (drop atomicity, forced TPE base,
+  teardown order, mappings, ceiling numerals, test honesty all
+  PASS; uv.lock collateral reverted, DNS margin widened to
+  10s/<6.5 and looped 5x pre-commit).
+- [x] Proven live from clean environment (empty HOME; netns
+  for DNS): refresh fetch 5.2s + exit lag 0.1s (old code:
+  fetch 30.4s); drip single-URL error at 35.0s over 6 real
+  bytes. Transcripts /tmp/g26_dns_proof.txt,
+  /tmp/g26_drip_proof.txt (scratch, not shipped). G24 cold-ask
+  regressions green (refused, blackhole, happy-path).
+- [x] Full suite (CI warning flags) + ruff + strict mypy (CI
+  module list) + docs + coverage gates green (87.7% lines /
+  78.9% branches); 2 ruff UP031s fixed mechanically
+  (test-only %-format; G25 predates the newer ruff flag);
+  commit pushed.
+
+Honesty claim: this closure covers sync deadline-set refresh
+exit + per-read totals + wizard 60s ONLY. Enumerated residuals:
+(1) arefresh(deadline=None) fetch-unbounded (G27-candidate
+"arefresh deadline wiring"); (2) sync per-source glibc OS time
+(no code bound; OS-bounded return asserted by harness);
+(3) trust_env proxy variance (out of scope; harnesses clear
+proxy env). Inference streams are out of scope for this goal.
+LOCK_EX second-writer waits stay a qualitative bound (no numeric
+claim), modulo glibc residual.
+
+Implementation findings: ThreadPoolExecutor base forced by the
+set_default_executor isinstance gate (no super().__init__, so no
+registration); KI re-drive guarded by task.done() (re-driving a
+KI-completed future idles in select() per issue #22429); the
+sync reader uses iter_raw() passthrough because 64KB chunk
+assembly would buffer a slow drip past the deadline.
+
+Follow-up: G27-candidate arefresh deadline wiring (server
+callers must pass `deadline` until then; see the
+arefresh_catalog docstring).
 
 Effort: M. Fit: high — completes the G24 boundedness promise.
 

@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import time
 import zlib
 from typing import Any
 
 import httpx
 
 ACCEPT_ENCODING = "gzip, deflate"
+_SOURCE_TOTAL_SECONDS = 30
+
+
+class ReadDeadlineExceeded(ValueError):
+    """A streamed body outlasted its wall-clock total read bound."""
 
 
 def _decode_preamble(response: httpx.Response, max_bytes: int) -> str:
@@ -69,8 +75,17 @@ class _BodyDecoder:
         return bytes(self._body)
 
 
-def bounded_response_bytes(response: httpx.Response, max_bytes: int) -> bytes:
-    """Bound encoded and decoded bodies before allocating decompressor output."""
+def bounded_response_bytes(response: httpx.Response, max_bytes: int, *,
+                           deadline: float | None = None) -> bytes:
+    """Bound encoded and decoded bodies before allocating decompressor output.
+
+    With ``deadline`` (monotonic seconds), the total read is bounded: the
+    check runs at the top of the chunk loop, so an overdue read fails fast
+    even before its first chunk. Idle phase timeouts still own chunk gaps.
+    iter_raw() runs WITHOUT chunk_size on purpose: httpx assembles sized
+    chunks internally, which would buffer a sub-64KB drip and starve the
+    check past the deadline; passthrough surfaces every arrival.
+    """
     encoding = _decode_preamble(response, max_bytes)
     if response.is_stream_consumed:
         # Injected HTTPX responses may already contain decoded test data. Real
@@ -80,7 +95,13 @@ def bounded_response_bytes(response: httpx.Response, max_bytes: int) -> bytes:
             raise ValueError("HTTP response is too large")
         return content
     decoder = _BodyDecoder(encoding, max_bytes)
-    for chunk in response.iter_raw(chunk_size=min(65536, max_bytes + 1)):
+    if deadline is not None and time.monotonic() > deadline:
+        response.close()
+        raise ReadDeadlineExceeded("HTTP response exceeded its total read deadline")
+    for chunk in response.iter_raw():
+        if deadline is not None and time.monotonic() > deadline:
+            response.close()
+            raise ReadDeadlineExceeded("HTTP response exceeded its total read deadline")
         decoder.feed(chunk)
     return decoder.result()
 

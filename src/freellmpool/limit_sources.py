@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -18,7 +19,12 @@ from typing import Any
 
 import httpx
 
-from .http_read import ACCEPT_ENCODING, bounded_response_bytes
+from .http_read import (
+    _SOURCE_TOTAL_SECONDS,
+    ACCEPT_ENCODING,
+    ReadDeadlineExceeded,
+    bounded_response_bytes,
+)
 
 JSON = dict[str, Any]
 _URL = "https://console.groq.com/docs/rate-limits"
@@ -177,6 +183,8 @@ def collect_proposals(registry: Mapping[str, Mapping[str, Any]]) -> JSON:
     """Fetch public facts and propose reviewed rule edits without mutating them."""
     now = datetime.now(UTC).isoformat()
     result: JSON = {"schema": 1, "checked_at": now, "providers": {}}
+    # Per-read ceiling 60s Python-phase + glibc (10 conn + 30 body + 20
+    # read; default clients only); only the groq row reads, 1 read/call.
     for pid in registry:
         row: JSON = {"status": "unsupported", "checked_at": now, "source_url": None,
                      "source_sha256": None, "parser": None, "proposals": [],
@@ -189,11 +197,14 @@ def collect_proposals(registry: Mapping[str, Mapping[str, Any]]) -> JSON:
             with _client() as client, client.stream("GET", _URL, headers={"Accept": "text/html", "Accept-Encoding": ACCEPT_ENCODING}) as response:
                 if response.status_code != 200:
                     raise httpx.HTTPStatusError("Public source failed", request=response.request, response=response)
-                body = bounded_response_bytes(response, _MAX_BYTES)
+                body = bounded_response_bytes(response, _MAX_BYTES,
+                                               deadline=time.monotonic() + _SOURCE_TOTAL_SECONDS)
             row["source_sha256"] = hashlib.sha256(body).hexdigest()
             observed = parse_groq_free_limits(body.decode("utf-8"))
             row.update(status="ok", proposals=_proposals(registry[pid], observed), model_count=len(observed),
                        note="Parsed the official free-plan table; proposals require review and do not activate policy.")
+        except ReadDeadlineExceeded:
+            row.update(status="error", note="Official limit source could not be read; no proposals generated.")
         except httpx.HTTPError:
             row.update(status="error", note="Official limit source could not be read; no proposals generated.")
         except (ValueError, TypeError, KeyError, OverflowError, RecursionError):

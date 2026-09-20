@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
@@ -9,7 +10,12 @@ from typing import Any
 import httpx
 
 from .free_policy import timestamp
-from .http_read import ACCEPT_ENCODING, bounded_response_bytes
+from .http_read import (
+    _SOURCE_TOTAL_SECONDS,
+    ACCEPT_ENCODING,
+    ReadDeadlineExceeded,
+    bounded_response_bytes,
+)
 from .maintenance import _now, _read, _write, state_directory
 
 REPOSITORY = "pauljones0/freellmpool"
@@ -50,7 +56,8 @@ def _get(client: httpx.Client, url: str, *, params: dict[str, str | int] | None 
     with client.stream("GET", url, params=params, headers={"Accept": "application/vnd.github+json", "Accept-Encoding": ACCEPT_ENCODING}) as response:
         if response.status_code != 200:
             raise ValueError("Workflow observation unavailable")
-        content = bounded_response_bytes(response, _MAX_BYTES)
+        content = bounded_response_bytes(response, _MAX_BYTES,
+                                           deadline=time.monotonic() + _SOURCE_TOTAL_SECONDS)
         import json
         result = json.loads(content)
         if not isinstance(result, dict):
@@ -63,6 +70,8 @@ def refresh_workflow(env: Mapping[str, str], *, now: datetime | None = None) -> 
     current = _now(now)
     result = load_workflow_status(env, now=current)
     result["last_attempt_at"] = current.isoformat()
+    # Per-read ceiling 46s Python-phase + glibc (8 conn + 30 body + 8
+    # read; default clients only); 2 reads/call, 92s call ceiling.
     try:
         with _client() as client:
             workflow = _get(client, _URL)
@@ -98,6 +107,8 @@ def refresh_workflow(env: Mapping[str, str], *, now: datetime | None = None) -> 
             else:
                 raise ValueError("Unknown workflow state")
         result["checked_at"] = current.isoformat()
+    except ReadDeadlineExceeded:
+        result["status"] = "unknown"
     except (httpx.HTTPError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
         result["status"] = "unknown"
     _write(state_directory(env) / "workflow-health.json", result)

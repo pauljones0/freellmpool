@@ -171,8 +171,7 @@ def test_diet_sigterm_reaps_wrapped_server(tmp_path) -> None:
 
     pidfile = tmp_path / "child.pid"
     script = (
-        "import os, time; open(r'%s', 'w').write(str(os.getpid())); time.sleep(60)"
-        % pidfile
+        f"import os, time; open(r'{pidfile}', 'w').write(str(os.getpid())); time.sleep(60)"
     )
     proc = subprocess.Popen(
         [sys.executable, "-m", "freellmpool.mcp_diet", "--",

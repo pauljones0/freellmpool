@@ -13,30 +13,47 @@ import fcntl
 import hashlib
 import json
 import os
+import queue
 import re
 import sys
 import tempfile
+import threading
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, NamedTuple, ParamSpec, TypeVar
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
 from .config import finite_float
 from .free_policy import model_matches_grant, timestamp
-from .http_read import ACCEPT_ENCODING, abounded_response_bytes, bounded_response_bytes
+from .http_read import (
+    _SOURCE_TOTAL_SECONDS,
+    ACCEPT_ENCODING,
+    abounded_response_bytes,
+    bounded_response_bytes,
+)
 from .provider_registry import evidence_path, load_registry, policy_digest
 
 _MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+# Overall wall-clock budget gate for one check_public_sources pass (G26):
+# budget gate 120s (worst ~= 166s + glibc), i.e. one in-flight 46s read may
+# run past the gate. Checked BETWEEN sources only (fail-fast pre-check
+# emitting error records); never preempts in-flight sync DNS/connect/read.
+_EVIDENCE_OVERALL_SECONDS = 120
+# Wizard single-check bound (G26): check_provider fails over to the deferred
+# row when its fetch cannot finish inside this monotonic window.
+_WIZARD_CHECK_SECONDS = 60
 # First-run discovery budget (G24): absolute wall-clock bound enforced with
 # asyncio.wait_for per page. Covers connect/handshake/headers/body under the
-# event loop's control; system-resolver stalls are the documented residual.
+# event loop's control; return/exit never wait on a stalled system resolver
+# (G26 closed the v5.2 shutdown-lag residual; the stall itself stays OS-time).
 DISCOVERY_BUDGET_SECONDS = 40.0
 _MIN_ATTEMPT_SECONDS = 5.0
 _MIN_PAGE_SECONDS = 3.0
@@ -760,8 +777,9 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                     # PINNED clamp. httpcore's connect phase covers getaddrinfo, so a
                     # resolver stall fails here (error + network note) when
                     # remaining > 5; wait_for owns shorter horizons. Either way
-                    # the fetch fails fast and loop shutdown may lag the
-                    # executor thread (documented v5.2 residual, G26).
+                    # the fetch fails fast and loop shutdown abandons the
+                    # executor thread instead of lagging it (G26 closed the
+                    # v5.2 residual).
                     request_timeout = httpx.Timeout(connect=min(5.0, remaining), read=min(10.0, remaining),
                                                     write=min(5.0, remaining), pool=min(2.0, remaining))
                     try:
@@ -844,6 +862,175 @@ async def _aattempt(provider: dict[str, Any], env: dict[str, str], *, public_onl
     return await _afetch_attempt(provider, context, result, deadline=deadline, progress=progress)
 
 
+_T = TypeVar("_T")
+_P = ParamSpec("_P")
+
+_Queued = tuple["Future[Any]", "Callable[..., Any]", "tuple[Any, ...]", "dict[str, Any]"]
+
+
+class _DaemonExecutor(ThreadPoolExecutor):
+    """Per-call daemon-thread pool whose teardown never joins hung workers.
+
+    Each _run_sync owns one instance (no singleton), so max outstanding
+    work is calls-in-window x workers and one call's hung resolver thread
+    can never stall another call's teardown. Workers are daemon threads
+    that are never registered for interpreter-exit joining: shutdown with
+    wait=False abandons in-flight items (their futures never complete)
+    and the process may exit while they are still blocked.
+
+    The ThreadPoolExecutor base is forced: loop.set_default_executor
+    isinstance-gates on it. This __init__ deliberately never calls
+    super().__init__(), so no eager spawn and no exit-join registration
+    ever happen; proven by the exit-timing test plus the grep guard.
+    Never use this pool as a context manager: the inherited __exit__
+    joins with wait=True, contradicting the no-join contract.
+    """
+
+    def __init__(self, max_workers: int | None = None,
+                 thread_name_prefix: str = "freellmpool-resolver-",
+                 initializer: Callable[..., Any] | None = None,
+                 initargs: tuple[Any, ...] = ()) -> None:
+        if max_workers is None:
+            max_workers = min(32, (os.cpu_count() or 1) + 4)
+        if max_workers <= 0:
+            raise ValueError("max_workers must be greater than 0")
+        self._max_workers = max_workers
+        self._prefix = thread_name_prefix
+        self._initializer = initializer
+        self._initargs = initargs
+        self._queue: queue.Queue[_Queued | None] = queue.Queue()
+        self._workers: list[threading.Thread] = []
+        self._shutdown = False
+        self._drop = False
+        self._lock = threading.Lock()
+
+    def submit(self, fn: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs) -> Future[_T]:
+        with self._lock:
+            if self._shutdown:
+                raise RuntimeError("cannot schedule new futures after shutdown")
+            future: Future[_T] = Future()
+            self._queue.put((future, fn, args, kwargs))
+            if len(self._workers) < self._max_workers:
+                worker = threading.Thread(target=self._worker,
+                                          name=f"{self._prefix}{len(self._workers)}",
+                                          daemon=True)
+                self._workers.append(worker)
+                worker.start()
+            return future
+
+    def _worker(self) -> None:
+        # Initializer exceptions kill the worker; callers must not raise.
+        if self._initializer is not None:
+            self._initializer(*self._initargs)
+        while True:
+            item = self._queue.get()
+            try:
+                if item is None:
+                    return
+                future, fn, args, kwargs = item
+                if not future.set_running_or_notify_cancel():
+                    continue
+                try:
+                    result = fn(*args, **kwargs)
+                except BaseException as error:
+                    with self._lock:
+                        if not self._drop:
+                            future.set_exception(error)
+                else:
+                    with self._lock:
+                        if not self._drop:
+                            future.set_result(result)
+                # Else result-drop: the shutdown-flag check and set_result /
+                # set_exception run under this single lock, so a worker
+                # either completes on the open loop or drops; dropped
+                # futures never complete and no callback ever fires.
+            finally:
+                self._queue.task_done()
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        with self._lock:
+            if self._shutdown:
+                return
+            self._shutdown = True
+            if not wait:
+                self._drop = True
+        if cancel_futures:
+            while True:
+                try:
+                    item = self._queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if item is not None:
+                        item[0].cancel()
+                finally:
+                    self._queue.task_done()
+        if wait:
+            self._queue.join()
+        with self._lock:
+            threads = list(self._workers)
+        for _ in threads:
+            self._queue.put(None)
+        if wait:
+            for thread in threads:
+                thread.join()
+
+
+def _cancel_all_tasks(loop: asyncio.AbstractEventLoop) -> None:
+    pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+    if not pending:
+        return
+    # Documented assumption: fetch tasks never shield or suppress
+    # CancelledError (no shields in fetch code; wait_for/httpx propagate
+    # cancellation), matching asyncio.run without a bounded re-drive.
+    for task in pending:
+        task.cancel()
+    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+
+
+def _run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
+    """asyncio.run twin with a per-call daemon resolver pool.
+
+    No future escapes this call (pinned invariant): in-flight executor
+    work is result-dropped at teardown, so never-completing dropped
+    futures are safe. Teardown never blocks on threads on any path.
+    """
+    loop = asyncio.new_event_loop()
+    executor = _DaemonExecutor()
+    try:
+        loop.set_default_executor(executor)
+        asyncio.set_event_loop(loop)
+        task = loop.create_task(coro)
+        try:
+            return loop.run_until_complete(task)
+        except KeyboardInterrupt:
+            if not task.done():
+                task.cancel()
+                try:
+                    loop.run_until_complete(task)
+                except asyncio.CancelledError:
+                    pass
+            # A done task is never re-driven: _run_until_complete_cb
+            # declines to stop the loop for KI/SystemExit outcomes
+            # (issue #22429), so re-driving a KI-completed future
+            # would idle in select() forever.
+            raise
+    finally:
+        try:
+            _cancel_all_tasks(loop)
+        finally:
+            try:
+                loop.run_until_complete(loop.shutdown_asyncgens())
+            finally:
+                try:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                finally:
+                    try:
+                        loop.close()
+                    finally:
+                        asyncio.set_event_loop(None)
+
+
 def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False) -> dict[str, Any]:
     now = _now()
     result = _blank_result(now)
@@ -852,17 +1039,21 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
     except _EarlyResult as early:
         return early.row
     # Pre-network outcomes above never touch the loop. check_provider is
-    # sync-only: fail loudly instead of a cryptic asyncio.run error.
+    # sync-only: fail loudly instead of a cryptic _run_sync error.
     _ensure_no_running_loop(_CHECK_IN_LOOP)
-    return asyncio.run(_afetch_attempt(provider, context, result, deadline=None))
+    try:
+        return _run_sync(_afetch_attempt(provider, context, result,
+                                         deadline=time.monotonic() + _WIZARD_CHECK_SECONDS))
+    except _BudgetExhausted as exhausted:
+        return exhausted.row
 
 
 def check_provider(provider_id: str, env: dict[str, str]) -> dict[str, Any]:
     """GET-only wizard check. Does not write snapshots or authorize inference.
 
-    Unbounded by design: idle phase timeouts only, no deadline. Bounded
-    callers (bootstrap, update, setup, maintenance, main) pass a deadline
-    to refresh_catalog instead.
+    Bounded by _WIZARD_CHECK_SECONDS: a fetch that cannot finish in time
+    returns the deferred row. Bounded callers (bootstrap, update, setup,
+    maintenance, main) pass a deadline to refresh_catalog instead.
     """
     provider = load_registry(env).get(provider_id)
     if provider is None:
@@ -1010,15 +1201,20 @@ def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
     """
     _ensure_no_running_loop(_REFRESH_IN_LOOP)
     destination, registry, requested = _prepare_refresh(env, provider_ids, public_only, path)
-    return asyncio.run(_arefresh_impl(env, registry, requested, public_only, destination,
+    return _run_sync(_arefresh_impl(env, registry, requested, public_only, destination,
                                       deadline=deadline, progress=progress))
 
 
+# G27-candidate: arefresh deadline wiring (automatic bound for in-loop callers).
 async def arefresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
                            public_only: bool = False, path: Path | str | None = None, *,
                            deadline: float | None = None,
                            progress: Callable[..., None] | None = None) -> dict[str, Any]:
-    """Async twin of refresh_catalog for consumers inside a running loop."""
+    """Async twin of refresh_catalog for consumers inside a running loop.
+
+    Server callers must pass `deadline` explicitly; without it the fetch
+    is unbounded (drip/DNS-in-worker) by design until G27 wires it.
+    """
     destination, registry, requested = _prepare_refresh(env, provider_ids, public_only, path)
     return await _arefresh_impl(env, registry, requested, public_only, destination,
                                 deadline=deadline, progress=progress)
@@ -1118,7 +1314,8 @@ def source_digest(content: bytes, content_type: str, algorithm: str = "visible_t
 
 
 def check_public_sources(provider_ids: list[str] | None = None, *,
-                         registry: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+                         registry: dict[str, dict[str, Any]] | None = None,
+                         time_budget_seconds: float | None = _EVIDENCE_OVERALL_SECONDS) -> dict[str, Any]:
     """Hash reviewed public source pages without updating any policy evidence.
 
     This produces a review artifact, never executable allowances. No account
@@ -1132,20 +1329,27 @@ def check_public_sources(provider_ids: list[str] | None = None, *,
             raise ValueError("Unknown provider")
         for evidence in registry[provider_id]["evidence"]:
             urls.setdefault(evidence["url"], []).append(provider_id)
+    overall = None if time_budget_seconds is None else time.monotonic() + time_budget_seconds
     records = []
     with _client() as client:
+        # Per-read ceiling 46s Python-phase + glibc (8 conn + 30 body + 8
+        # read; per-request timeout=8, default clients only) x N=30 distinct
+        # URLs; between-URL budget gate 120s fail-fasts the rest of the pass.
         for url, providers in urls.items():
             record: dict[str, Any] = {"url": url, "providers": sorted(set(providers)),
                                       "checked_at": _now(), "status": "error", "sha256": None}
+            now = time.monotonic()
+            if overall is not None and now >= overall:
+                records.append(record)
+                continue
             try:
                 if not _same_origin(url, url):
                     raise ValueError("Unsupported evidence URL")
-                # CTO-7 residual: idle-8s phases only; a sub-timeout drip here is
-                # unbounded (same phase-sum fallacy v5 killed for catalog). G25.
                 with client.stream("GET", url, headers={"Accept": "text/html, application/json", "Accept-Encoding": ACCEPT_ENCODING}, timeout=8) as response:
                     record["http_status"] = response.status_code
                     if response.status_code == 200:
-                        content = bounded_response_bytes(response, _MAX_RESPONSE_BYTES)
+                        content = bounded_response_bytes(response, _MAX_RESPONSE_BYTES,
+                                                         deadline=now + _SOURCE_TOTAL_SECONDS)
                         record["status"] = "ok"
                         record["sha256"] = source_digest(content, response.headers.get("content-type", ""))
                         record["raw_sha256"] = hashlib.sha256(content).hexdigest()
@@ -1162,7 +1366,8 @@ def check_public_sources(provider_ids: list[str] | None = None, *,
 
 
 def refresh_evidence(env: dict[str, str], provider_ids: list[str] | None = None,
-                     *, path: Path | None = None, public_only: bool = False) -> dict[str, Any]:
+                     *, path: Path | None = None, public_only: bool = False,
+                     time_budget_seconds: float | None = _EVIDENCE_OVERALL_SECONDS) -> dict[str, Any]:
     """Renew only content-identical, reviewed policy for at most seven days.
 
     This separate public GET operation does not touch account entitlement,
@@ -1170,7 +1375,7 @@ def refresh_evidence(env: dict[str, str], provider_ids: list[str] | None = None,
     A new or changed source requires review and a new packaged baseline.
     """
     registry = load_registry() if public_only else load_registry(env, renew_evidence=False)
-    checked = check_public_sources(provider_ids, registry=registry)
+    checked = check_public_sources(provider_ids, registry=registry, time_budget_seconds=time_budget_seconds)
     sources = {row["url"]: row for row in checked["sources"]}
     providers = {}
     for provider_id in provider_ids if provider_ids is not None else registry:

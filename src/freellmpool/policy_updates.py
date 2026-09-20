@@ -9,6 +9,7 @@ import json
 import math
 import os
 import re
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -20,7 +21,12 @@ import httpx
 
 from ._version import __version__
 from .client_setup import atomic_write
-from .http_read import ACCEPT_ENCODING, bounded_response_bytes
+from .http_read import (
+    _SOURCE_TOTAL_SECONDS,
+    ACCEPT_ENCODING,
+    ReadDeadlineExceeded,
+    bounded_response_bytes,
+)
 
 JSON = dict[str, Any]
 DEFAULT_REPOSITORY = "pauljones0/freellmpool"
@@ -278,7 +284,8 @@ def _fetch(client: httpx.Client, url: str) -> bytes:
     with client.stream("GET", url, headers={"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING}, follow_redirects=False) as response:
         if response.status_code != 200:
             raise ValueError(f"policy source HTTP {response.status_code}")
-        return bounded_response_bytes(response, _MAX_BYTES)
+        return bounded_response_bytes(response, _MAX_BYTES,
+                                        deadline=time.monotonic() + _SOURCE_TOTAL_SECONDS)
 
 
 def refresh_policy(env: Mapping[str, str], *, client: httpx.Client | None = None,
@@ -299,6 +306,9 @@ def refresh_policy(env: Mapping[str, str], *, client: httpx.Client | None = None
             previous = load_policy_status(env)
             result: JSON = {"status": "error", "last_attempt_at": now,
                             **{k: previous[k] for k in ("revision", "commit", "checked_at", "source_sha256", "repository") if k in previous}}
+            # Per-read ceiling 70s Python-phase + glibc (20 conn + 30 body +
+            # 20 read); 3 reads/call, 210s call ceiling. Injected clients
+            # carry injector-owned timeouts outside this ceiling.
             try:
                 if not _REPOSITORY.fullmatch(repository) or any(part in {".", ".."} for part in repository.split("/")):
                     raise ValueError("invalid trusted policy repository")
@@ -343,6 +353,8 @@ def refresh_policy(env: Mapping[str, str], *, client: httpx.Client | None = None
                               reason="Reviewed policy data checked.")
             except IncompatiblePolicy as exc:
                 result.update(status="requires_client_update", reason=str(exc))
+            except ReadDeadlineExceeded:
+                result.update(status="error", reason="Policy update failed validation or could not be fetched; prior rules retained.")
             except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError, httpx.HTTPError):
                 result.update(status="error", reason="Policy update failed validation or could not be fetched; prior rules retained.")
             try:
