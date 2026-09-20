@@ -1677,6 +1677,57 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G32 — Cloudflare token-verify disambiguation (Status: complete 2026-09-21)
+
+Pain: every Cloudflare 401 was inconclusive `denied` — a dead token, a
+wrong account ID, and a scope problem all looked identical, and scripts
+could not fail on a dead CF key (rc0).
+
+Bet: two verify probes (account endpoint, then user endpoint on A-401)
+turn H1's shrug into three actionable outcomes on both `keys check`
+and the setup wizard, failing closed to H1 whenever the probes cannot
+establish a fact.
+
+Execute: spike + 3-reviewer plan gate (v1 FAIL on all three axes →
+v2 answers placement/deadline/matrix/exit-code → v2.1 folds re-review:
+fresh client, URL-parsed account ID, token-hash memo, M2 gating,
+never-raises, wrong-account residual); TDD implement (red-first,
+counting MockTransport offline); adversarial review; gates green;
+commit/push.
+
+Done when:
+- [x] Probes run only on the CF-401 branch with an explicit cache
+  (7-function `cf_probe_cache` threading; None = legacy H1, zero new
+  I/O); mapper stays pure (outcome token param); `_classify_denied`
+  untouched; wizard shares the producer (full parity, no divergence).
+- [x] Outcomes: `pair_ok`→denied+scope (wizard: no replace-key offer),
+  `wrong_account`→config_error, `token_dead`/`token_expired`→auth_failed
+  (both-agree caveat pinned), `inconclusive`/`inconclusive_retry`→H1
+  denied; unknown tokens/signals fail closed; probes never raise.
+- [x] Bounds: shared remaining `_WIZARD_CHECK_SECONDS` deadline
+  (`_MIN_PROBE_SECONDS` floor, per-probe clock reads), ≤2 RTTs on the
+  401 path only, per-invocation token-hash memo (values never in keys).
+- [x] Honesty: dead-CF-key runs exit 1 (intended change from rc0);
+  ACCOUNTS.md H1/exit-code sections rewritten with residual disclosures;
+  static notes only (no token/account/URL/exception text); no new JSON
+  keys; ledger logical-equality extended to probe runs.
+- [x] 40+ verify tests green (42 in test_cf_verify.py: matrix, dedup,
+  deadline, refresh chain, redaction, never-raises; T7 wizard rows,
+  T8 exit codes, T9 ledger); full strict suite green (3222
+  collected/passed, rc0, /tmp/g32_gate_run2.log) + ruff + strict mypy
+  + docs + coverage (lines 88.01% >= 80%, branches 79.60% >= 70%)
+  green; adversarial review SHIP (6/6 fixes confirmed); pushed.
+
+Honesty residuals: dual-401 is "both verifiers agree" (a token type
+neither endpoint accepts would fool both — note says so); B-ok+A-401
+can also be a valid token without account access (note leads with the
+common wrong-account-ID case, discloses the residual); probes add ≤2
+RTTs per distinct (token, account) on the 401 path only.
+
+Effort: M (probe machinery + 7-function threading + wizard parity).
+Fit: high — wrong-account-ID is the most common CF setup fault and now
+gets an exact fix instead of replace-key guesswork.
+
 ## G31 — demand-driven tool-bench heal (Status: complete 2026-09-20)
 
 Pain: tool evidence expires after 7d and the fresh bench collapses

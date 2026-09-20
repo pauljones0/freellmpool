@@ -199,25 +199,34 @@ byte-identical to a no-flag run.
 
 Verdicts judge the KEY from what the listing proved. `ok` means the
 key was accepted; `auth_failed` means the credential was rejected at
-authentication (HTTP 401 on a single-credential provider) — the key is
+authentication (HTTP 401 on a single-credential provider, or a
+Cloudflare token rejected by both token verifiers) — the key is
 proven dead. `denied` means the listing was refused without proving the
 key bad: an authenticated 403 (often permission scope or account
 verification, but edge/geo blocks land here too — per RFC 9110 a 403
-does not establish an invalid credential), or a Cloudflare 401, which
-jointly authenticates (token, account ID) and so cannot isolate a bad
-token from a wrong `CLOUDFLARE_ACCOUNT_ID`. `denied` is inconclusive
-and its fix verifies scope out-of-band instead of replacing the key;
-Cloudflare `denied` rows name the account-ID check first.
+does not establish an invalid credential), or an inconclusive
+Cloudflare 401 (see below). `denied` is inconclusive and its fix
+verifies scope out-of-band instead of replacing the key; Cloudflare
+`denied` rows name the account-ID check first.
 
 Scope notes. "Proven dead" applies to `keys check` rows, which always
 authenticate a saved key. Discovery-level keyless 401s (a public
 listing whose provider now requires auth, keyed attempt never sent)
-mean "add the credential", not a dead key. Cloudflare keys can never
-be proven dead by a listing check: a future improvement could
-disambiguate via the token-verify endpoint, but today a Cloudflare
-401 stays inconclusive rather than risk a false death sentence. The
-setup wizard prints the same account-ID warning before offering
-replace-key (which re-collects token AND account ID).
+mean "add the credential", not a dead key. A Cloudflare listing 401
+jointly authenticates (token, account ID), so the check disambiguates
+with two token-verify probes: both verifiers rejecting the token (or
+an `expired` token status) proves the key dead (`auth_failed`); a
+token valid at the user endpoint but rejected for the account means a
+wrong `CLOUDFLARE_ACCOUNT_ID` or a token without account access
+(`config_error`); a verified pair with a refused listing is a scope
+problem (`denied`); anything the probes cannot establish fails closed
+to inconclusive `denied` rather than risk a false death sentence. The
+dual-verifier claim is slightly weaker than a single-credential 401
+(a token type neither endpoint accepts would fool both), and the row
+note says so. The setup wizard prints the matching per-outcome note
+and never offers replace-key for a verified pair; inconclusive rows
+keep the account-ID warning before offering replace-key (which
+re-collects token AND account ID).
 
 Exit codes (script-safe by default):
 
@@ -225,8 +234,9 @@ Exit codes (script-safe by default):
   `blocked`, `partial`, `deferred`, `timeout`, transport `error`) and
   uncheckable rows never fail.
 - `1` — a key was proven dead (`auth_failed`: HTTP 401 outside
-  Cloudflare, whether listing- or canary-proven) or a deterministic
-  local failure occurred (`config_error`: malformed
+  Cloudflare, whether listing- or canary-proven, or a Cloudflare token
+  rejected by both verifiers / expired) or a deterministic
+  local failure occurred (`config_error`: malformed or wrong
   `CLOUDFLARE_ACCOUNT_ID`, broken registry, internal error).
 - `2` — usage error (unknown provider, `--slot` outside 1–9, bad `--timeout`).
   Note: `keys add` uses exit 3 for its usage errors; `keys check` uses 2.

@@ -789,7 +789,8 @@ async def _afetch_page(client: httpx.AsyncClient, url: str, headers: dict[str, s
 
 async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                           result: dict[str, Any], *, deadline: float | None,
-                          progress: Callable[..., None] | None = None) -> dict[str, Any]:
+                          progress: Callable[..., None] | None = None,
+                          cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     spec = provider["discovery"]
     now = result["last_attempt_at"]
     origin = context.url
@@ -871,6 +872,13 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
             raise ValueError("Catalog exceeded pagination budget")
     except _DoneEarly as done:
         if done.row["status"] != "blocked":
+            # G32: Cloudflare 401 disambiguation runs only for callers that
+            # pass a probe cache (keys-check loop, wizard check); every other
+            # caller keeps byte-identical legacy behavior with zero extra I/O.
+            if (done.row["status"] == "auth_failed"
+                    and provider.get("id") == "cloudflare"
+                    and cf_probe_cache is not None):
+                await _maybe_cf_probe(context, deadline, cf_probe_cache)
             return done.row
         row = dict(done.row)
         row["catalog_ttl_seconds"] = spec.get("catalog_ttl_seconds", 86400)
@@ -888,14 +896,16 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
 
 async def _aattempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False,
                   deadline: float | None = None,
-                  progress: Callable[..., None] | None = None) -> dict[str, Any]:
+                  progress: Callable[..., None] | None = None,
+                  cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     now = _now()
     result = _blank_result(now)
     try:
         context = _prepare_attempt(provider, env, result, public_only=public_only)
     except _EarlyResult as early:
         return early.row
-    return await _afetch_attempt(provider, context, result, deadline=deadline, progress=progress)
+    return await _afetch_attempt(provider, context, result, deadline=deadline,
+                                 progress=progress, cf_probe_cache=cf_probe_cache)
 
 
 _T = TypeVar("_T")
@@ -1067,7 +1077,8 @@ def _run_sync(coro: Coroutine[Any, Any, _T]) -> _T:
                         asyncio.set_event_loop(None)
 
 
-def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False) -> dict[str, Any]:
+def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False,
+             cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     now = _now()
     result = _blank_result(now)
     try:
@@ -1078,13 +1089,16 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
     # sync-only: fail loudly instead of a cryptic _run_sync error.
     _ensure_no_running_loop(_CHECK_IN_LOOP)
     try:
-        return _run_sync(_afetch_attempt(provider, context, result,
-                                         deadline=time.monotonic() + _WIZARD_CHECK_SECONDS))
+        return _run_sync(_afetch_attempt(
+            provider, context, result,
+            deadline=time.monotonic() + _WIZARD_CHECK_SECONDS,
+            cf_probe_cache=cf_probe_cache))
     except _BudgetExhausted as exhausted:
         return exhausted.row
 
 
-def check_provider(provider_id: str, env: dict[str, str]) -> dict[str, Any]:
+def check_provider(provider_id: str, env: dict[str, str],
+                   cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     """GET-only wizard check. Does not write snapshots or authorize inference.
 
     Bounded by _WIZARD_CHECK_SECONDS: a fetch that cannot finish in time
@@ -1095,7 +1109,7 @@ def check_provider(provider_id: str, env: dict[str, str]) -> dict[str, Any]:
     if provider is None:
         return {"status": "unsupported", "complete": False, "model_count": 0,
                 "checked_at": None, "last_attempt_at": _now(), "note": "Provider is not in the reviewed registry."}
-    result = _attempt(provider, env)
+    result = _attempt(provider, env, cf_probe_cache=cf_probe_cache)
     return {key: value for key, value in result.items() if key != "models"} | {"model_count": len(result["models"])}
 
 
@@ -1115,6 +1129,190 @@ KEYS_CHECK_DEFERRED_NOTE = "per-call bound expired; retry"
 KEYS_CHECK_ERROR_NOTE = "transport/HTTP failure; retry"
 KEYS_CHECK_ACCOUNT_ID_FIX = "set a valid CLOUDFLARE_ACCOUNT_ID"
 KEYS_CHECK_REGISTRY_FIX = "freellmpool update --renew-evidence"
+
+# --- G32 Cloudflare token-verify disambiguation (spike v2.1) ---
+# A Cloudflare listing 401 jointly authenticates (token, account ID). Two
+# verify probes disambiguate: A (account endpoint) tests the pair jointly,
+# B (user endpoint) catches user tokens. Notes are static text only: probe
+# URLs carry the account-ID value and are never rendered (SCOPE#5).
+
+CF_VERIFY_USER_URL = "https://api.cloudflare.com/client/v4/user/tokens/verify"
+CF_VERIFY_ACCOUNT_URL = ("https://api.cloudflare.com/client/v4/accounts/"
+                         "{account_id}/tokens/verify")
+CF_VERIFY_PROBE_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=2.0)
+# Minimum remaining check-deadline to spend one probe GET (_MIN_PAGE_SECONDS
+# is the 3.0 analogy; a verify GET is a single small round-trip).
+_MIN_PROBE_SECONDS = 2.0
+# Parse-back of the substituted account ID from the listing URL (FEAS T2):
+# _AttemptContext carries no account field, and substitution at
+# _prepare_attempt guarantees the /accounts/{32hex}/ shape on this path.
+_CF_VERIFY_ACCOUNT_RE = re.compile(r"/accounts/([a-fA-F0-9]{32})(?:/|\Z)")
+
+KEYS_CHECK_CF_H1_NOTE = ("HTTP 401 does not isolate a bad token from a wrong "
+                         "CLOUDFLARE_ACCOUNT_ID; key NOT proven bad")
+KEYS_CHECK_CF_PAIR_OK_NOTE = ("pair verified at the account verify endpoint; "
+                              "listing refused (scope or account verification)")
+KEYS_CHECK_CF_WRONG_ACCOUNT_NOTE = ("token valid at the user endpoint but rejected for "
+                                    "this account: re-verify CLOUDFLARE_ACCOUNT_ID "
+                                    "(or grant the token account access)")
+KEYS_CHECK_CF_TOKEN_DEAD_NOTE = ("Cloudflare account and user verifiers both reject "
+                                 "this token (both agree: dead); replace the key")
+KEYS_CHECK_CF_TOKEN_EXPIRED_NOTE = ("Cloudflare token is expired (verify reports "
+                                    "status=expired); replace the key")
+KEYS_CHECK_CF_RETRY_SUFFIX = " (verify endpoint rate-limited; retry later)"
+
+
+def _cf_token_hash(token: str) -> str:
+    """Non-reversible memo identity for a token (COMP gap 1).
+
+    Raw token values never enter memo keys, notes, URLs, or logs; the
+    truncated hash is computed only for memo lookup, never persisted or
+    rendered.
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+
+
+def _classify_verify_response(status_code: int, body: bytes) -> str:
+    """Classify one verify-endpoint answer (v2.1 §3 table; total).
+
+    HTTP status drives; bodies parse defensively (success bool + status
+    field, never message strings). Returns ok/expired/auth/rate_limited/
+    ambiguous — unknown signals fail closed toward ambiguous.
+    """
+    if status_code == 401:
+        return "auth"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code == 200:
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return "ambiguous"
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            return "ambiguous"
+        result = payload.get("result")
+        status = result.get("status") if isinstance(result, dict) else None
+        if status == "active":
+            return "ok"
+        if status == "expired":
+            return "expired"
+    return "ambiguous"
+
+
+async def _afetch_verify_probe(url: str, token: str, remaining: float | None) -> str:
+    """One verify GET; transport/timeout failures classify as ambiguous."""
+    if remaining is None:
+        timeout = CF_VERIFY_PROBE_TIMEOUT
+    else:
+        timeout = httpx.Timeout(connect=min(5.0, remaining), read=min(10.0, remaining),
+                                write=min(5.0, remaining), pool=min(2.0, remaining))
+    headers = {"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING,
+               "Authorization": f"Bearer {token}"}
+    try:
+        async with _aclient() as client:
+            if remaining is None:
+                response = await client.get(url, headers=headers, timeout=timeout)
+            else:
+                response = await asyncio.wait_for(
+                    client.get(url, headers=headers, timeout=timeout),
+                    timeout=remaining)
+            # Non-streaming get() returns after the (timeout-bounded) body
+            # is fully received, so this read is a size check, not I/O:
+            # no deadline overrun is possible here (adversarial-4).
+            body = await abounded_response_bytes(response, _MAX_RESPONSE_BYTES)
+    except (httpx.HTTPError, TimeoutError, OSError):
+        return "ambiguous"
+    return _classify_verify_response(response.status_code, body)
+
+
+async def _aprobe_inner(token: str, account_id: str, ident: str,
+                        deadline: float | None, cache: dict[str, str]) -> str:
+    """A-then-maybe-B probe flow (v2.1 §3 rules 1-7); memoizes a:/b: entries."""
+    akey, bkey = f"a:{ident}:{account_id}", f"b:{ident}"
+    probe_a = cache.get(akey)
+    if probe_a is None:
+        # One clock read per probe: the same remaining gates the spend and
+        # bounds the GET (scripted-clock test pins the two-call sequence).
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining < _MIN_PROBE_SECONDS:
+            probe_a = "skipped"
+        else:
+            probe_a = await _afetch_verify_probe(
+                CF_VERIFY_ACCOUNT_URL.replace("{account_id}", account_id),
+                token, remaining)
+        cache[akey] = probe_a
+    if probe_a == "ok":
+        return "pair_ok"
+    if probe_a == "expired":
+        return "token_expired"
+    if probe_a == "rate_limited":
+        return "inconclusive_retry"
+    if probe_a != "auth":
+        return "inconclusive"
+    probe_b = cache.get(bkey)
+    if probe_b is None:
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining < _MIN_PROBE_SECONDS:
+            probe_b = "skipped"
+        else:
+            probe_b = await _afetch_verify_probe(CF_VERIFY_USER_URL, token, remaining)
+        cache[bkey] = probe_b
+    if probe_b == "ok":
+        return "wrong_account"
+    if probe_b == "auth":
+        return "token_dead"
+    if probe_b == "expired":
+        return "token_expired"
+    if probe_b == "rate_limited":
+        return "inconclusive_retry"
+    return "inconclusive"
+
+
+async def _aprobe_cloudflare_token(token: str, account_id: str, *,
+                                   deadline: float | None,
+                                   cache: dict[str, str]) -> str:
+    """Run Cloudflare verify probes; return the outcome token (v2.1 §3-§4).
+
+    Rule 0: a memoized outcome replays with zero new calls and no budget
+    check. Never raises: an unexpected Exception records `inconclusive`
+    instead of breaking the check path (SCOPE blocker 3); BaseException
+    (CancelledError/KeyboardInterrupt) still propagates.
+    """
+    okey = f"outcome:{_cf_token_hash(token)}:{account_id}"
+    cached = cache.get(okey)
+    if cached is not None:
+        return cached
+    try:
+        outcome = await _aprobe_inner(token, account_id, _cf_token_hash(token),
+                                      deadline, cache)
+    except Exception:
+        outcome = "inconclusive"
+    cache[okey] = outcome
+    return outcome
+
+
+async def _maybe_cf_probe(context: _AttemptContext, deadline: float | None,
+                          cache: dict[str, str]) -> None:
+    """Probe hook for the CF-401 branch; records the outcome in cache."""
+    match = _CF_VERIFY_ACCOUNT_RE.search(context.url)
+    token, account_id = context.key, match.group(1) if match else ""
+    if not token or not account_id:
+        cache[f"outcome:{_cf_token_hash(token)}:{account_id}"] = "inconclusive"
+        return
+    await _aprobe_cloudflare_token(token, account_id, deadline=deadline, cache=cache)
+
+
+def cf_probe_outcome(cache: dict[str, str]) -> str | None:
+    """Outcome token from a single-check probe cache (wizard channel).
+
+    Single-check caches (one fresh dict per wizard check) hold at most one
+    outcome: entry; multi-slot keys-check caches are read per (token,
+    account) by check_provider_slot instead.
+    """
+    for key, value in cache.items():
+        if key.startswith("outcome:"):
+            return value
+    return None
 
 
 def is_listing_checkable(provider: Mapping[str, Any]) -> bool:
@@ -1164,8 +1362,49 @@ def keys_check_missing_note(slot: int, env_var: str) -> str:
     return f"slot {slot} unconfigured ({env_var} not set or blank)"
 
 
+def _keys_check_cf_h1_fix(provider_id: str, slot: int) -> str:
+    """Account-ID-first scope fix for an inconclusive Cloudflare 401 (H1)."""
+    return ("scope: re-verify CLOUDFLARE_ACCOUNT_ID for cloudflare (a wrong "
+            "account ID fails auth with a valid token), then: freellmpool keys "
+            f"check --provider {provider_id} --slot {slot}")
+
+
+def _map_cf_probe_row(base: dict[str, Any], provider_id: str, slot: int,
+                      cf_probe: str | None) -> dict[str, Any]:
+    """Map a Cloudflare 401 onto a verdict via the probe outcome (G32, pure).
+
+    `cf_probe` is the v2.1 §4 outcome token (None when no probe cache was
+    passed). None, `inconclusive`, and unknown tokens fail closed to the
+    byte-identical H1 row — never auth_failed, never replace-key.
+    """
+    if cf_probe == "pair_ok":
+        return {**base, "verdict": "denied", "note": KEYS_CHECK_CF_PAIR_OK_NOTE,
+                "fix": keys_check_scope_fix(provider_id, slot)}
+    if cf_probe == "wrong_account":
+        return {**base, "verdict": "config_error",
+                "note": KEYS_CHECK_CF_WRONG_ACCOUNT_NOTE,
+                "fix": KEYS_CHECK_ACCOUNT_ID_FIX}
+    if cf_probe == "token_dead":
+        return {**base, "verdict": "auth_failed", "note": KEYS_CHECK_CF_TOKEN_DEAD_NOTE,
+                "fix": keys_check_replace_fix(provider_id, slot)}
+    if cf_probe == "token_expired":
+        return {**base, "verdict": "auth_failed",
+                "note": KEYS_CHECK_CF_TOKEN_EXPIRED_NOTE,
+                "fix": keys_check_replace_fix(provider_id, slot)}
+    if cf_probe == "inconclusive_retry":
+        return {**base, "verdict": "denied",
+                "note": KEYS_CHECK_CF_H1_NOTE + KEYS_CHECK_CF_RETRY_SUFFIX,
+                "fix": _keys_check_cf_h1_fix(provider_id, slot)}
+    # H1: Cloudflare jointly authenticates (token, account ID), so a 401
+    # cannot isolate a bad token from a wrong account ID. The verdict judges
+    # the KEY: denied with an account-ID scope fix — never auth_failed,
+    # never replace-key. The raw endpoint signal stays in status.
+    return {**base, "verdict": "denied", "note": KEYS_CHECK_CF_H1_NOTE,
+            "fix": _keys_check_cf_h1_fix(provider_id, slot)}
+
+
 def _map_slot_row(provider_id: str, slot: int, env_var: str,
-                  raw: dict[str, Any]) -> dict[str, Any]:
+                  raw: dict[str, Any], cf_probe: str | None = None) -> dict[str, Any]:
     """Map one raw listing row onto a keys-check verdict row (total mapping)."""
     status = raw.get("status")
     base: dict[str, Any] = {"provider": provider_id, "slot": slot, "env_var": env_var,
@@ -1178,17 +1417,7 @@ def _map_slot_row(provider_id: str, slot: int, env_var: str,
                 "fix": keys_check_retry_fix(provider_id, slot)}
     if status == "auth_failed":
         if provider_id == "cloudflare":
-            # H1: Cloudflare jointly authenticates (token, account ID), so a
-            # 401 cannot isolate a bad token from a wrong account ID. The
-            # verdict judges the KEY: denied/inconclusive with an account-ID
-            # scope fix — never auth_failed, never replace-key. The raw
-            # endpoint signal stays in status.
-            return {**base, "verdict": "denied",
-                    "note": ("HTTP 401 does not isolate a bad token from a wrong "
-                             "CLOUDFLARE_ACCOUNT_ID; key NOT proven bad"),
-                    "fix": ("scope: re-verify CLOUDFLARE_ACCOUNT_ID for cloudflare (a wrong "
-                            "account ID fails auth with a valid token), then: freellmpool keys "
-                            f"check --provider {provider_id} --slot {slot}")}
+            return _map_cf_probe_row(base, provider_id, slot, cf_probe)
         return {**base, "verdict": "auth_failed", "note": KEYS_CHECK_AUTH_FAILED_NOTE,
                 "fix": keys_check_replace_fix(provider_id, slot)}
     if status == "rate_limited":
@@ -1225,7 +1454,8 @@ def _map_slot_row(provider_id: str, slot: int, env_var: str,
     raise ValueError(f"unmapped discovery status: {status!r}")
 
 
-def check_provider_slot(provider_id: str, env: dict[str, str], slot: int) -> dict[str, Any]:
+def check_provider_slot(provider_id: str, env: dict[str, str], slot: int,
+                        cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     """Validate one key slot over the GET-only listing path. Zero inference.
 
     Slot 1 reads the bare credential var, slot N > 1 reads ``VAR_N``. Slots
@@ -1260,7 +1490,14 @@ def check_provider_slot(provider_id: str, env: dict[str, str], slot: int) -> dic
                 "catalog_access": None, "attempted": False}
     slot_env = dict(env)
     slot_env[key_env] = env[env_var]
-    return _map_slot_row(provider_id, slot, env_var, check_provider(provider_id, slot_env))
+    raw = check_provider(provider_id, slot_env, cf_probe_cache=cf_probe_cache)
+    cf_probe: str | None = None
+    if (cf_probe_cache is not None and provider_id == "cloudflare"
+            and raw.get("status") == "auth_failed"):
+        token = slot_env.get(key_env, "")
+        account_id = slot_env.get("CLOUDFLARE_ACCOUNT_ID", "")
+        cf_probe = cf_probe_cache.get(f"outcome:{_cf_token_hash(token)}:{account_id}")
+    return _map_slot_row(provider_id, slot, env_var, raw, cf_probe=cf_probe)
 
 
 # --- G30 `--canary`: opt-in inference canary for uncheckable providers ---
@@ -1548,7 +1785,8 @@ async def _acquire_lock(lock_path: Path, deadline: float | None) -> Any:
 async def _arefresh_impl(env: dict[str, str], registry: dict[str, dict[str, Any]],
                          requested: list[str], public_only: bool, destination: Path, *,
                          deadline: float | None,
-                         progress: Callable[..., None] | None) -> dict[str, Any]:
+                         progress: Callable[..., None] | None,
+                         cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     lock_path = destination.with_suffix(destination.suffix + ".lock")
     lock = await _acquire_lock(lock_path, deadline)
     with lock:
@@ -1575,7 +1813,7 @@ async def _arefresh_impl(env: dict[str, str], registry: dict[str, dict[str, Any]
             try:
                 rows[provider_id] = await _aattempt(
                     registry[provider_id], env, public_only=public_only, deadline=deadline,
-                    progress=progress)
+                    progress=progress, cf_probe_cache=cf_probe_cache)
             except _BudgetExhausted as exhausted:
                 rows[provider_id] = exhausted.row
                 for rest in requested[index + 1:]:
@@ -1613,7 +1851,8 @@ async def _arefresh_impl(env: dict[str, str], registry: dict[str, dict[str, Any]
 def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
                     public_only: bool = False, path: Path | str | None = None, *,
                     deadline: float | None = None,
-                    progress: Callable[..., None] | None = None) -> dict[str, Any]:
+                    progress: Callable[..., None] | None = None,
+                    cf_probe_cache: dict[str, str] | None = None) -> dict[str, Any]:
     """Refresh requested catalogs and atomically reconcile against last-good data.
 
     A lock serializes writers (including separate scheduled/CLI processes). The
@@ -1627,7 +1866,8 @@ def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
     _ensure_no_running_loop(_REFRESH_IN_LOOP)
     destination, registry, requested = _prepare_refresh(env, provider_ids, public_only, path)
     return _run_sync(_arefresh_impl(env, registry, requested, public_only, destination,
-                                      deadline=deadline, progress=progress))
+                                      deadline=deadline, progress=progress,
+                                      cf_probe_cache=cf_probe_cache))
 
 
 async def arefresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,

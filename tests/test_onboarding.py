@@ -221,3 +221,77 @@ def test_public_catalog_does_not_claim_key_was_validated(tmp_path, eligible):
     assert "Key accepted" not in rendered
     assert "Free access is ready" not in rendered
     assert "API key validity" in rendered
+
+
+def _cf_flow(tmp_path, result, prompts):
+    """Run the Cloudflare wizard leg with a canned check result."""
+    registry = _registry()
+    registry["cloudflare"] = {"id": "cloudflare", "display_name": "Cloudflare",
+                              "credential_env": "CLOUDFLARE_KEY",
+                              "grants": [{"kind": "recurring_quota", "status": "verified"}],
+                              "setup": {"signup_url": "https://example.test/signup",
+                                        "key_url": "https://example.test/keys",
+                                        "steps": ["Choose the Free plan."],
+                                        "required_env": ["CLOUDFLARE_KEY"]}}
+    output = []
+
+    def ask(prompt):
+        prompts.append(prompt)
+        return ""
+
+    run_onboarding(provider="cloudflare", registry=registry,
+                   env={"FREELLMPOOL_CONFIG_FILE": str(tmp_path / "cf.toml")},
+                   progress_path=tmp_path / "cf.json", input_fn=ask,
+                   secret_fn=lambda _: "private-value",
+                   check=lambda *_: result, output=output.append)
+    return output
+
+
+@pytest.mark.parametrize(("outcome", "note"), [
+    ("pair_ok", "Cloudflare note: token and account ID are verified — "
+                "the listing refusal is a scope or account-verification "
+                "issue, not a bad key."),
+    ("wrong_account", "Cloudflare note: the token is valid but rejected for this "
+                      "account — re-verify CLOUDFLARE_ACCOUNT_ID (or grant the "
+                      "token account access)."),
+    ("token_dead", "Cloudflare note: both account and user verifiers reject "
+                   "this token (both agree: dead) — replace the key."),
+    ("token_expired", "Cloudflare note: the token is expired (verify reports "
+                      "status=expired) — replace the key."),
+])
+def test_wizard_probe_outcome_prints_own_note_and_suppresses_m2(tmp_path, outcome, note):
+    """G32 T7: definitive probe outcomes get their own note; the generic
+    019/M2 account-ID warning is suppressed (COMP gap 4)."""
+    prompts: list = []
+    output = _cf_flow(tmp_path, {"status": "auth_failed", "note": "diagnostic-note",
+                                 "cloudflare_probe": outcome}, prompts)
+    assert note in output
+    assert CLOUDFLARE_AUTH_FAILED_HINT not in output
+
+
+@pytest.mark.parametrize("outcome", [None, "inconclusive", "inconclusive_retry",
+                                     "bogus-future-token"])
+def test_wizard_inconclusive_or_unknown_outcome_keeps_m2(tmp_path, outcome):
+    """G32 T7: absent/inconclusive/unknown outcomes fail closed to the M2 note."""
+    prompts: list = []
+    result: dict = {"status": "auth_failed", "note": "diagnostic-note"}
+    if outcome is not None:
+        result["cloudflare_probe"] = outcome
+    output = _cf_flow(tmp_path, result, prompts)
+    assert CLOUDFLARE_AUTH_FAILED_HINT in output
+
+
+def test_wizard_pair_ok_breaks_without_replace_key_offer(tmp_path):
+    """G32 T7: a verified pair never offers replace-key (COMP#3 row-1 fix)."""
+    prompts: list = []
+    _cf_flow(tmp_path, {"status": "auth_failed", "note": "diagnostic-note",
+                        "cloudflare_probe": "pair_ok"}, prompts)
+    assert not [p for p in prompts if "k=replace key" in p]
+
+
+def test_wizard_token_dead_still_offers_replace_key(tmp_path):
+    """G32 T7: a dead token keeps the replace-key offer (it re-collects)."""
+    prompts: list = []
+    _cf_flow(tmp_path, {"status": "auth_failed", "note": "diagnostic-note",
+                        "cloudflare_probe": "token_dead"}, prompts)
+    assert [p for p in prompts if "k=replace key" in p]

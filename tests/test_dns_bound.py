@@ -411,7 +411,8 @@ def test_wizard_check_seconds_pinned():
 def test_wizard_drip_returns_deferred_row_without_models(monkeypatch):
     seen: dict = {}
 
-    async def fake_fetch(provider, context, result, *, deadline, progress=None):
+    async def fake_fetch(provider, context, result, *, deadline, progress=None,
+                         cf_probe_cache=None):
         seen["deadline"] = deadline
         raise d._BudgetExhausted(d._deferred_row(result["last_attempt_at"], "drip note"))
 

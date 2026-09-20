@@ -368,9 +368,9 @@ def test_canary_never_touches_checkable(monkeypatch, capsys, tmp_path):
     calls: list = []
     real = disc.check_provider
 
-    def spy(pid, env):
+    def spy(pid, env, **kwargs):
         calls.append(pid)
-        return real(pid, env)
+        return real(pid, env, **kwargs)
 
     monkeypatch.setattr(disc, "check_provider", spy)
     rc, out, _ = run_check(

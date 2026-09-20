@@ -1282,6 +1282,9 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
     deadline = time.monotonic() + float(timeout)
     attempt = 0
     rows: list[dict[str, Any]] = []
+    # G32: one probe cache per invocation — Cloudflare verify outcomes memoize
+    # across slots sharing a (token, account) pair (spike v2.1 §5).
+    cf_probe_cache: dict[str, str] = {}
     for step in plan:
         if step["kind"] == "row":
             rows.append(step["row"])
@@ -1303,7 +1306,8 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
             if is_canary:
                 rows.append(check_canary_slot(pid, snapshot, slot))
             else:
-                rows.append(check_provider_slot(pid, snapshot, slot))
+                rows.append(check_provider_slot(pid, snapshot, slot,
+                                                cf_probe_cache=cf_probe_cache))
         except Exception as exc:  # noqa: BLE001 - per-slot containment, never tracebacks
             # M4: this note is the only dynamic keys-check string (every other
             # note/fix is static text + ids/var names), so the exception text

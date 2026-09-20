@@ -437,19 +437,33 @@ def cmd_setup_clients(args: argparse.Namespace) -> int:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    from .discovery import DiscoveryBusy, budget_seconds, refresh_catalog, stderr_progress_printer
+    from .discovery import (
+        DiscoveryBusy,
+        budget_seconds,
+        cf_probe_outcome,
+        refresh_catalog,
+        stderr_progress_printer,
+    )
     from .onboarding import run_onboarding
     def check(pid: str, env: dict[str, str]) -> dict[str, Any]:
         # CTO-2: setup is interactive (user-paced), so each check arms its own
         # full budget. A shared wall deadline would expire while the user reads.
         try:
+            # G32: a fresh probe cache per check; the outcome rides back on
+            # the in-memory row only (the snapshot was already written).
+            probes: dict[str, str] = {}
             result = refresh_catalog(env, provider_ids=[pid],
                                      deadline=time.monotonic() + budget_seconds(env),
-                                     progress=stderr_progress_printer())
+                                     progress=stderr_progress_printer(),
+                                     cf_probe_cache=probes)
         except DiscoveryBusy:
             return {"status": "error",
                     "note": "Another catalog refresh is running; retry this provider later."}
-        return cast(dict[str, Any], result.get("providers", {}).get(pid, {"status": "error"}))
+        row = cast(dict[str, Any], result.get("providers", {}).get(pid, {"status": "error"}))
+        outcome = cf_probe_outcome(probes)
+        if outcome is not None:
+            row["cloudflare_probe"] = outcome
+        return row
     result = run_onboarding(provider=args.provider, resume=args.resume, check=check,
                             eligibility=lambda pid: any(r.provider.id == pid for r in ManagedPool.from_default_config().snapshot().routes))
     if result == 0 and not args.no_clients:

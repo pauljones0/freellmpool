@@ -411,13 +411,34 @@ def run_onboarding(
                 note = _safe_note(result.get("note"), (credentials.get(name, "") for name in names))
                 if note:
                     output(note)
+                # G32: verify-probe outcome from the check closure, when the
+                # check ran probes (absent on legacy doubles and skipped probes).
+                probe_outcome = result.get("cloudflare_probe")
                 if status == "auth_failed" and provider_id == "cloudflare":
-                    # 019/M2: a wrong account ID 401s with a valid token; say
-                    # so after the diagnostic it explains, before the wizard
-                    # offers replace-key (which re-collects token AND account
-                    # ID via required_env, so the offer itself stays valid).
-                    output("Cloudflare note: a wrong CLOUDFLARE_ACCOUNT_ID is rejected here "
-                           "with a valid token — re-verify the account ID before replacing the key.")
+                    if probe_outcome == "pair_ok":
+                        output("Cloudflare note: token and account ID are verified — "
+                               "the listing refusal is a scope or account-verification "
+                               "issue, not a bad key.")
+                    elif probe_outcome == "wrong_account":
+                        output("Cloudflare note: the token is valid but rejected for this "
+                               "account — re-verify CLOUDFLARE_ACCOUNT_ID (or grant the "
+                               "token account access).")
+                    elif probe_outcome == "token_dead":
+                        output("Cloudflare note: both account and user verifiers reject "
+                               "this token (both agree: dead) — replace the key.")
+                    elif probe_outcome == "token_expired":
+                        output("Cloudflare note: the token is expired (verify reports "
+                               "status=expired) — replace the key.")
+                    else:
+                        # 019/M2: a wrong account ID 401s with a valid token; say
+                        # so after the diagnostic it explains, before the wizard
+                        # offers replace-key (which re-collects token AND account
+                        # ID via required_env, so the offer itself stays valid).
+                        # Gated to non-definitive outcomes only (COMP gap 4):
+                        # definitive outcomes print their own note above, while
+                        # absent/inconclusive/unknown tokens fail closed here.
+                        output("Cloudflare note: a wrong CLOUDFLARE_ACCOUNT_ID is rejected here "
+                               "with a valid token — re-verify the account ID before replacing the key.")
                 ready = bool(status == "ok" and eligibility is not None and eligibility(provider_id))
                 if ready:
                     output("Free routes are admitted by the gateway. Inference has not been tested.")
@@ -429,9 +450,15 @@ def run_onboarding(
                 if status == "ok" and attested == "s":
                     final_status = "account_unverified"
                 save(provider_id, final_status, note)
-                if status in {"ok", "unsupported", "blocked", "denied"}:
+                pair_ok = (status == "auth_failed" and provider_id == "cloudflare"
+                           and probe_outcome == "pair_ok")
+                if status in {"ok", "unsupported", "blocked", "denied"} or pair_ok:
                     # denied breaks like blocked (018): never offer replace-key
-                    # for a credential the 403 did not prove bad.
+                    # for a credential the 403 did not prove bad. G32 pair_ok
+                    # breaks the same way: the pair is verified, so replace-key
+                    # would discard a good token (COMP#3 row-1 fix). The status
+                    # conjunct is defensive: real closures only yield pair_ok
+                    # on CF auth_failed (adversarial-6).
                     break
                 while True:
                     answer = input_fn("Enter=next provider, r=retry check, k=replace key, o=open key page, q=quit: ").strip().lower()

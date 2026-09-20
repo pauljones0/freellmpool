@@ -240,7 +240,7 @@ def test_check_provider_slot_sends_suffix_value(monkeypatch):
 
 def test_check_provider_slot_unmapped_status_fails_loud(monkeypatch):
     monkeypatch.setattr(d, "check_provider",
-                        lambda pid, env: {"status": "future-status"})
+                        lambda pid, env, **_: {"status": "future-status"})
     with pytest.raises(ValueError, match="future-status"):
         d.check_provider_slot("groq", slot_env("groq"), 1)
 
@@ -889,7 +889,7 @@ def test_wrapper_exception_becomes_config_error(monkeypatch, capsys):
     scrub_env(monkeypatch)
     monkeypatch.setenv("GROQ_API_KEY", "probe-key")
 
-    def explode(pid, env):
+    def explode(pid, env, **_):
         raise RuntimeError("wrapped boom sk-abcdefgh12345678")
 
     monkeypatch.setattr(d, "check_provider", explode)
@@ -996,11 +996,27 @@ def test_redact_secrets_unit_sk_and_bearer_shapes():
     assert redact_secrets("plain note, no secrets") == "plain note, no secrets"
 
 
-def test_cloudflare_401_is_denied_not_dead(monkeypatch, capsys):
-    """H1: a Cloudflare 401 jointly authenticates (token, account ID), so it
-    cannot isolate a bad token from a wrong account ID. Verdict denied
-    (inconclusive, rc0, scope-family fix) — never auth_failed, never failed,
-    never replace-key."""
+def _cf_routed_handler(*, listing, probe_a, probe_b):
+    """Route listing + verify URLs to per-endpoint canned (status, json)."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/ai/models/search"):
+            status, payload = listing
+        elif path.endswith("/user/tokens/verify"):
+            status, payload = probe_b
+        elif path.endswith("/tokens/verify"):
+            status, payload = probe_a
+        else:
+            raise AssertionError(f"unexpected URL {request.url}")
+        return httpx.Response(status, json=payload)
+    return handler
+
+
+def test_cloudflare_401_without_probes_is_denied_not_dead(monkeypatch, capsys):
+    """H1 legacy path: without a probe cache, a Cloudflare 401 jointly
+    authenticates (token, account ID), so it cannot isolate a bad token from
+    a wrong account ID. Verdict denied (inconclusive, scope-family fix) —
+    never auth_failed, never replace-key."""
     install_fake(monkeypatch, _scenario_handler("auth_failed", "cloudflare"))
     row = d.check_provider_slot("cloudflare", slot_env("cloudflare"), 1)
     assert row["verdict"] == "denied"
@@ -1012,15 +1028,39 @@ def test_cloudflare_401_is_denied_not_dead(monkeypatch, capsys):
                           "check --provider cloudflare --slot 1")
     assert row["attempted"] is True
 
-    rc, envelope, err = _verdict(monkeypatch, capsys, "cloudflare",
-                                 _scenario_handler("auth_failed", "cloudflare"))
+
+def test_cloudflare_dual_401_is_dead_and_fails(monkeypatch, capsys):
+    """G32 T8 (intended behavior change): when both verifiers reject the
+    token, the CF row is auth_failed/failed and the run exits 1. The
+    all-401 fake answers 401 to the probes too, so dual-401 is honest."""
+    rc, envelope, _ = _verdict(monkeypatch, capsys, "cloudflare",
+                               _scenario_handler("auth_failed", "cloudflare"))
+    assert rc == 1
+    assert envelope["summary"] == {"checked": 1, "ok": 0, "failed": 1,
+                                   "inconclusive": 0, "uncheckable": 0}
+    row = envelope["rows"][0]
+    assert row["verdict"] == "auth_failed"
+    assert row["status"] == "auth_failed"
+    assert "both" in row["note"] and "agree" in row["note"]
+    assert set(row) == {"provider", "slot", "env_var", "verdict", "status",
+                        "note", "fix"}  # no new JSON keys (SCOPE#7)
+    rc, _, _ = _verdict(monkeypatch, capsys, "cloudflare",
+                        _scenario_handler("auth_failed", "cloudflare"), strict=True)
+    assert rc == 1
+
+
+def test_cloudflare_inconclusive_probes_stay_rc0(monkeypatch, capsys):
+    """G32 T8: ambiguous probes fail closed to denied/inconclusive/rc0."""
+    handler = _cf_routed_handler(listing=(401, {}), probe_a=(500, {}),
+                                 probe_b=(200, {"success": True,
+                                                "result": {"status": "active"}}))
+    rc, envelope, err = _verdict(monkeypatch, capsys, "cloudflare", handler)
     assert rc == 0
     assert envelope["summary"] == {"checked": 1, "ok": 0, "failed": 0,
                                    "inconclusive": 1, "uncheckable": 0}
     assert "verify scope with the provider(s)" in err
-    rc, _, _ = _verdict(monkeypatch, capsys, "cloudflare",
-                        _scenario_handler("auth_failed", "cloudflare"), strict=True)
-    assert rc == 1
+    rc, _, _ = _verdict(monkeypatch, capsys, "cloudflare", handler, strict=True)
+    assert rc == 1  # --strict fails closed on inconclusive rows
 
 
 def test_non_cloudflare_auth_failed_note_unchanged(monkeypatch):
@@ -1037,7 +1077,7 @@ def test_internal_error_note_value_redacts_unprefixed_key(monkeypatch, capsys):
     key = f"probe-unprefixed-{secrets.token_hex(8)}"
     monkeypatch.setenv("GROQ_API_KEY", key)
 
-    def boom(pid, env):
+    def boom(pid, env, **_):
         raise ValueError(f"synthetic failure echoing {key}")
 
     monkeypatch.setattr(d, "check_provider", boom)
@@ -1092,3 +1132,20 @@ def test_zero_inference_ledger_logical_equality(monkeypatch, capsys):
     after = (ledger.summary(), ledger.export())
     assert rc == 0
     assert before == after
+
+
+def test_probe_run_ledger_logical_equality(monkeypatch, capsys):
+    """G32 T9: verify probes are read-only GETs — a CF-401 probe run moves
+    neither the allowance ledger nor any cursor/snapshot state."""
+    scrub_env(monkeypatch)
+    install_fake(monkeypatch, _cf_routed_handler(
+        listing=(401, {}), probe_a=(401, {}),
+        probe_b=(200, {"success": True, "result": {"status": "active"}})))
+    monkeypatch.setenv(base_key("cloudflare"), "probe-key")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", VALID_ACCOUNT_ID)
+    ledger = AllowanceLedger()
+    before = (ledger.summary(), ledger.export())
+    rc, out, err = run_check(make_args(provider="cloudflare", json=True), capsys)
+    after = (ledger.summary(), ledger.export())
+    assert before == after
+    assert json.loads(out)["rows"][0]["verdict"] == "config_error"
