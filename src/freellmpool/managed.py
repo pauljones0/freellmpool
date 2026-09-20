@@ -42,6 +42,7 @@ from .errors import (
     ContextWindowExceeded,
     ProviderHTTPError,
     StructuredOutputError,
+    UnknownModel,
     with_auth_hint,
 )
 from .free_policy import admit, credential_fingerprint, fresh, load_accounts, timestamp
@@ -54,7 +55,13 @@ from .prefixcache import cached_prompt_tokens as _cached_prompt_tokens
 from .provider_registry import reviewed_limit_capacity
 from .quota import QuotaStore
 from .route_health import RouteHealthStore, default_route_health_path
-from .router import Pool, Target, _is_account_quota_exhaustion
+from .router import (
+    PSEUDO_MODELS,
+    Pool,
+    Target,
+    _is_account_quota_exhaustion,
+    pin_misses_catalog,
+)
 from .routing_modes import normalize_routing_mode
 from .stats import StatsStore
 
@@ -136,6 +143,10 @@ class Snapshot:
     generation: str
     routes: tuple[Route, ...]
     providers: tuple[JSON, ...]
+    # Every well-formed model id in this discovery generation, admitted or
+    # not (G28): pin-miss identity binds to the same generation as route
+    # admission, so paid/discovery-only pins stay "existing but unserved".
+    known_models: frozenset[str] = frozenset()
 
 
 class _AccountingError(ValueError):
@@ -248,6 +259,7 @@ class ManagedPool(Pool):
         now = self._wall_clock()
         routes: list[Route] = []
         statuses: list[JSON] = []
+        known_models: set[str] = set()
         max_age = finite_float(request_env.get("FREELLMPOOL_CATALOG_MAX_AGE_SECONDS", "172800"),
                                172800.0, minimum=60.0, maximum=604800.0)
         for pid, spec in registry.items():
@@ -290,6 +302,7 @@ class ManagedPool(Pool):
                 if not isinstance(metadata, dict) or not isinstance(metadata.get("id"), str):
                     continue
                 model_id = metadata["id"]
+                known_models.add(model_id)
                 for modality in metadata.get("modalities", []):
                     if modality not in {"chat", "embedding", "transcription"}:
                         continue
@@ -345,7 +358,7 @@ class ManagedPool(Pool):
              "limits": [asdict(limit) for limit in r.limits],
              "credential_ref": credential_fingerprint(r.provider.id, "\0".join(r.provider.api_keys(r.env)))}
             for r in routes]], sort_keys=True).encode()).hexdigest()[:16]
-        result = Snapshot(generation, tuple(routes), tuple(statuses))
+        result = Snapshot(generation, tuple(routes), tuple(statuses), frozenset(known_models))
         with self._snapshot_lock:
             self.env = request_env
             for attr, modality in (("providers", "chat"), ("embedders", "embedding"), ("transcribers", "transcription")):
@@ -439,7 +452,7 @@ class ManagedPool(Pool):
         from . import privacy as privacy_mod
 
         include = set(providers or [])
-        if model in {"auto", "free", "free-coding", "free-fast", "free-quality"}:
+        if model in PSEUDO_MODELS:
             model = None
         routes = [r for r in snapshot.routes if r.modality == modality and
                   (not include or r.provider.id in include) and
@@ -467,6 +480,18 @@ class ManagedPool(Pool):
         too_small = [r for r in routes if r.metadata.get("context") and estimate > r.metadata["context"]]
         routes = [r for r in routes if r not in too_small]
         if not routes:
+            # Global pre-feature pin check (G28): identity binds to the same
+            # generation as admission. A pin naming nothing admitted and
+            # nothing in this generation (nor the explicit pool providers) is
+            # UnknownModel; discovery-only/paid/off pins stay generic.
+            modality_routes = [r for r in snapshot.routes if r.modality == modality]
+            explicit_models = {m.name for p in (self._catalog_override or ()) for m in p.models}
+            if (model is not None and modality_routes
+                    and pin_misses_catalog(model, lambda m: m in snapshot.known_models
+                                           or m in explicit_models)):
+                singled = sorted(include)
+                pin = f"{singled[0]}/{model}" if len(singled) == 1 else model
+                raise UnknownModel([], pin=pin)
             if too_small:
                 raise ContextWindowExceeded([(r.name, "context window too small") for r in too_small], est_tokens=estimate)
             if FEATURE_VISION in features and not probe:

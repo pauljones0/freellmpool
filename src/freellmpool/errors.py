@@ -94,6 +94,36 @@ class ContextWindowExceeded(AllProvidersExhausted):
         )
 
 
+class UnknownModel(AllProvidersExhausted):
+    """A model pin names nothing the pool's generation serves or knows (G28).
+
+    A subclass of :class:`AllProvidersExhausted` so existing handlers still
+    catch it; the proxy surfaces it as HTTP 404 (OpenAI's "model does not
+    exist"), never 502/503. Identity binds to the same immutable inputs as
+    admission (managed: discovery generation + explicit providers; router:
+    constructor target index) — never a reloaded catalog. Pins naming a
+    known-but-unserved model (paid, discovery-only, off-by-default) keep the
+    generic guidance instead. The pin is the EFFECTIVE pin after alias and
+    ``provider/model``-shorthand resolution, so a stale alias can name a
+    string the caller never typed; the ``models``/``update`` pointers still
+    recover. Pins are catalog names, never key material, and are sanitized
+    (no control characters, truncated) before display.
+    """
+
+    def __init__(self, attempts: list[tuple[str, str]], *, pin: str):
+        display = "".join(ch for ch in pin if ch.isprintable())
+        if len(display) > 120:
+            display = display[:120] + "…"
+        message = (f"unknown model '{display}'. Run 'freellmpool models' to list "
+                   f"current models, or 'freellmpool update' to refresh the catalog.")
+        super().__init__(attempts, client_status=404, client_message=message)
+        self.args = (message,)
+
+    def __str__(self) -> str:
+        assert self.client_message is not None
+        return self.client_message
+
+
 class ProviderHTTPError(FreeLLMPoolError):
     """A provider returned a non-success HTTP status.
 

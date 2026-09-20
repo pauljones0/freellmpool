@@ -15,6 +15,7 @@ from .errors import (
     ContextWindowExceeded,
     FreeLLMPoolError,
     NoProvidersConfigured,
+    UnknownModel,
 )
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply
@@ -46,5 +47,6 @@ __all__ = [
     "NoProvidersConfigured",
     "AllProvidersExhausted",
     "ContextWindowExceeded",
+    "UnknownModel",
     "__version__",
 ]

@@ -2852,6 +2852,47 @@ def test_proxy_error_never_echoes_upstream_key(providers, env, quota):
         httpd.server_close()
 
 
+def test_proxy_unknown_model_returns_404(server):
+    """G28: an unknown chat model pin is a 404 with the pin + pointers, not a 502/503."""
+    req = urllib.request.Request(
+        server + "/v1/chat/completions",
+        data=json.dumps({"model": "no-such-model",
+                         "messages": [{"role": "user", "content": "hi"}]}).encode(),
+        headers={"Content-Type": "application/json"})
+    with pytest.raises(urllib.error.HTTPError) as exc_info:
+        urllib.request.urlopen(req)  # noqa: S310 (localhost test)
+    assert exc_info.value.code == 404
+    body = json.dumps(json.load(exc_info.value))
+    assert "unknown model 'no-such-model'" in body
+    assert "freellmpool models" in body and "freellmpool update" in body
+
+
+def test_proxy_managed_unknown_model_returns_404(tmp_path):
+    """G28/n4: managed-pool proxy maps pin-miss to 404 like the legacy pool."""
+    from test_managed_runtime import make_pool as make_managed_pool
+
+    pool = make_managed_pool(tmp_path)
+    httpd = serve(pool, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://127.0.0.1:{httpd.server_address[1]}"
+        req = urllib.request.Request(
+            base + "/v1/chat/completions",
+            data=json.dumps({"model": "no-such-model",
+                             "messages": [{"role": "user", "content": "hi"}]}).encode(),
+            headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(req)  # noqa: S310 (localhost test)
+        assert exc_info.value.code == 404
+        body = json.dumps(json.load(exc_info.value))
+        assert "unknown model 'no-such-model'" in body
+        assert "freellmpool models" in body and "freellmpool update" in body
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_status_tokenmax_omits_prompt_after_run(server):
     """A finished swarm must not leave the user's prompt fragment in /status."""
     sentinel = "tokenmax-prompt-sentinel-q8w2-secret-fragment"

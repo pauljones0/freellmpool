@@ -92,6 +92,18 @@ def _runtime_catalog() -> list[Provider]:
     return list(by_id.values())
 
 
+def _print_exhaustion(exc: AllProvidersExhausted) -> None:
+    """Print an exhaustion failure with its recovering tail (G28 C2).
+
+    The tailored client_message (cooldown, pin pointers, private/vision
+    guidance) is what the proxy already sends; the CLI shows it too unless
+    str(exc) already carries it (UnknownModel/ContextWindowExceeded).
+    """
+    print(f"freellmpool: {exc}", file=sys.stderr)
+    if exc.client_message and exc.client_message not in str(exc):
+        print(f"freellmpool: {exc.client_message}", file=sys.stderr)
+
+
 def cmd_ask(args: argparse.Namespace) -> int:
     stdin = _read_stdin()
     prompt = args.prompt or ""
@@ -164,19 +176,25 @@ def cmd_ask(args: argparse.Namespace) -> int:
         if args.json:
             print("freellmpool: --json is not supported with --second-opinion", file=sys.stderr)
             return 2
-        result = run_panel(
-            pool,
-            prompt=prompt,
-            system=system,
-            n=args.opinions,
-            routing=routing or "quality",
-            model=model_filter,
-            providers=provider_filter,
-            max_tokens=max_tokens,
-            timeout=args.timeout,
-            synthesize=args.synthesize,
-            task=task,
-        )
+        try:
+            result = run_panel(
+                pool,
+                prompt=prompt,
+                system=system,
+                n=args.opinions,
+                routing=routing or "quality",
+                model=model_filter,
+                providers=provider_filter,
+                max_tokens=max_tokens,
+                timeout=args.timeout,
+                synthesize=args.synthesize,
+                task=task,
+            )
+        except AllProvidersExhausted as exc:
+            # A pin-miss raises out of rank_targets; report it like the main
+            # path instead of a traceback (G28 R6).
+            _print_exhaustion(exc)
+            return 4
         if not result.answers:
             print("freellmpool: no providers configured", file=sys.stderr)
             return 3
@@ -224,7 +242,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
         print(f"freellmpool: {exc}", file=sys.stderr)
         return 3
     except AllProvidersExhausted as exc:
-        print(f"freellmpool: {exc}", file=sys.stderr)
+        _print_exhaustion(exc)
         return 4
 
     text = reply.text

@@ -190,7 +190,7 @@ def test_pool_transcribe_all_models_disabled_raises_no_providers():
 
 
 def test_pool_transcribe_unknown_pin_raises_no_providers():
-    # pinning a provider/model that matches nothing must be NoProvidersConfigured (→ 503),
+    # pinning a provider that matches nothing must be NoProvidersConfigured (→ 503),
     # not AllProvidersExhausted([]) (→ 502).
     def post(url, headers, files, data, timeout):
         return C.HTTPResult(200, {"text": "ok"}, "")
@@ -200,8 +200,25 @@ def test_pool_transcribe_unknown_pin_raises_no_providers():
     )
     with pytest.raises(NoProvidersConfigured):
         pool.transcribe(b"AUDIO", "a.wav", providers=["nonexistent"])
-    with pytest.raises(NoProvidersConfigured):
+
+
+def test_pool_transcribe_unknown_model_pin_raises_unknown_model():
+    # G28/m1 contract change: an unknown MODEL pin is UnknownModel (→ 404
+    # with pointers), not NoProvidersConfigured (→ 503). The old test above
+    # pinned the misleading 503 for both halves; the provider half keeps it
+    # (no model pin to classify) while the model half now names the pin.
+    # The never-502-on-pin-miss intent is preserved and strengthened.
+    from freellmpool.errors import UnknownModel
+
+    def post(url, headers, files, data, timeout):
+        return C.HTTPResult(200, {"text": "ok"}, "")
+
+    pool = Pool(
+        [], env={"A_KEY": "a"}, transcribers=[_transcriber("alpha", "A_KEY")], transcribe_post=post
+    )
+    with pytest.raises(UnknownModel) as error:
         pool.transcribe(b"AUDIO", "a.wav", model="no-such-model")
+    assert error.value.client_status == 404
 
 
 def test_pool_transcribe_all_fail_raises():

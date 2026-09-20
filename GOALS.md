@@ -1499,6 +1499,67 @@ caller-owned loops.
 
 Effort: S. Fit: high — closes the last G26-listed residual.
 
+## G28 — unknown-model pins fail loudly with recovery (Status: complete 2026-09-20)
+
+Pain: a removed/typo'd `--model` pin reported "all providers exhausted"
+or "no providers configured" — the opposite of the truth when hundreds of
+routes are ready — with no next step. Paid/discovery-only pins risked the
+same misdiagnosis in the other direction (404 for a model that exists).
+
+Bet: classify the pin against the SAME generation admission uses, so
+unknown names 404 with `models`/`update` pointers while known-but-unserved
+pins (paid, discovery-only, off-by-default, provider-excluded,
+feature-missed) keep the generic guidance.
+
+Execute: small design + adversarial review (R1-R8, all folded); TDD
+implement (red-first); supervisor counterexamples reproduced and closed
+with their own probes (015 discovery-only pin → 403, independently
+re-verified by root); independent tree review (SHIP) with M1/m1/n4 folded
+pre-commit; transport-leak root-caused to third-party httpcore with a
+pinned regression; gates green; commit/push.
+
+Done when:
+- [x] `UnknownModel` (an `AllProvidersExhausted` subclass, 404 + pin +
+  `models`/`update` pointers, sanitized/truncated) raised on chat, stream,
+  aio, proxy (buffered/streaming/Anthropic → HTTP 404), CLI (tail + rc 4),
+  legacy `rank_targets`, and legacy embed/transcribe; pseudo-models exempt
+  everywhere; true-empty pools keep the generic errors.
+- [x] Identity binds to admission's own generation: managed
+  `Snapshot.known_models` (discovery generation + explicit providers, no
+  reloaded catalog deciding after snapshotting); router binds to the
+  constructor target index. Discovery-only paid pin → generic 403 (015
+  probe 4/4 green here and by root rerun); genuinely-absent pin → 404.
+- [x] Held-open TLS regression strengthened: cancel stimulus is
+  deterministic body-phase (server-side entered-event proof the client
+  finished TLS+connect — the old blind sleep hit the upstream window
+  racily), plus `gc.collect()` localization so strays surface in their own
+  test; adjacency re-verified 63/63 strict-green (was unraisable-red).
+- [x] Cancel-during-TLS-connect abandonment root-caused in installed
+  httpcore 1.0.9 (`_connect` catches only ConnectError/ConnectTimeout; the
+  half-open stream is a frame local; the pool drops the failed connection
+  unclosed and `pool.aclose()` reports OK) and PINNED, not hidden: the pin
+  test deterministically reproduces the window (held 5s server handshake,
+  SYN proven in backlog, cancel pre-request), asserts the exact 2-event
+  signature with per-run phase proof, prints every captured event, fails
+  loudly on httpcore upgrade (re-probe) and on signature absence (remove
+  the pin upstream-fix tripwire). Mutation-checked both directions.
+- [x] 33 UnknownModel tests + pin + hold-open regressions green; full
+  strict suite 2962 passed + ruff + strict mypy + docs + coverage
+  (87.76%/79.01%) green; pushed.
+
+Honesty residuals: m2 edge kept — managed non-chat pin miss with zero
+admitted routes for that modality stays generic 403 (can't distinguish
+unknown from unconfigured modality); legacy embed/transcribe classify
+against their own modality index (a chat-model pin on embed 404s; the
+pointers recover); n1 (no pickle round-trip, pre-existing shape), n2
+(sanitizer keeps bidi controls), n3 (direct `providers=["p"]` +
+`model="p/m"` doubles the prefix) deferred as cosmetic; cross-modality
+pins differ legacy-vs-managed (noted, pointers recover). G26/G27 residuals
+restated unchanged.
+
+Effort: M (two supervisor counterexamples + third-party root-cause).
+Fit: high — every typo'd pin now teaches the fix.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

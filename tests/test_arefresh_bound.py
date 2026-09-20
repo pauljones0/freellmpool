@@ -5,15 +5,20 @@ import copy
 import errno
 import faulthandler
 import fcntl
+import gc
 import http.server
 import json
+import select
 import socket
 import socketserver
 import ssl
+import sys
 import threading
 import time
+import warnings
 from pathlib import Path
 
+import httpcore
 import httpx
 import pytest
 
@@ -435,6 +440,11 @@ class _DripHandler(http.server.BaseHTTPRequestHandler):
     hits: list = []
     stop = threading.Event()
     deadline = float("inf")
+    # Set once this handler has the full request AND flushed response
+    # headers. Server-side proof the client finished TLS+connect (it sent
+    # the request): cancelling after this event can only land in the
+    # headers/body phase, never in httpcore's _connect abandonment window.
+    entered = threading.Event()
 
     def do_GET(self):
         _DripHandler.hits.append(self.path)
@@ -452,6 +462,7 @@ class _DripHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", "1000000")
         self.end_headers()
+        _DripHandler.entered.set()
         # Bounded handler lifetime: stop wakes the cadence sleep at teardown
         # and deadline is the backstop, so a lost FIN cannot outlive the test.
         while not _DripHandler.stop.is_set() and time.monotonic() < _DripHandler.deadline:
@@ -482,18 +493,24 @@ class _TLSHandshakeServer(socketserver.TCPServer):
 
     def __init__(self, *args, ssl_context, **kwargs):
         self._ssl_context = ssl_context
+        # Set while an accepted socket waits out its server-side handshake:
+        # lets a test observe "server wedged" instead of sleeping blindly.
+        self.in_handshake = threading.Event()
         super().__init__(*args, **kwargs)
 
     def get_request(self):
         newsock, addr = self.socket.accept()
         tls = self._ssl_context.wrap_socket(newsock, server_side=True,
                                             do_handshake_on_connect=False)
+        self.in_handshake.set()
         try:
             tls.settimeout(self._HANDSHAKE_TIMEOUT)
             tls.do_handshake()
         except OSError:
             tls.close()
             raise
+        finally:
+            self.in_handshake.clear()
         return tls, addr
 
 
@@ -501,6 +518,7 @@ def _start_tls_drip_server(fixtures):
     """Start the loopback TLS drip server; reset per-test handler state."""
     _DripHandler.hits = []
     _DripHandler.stop.clear()
+    _DripHandler.entered.clear()
     _DripHandler.deadline = time.monotonic() + 120.0
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(str(fixtures / "localhost.pem"), str(fixtures / "localhost_key.pem"))
@@ -590,9 +608,22 @@ def test_actual_transport_repeat_cancel_retry(monkeypatch, tmp_path):
         slow = await d.arefresh_catalog({}, ["openrouter"], path=path, time_budget_seconds=6.0)
         results["slow"] = (slow["providers"]["openrouter"]["status"], time.monotonic() - start)
         before = path.read_bytes()
+        # The slow phase also hits /slow: re-arm for THIS fetch.
+        _DripHandler.entered.clear()
         task = asyncio.ensure_future(d.arefresh_catalog(
             {}, ["openrouter"], path=path, time_budget_seconds=40.0))
-        await asyncio.sleep(3.0)
+        # Deterministic body-phase cancel: entered proves the server holds
+        # the full request, hence the client finished TLS+connect (it sent
+        # the request), so this cancel can only land in headers/body
+        # cleanup -- never in httpcore's cancel-during-_connect window,
+        # which the old blind 3.0s sleep hit racily (~50% cross-test
+        # unraisable fallout; see the handshake-cancel pin below).
+        deadline = time.monotonic() + 15.0
+        while not _DripHandler.entered.wait(0):
+            if time.monotonic() > deadline:
+                task.cancel()
+                raise AssertionError("cancel-phase fetch never reached the server")
+            await asyncio.sleep(0.05)
         task.cancel()
         try:
             await task
@@ -610,6 +641,9 @@ def test_actual_transport_repeat_cancel_retry(monkeypatch, tmp_path):
                                lambda: asyncio.run(runner()), timeout=120.0)
     finally:
         _stop_tls_server(server, thread)
+        # Localize: force any fetch strays to surface inside THIS test's
+        # window (strict flags turn them red here) instead of a neighbor's.
+        gc.collect()
     assert resolved, "expected real getaddrinfo path"
     assert "/fast" in _DripHandler.hits and "/slow" in _DripHandler.hits
     assert results["fast"] == "ok"
@@ -670,3 +704,130 @@ def test_tls_fixture_survives_held_open_handshake(monkeypatch, tmp_path):
     assert 3.0 < elapsed < 10.0
     assert "/fast" in _DripHandler.hits
     assert teardown_secs < 15.0
+
+
+_PINNED_HTTPCORE = "1.0.9"
+
+
+def test_cancel_during_tls_handshake_pins_upstream_abandonment(monkeypatch, tmp_path):
+    """Pin (not hide) httpcore's cancel-during-connect stream abandonment.
+
+    Root-caused 2026-09-20 against installed httpcore 1.0.9 with close-chain
+    traces: when CancelledError lands inside AsyncHTTPConnection._connect
+    (after TCP connect, before self._connection assignment -- the TLS
+    handshake window), _connect's `except (ConnectError, ConnectTimeout)`
+    does not catch it, the half-open stream is a frame local, and NOBODY
+    closes it: no conn.aclose, no stream.aclose. The pool's except-path then
+    drops the connection (is_closed() via _connect_failed) WITHOUT closing
+    it, and pool.aclose() reports OK over an empty set. The connected
+    socket + transport surface later as ResourceWarning fallout in whatever
+    test GC runs in (observed: arefresh+bootstrap adjacency, fd=18 pair).
+
+    This test deterministically reproduces the window -- server wedged in a
+    held 5s handshake wait, fetch SYN proven in the listener backlog while
+    the server provably has not read a byte, cancel -- and asserts the
+    EXACT signature, printing every captured event so the acknowledged
+    defect stays visible in the report. A per-run phase record (wedge→cancel
+    elapsed plus the held-window checks) is printed alongside, so retained
+    output confirms each repetition entered the intended phase — including
+    fast teardowns, where the 5s wedge drains differently but the stimulus
+    is identical. If this fails with the signature ABSENT, upstream fixed
+    it: remove the pin. The version gate fails loudly on any httpcore
+    upgrade: re-probe before trusting transport silence. The failure
+    direction is one-way: a broken stimulus fails this test, it can never
+    pass it vacuously.
+    """
+    if httpcore.__version__ != _PINNED_HTTPCORE:
+        pytest.fail(f"pin targets httpcore {_PINNED_HTTPCORE}; installed is "
+                    f"{httpcore.__version__}: re-probe cancel-during-connect "
+                    f"cleanup before trusting this suite's transport silence")
+    for var in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(var, raising=False)
+    fixtures = Path(__file__).parent / "fixtures"
+    monkeypatch.setenv("SSL_CERT_FILE", str(fixtures / "localhost.pem"))
+    server, thread = _start_tls_drip_server(fixtures)
+    port = server.server_address[1]
+    monkeypatch.setattr(d, "load_registry",
+                        lambda *a, **k: {"openrouter": provider(f"https://localhost:{port}/fast")})
+    path = tmp_path / "c.json"
+    captured = []
+
+    def body():
+        peer = socket.create_connection(("127.0.0.1", port))
+        try:
+            if not server.in_handshake.wait(10.0):
+                raise AssertionError("server never entered the held handshake wait")
+            wedge_at = time.monotonic()
+
+            async def runner():
+                task = asyncio.ensure_future(d.arefresh_catalog(
+                    {}, ["openrouter"], path=path, time_budget_seconds=40.0))
+                # Prove the fetch's TCP completed while the server is still
+                # wedged: listener readable + in_handshake set means the
+                # SYN sits in the backlog and the server has read nothing,
+                # so the client is inside _connect (connect_tcp/start_tls).
+                deadline = time.monotonic() + 10.0
+                while True:
+                    readable, _, _ = select.select([server.socket], [], [], 0)
+                    if readable and server.in_handshake.is_set():
+                        break
+                    if time.monotonic() > deadline:
+                        task.cancel()
+                        raise AssertionError("fetch SYN never reached the held server")
+                    await asyncio.sleep(0.02)
+                held_at_cancel = server.in_handshake.is_set()
+                cancel_at = time.monotonic()
+                task.cancel()
+                try:
+                    await task
+                    return False, cancel_at, held_at_cancel
+                except asyncio.CancelledError:
+                    return True, cancel_at, held_at_cancel
+
+            cancelled, cancel_at, held_at_cancel = asyncio.run(runner())
+            return cancelled, wedge_at, cancel_at, held_at_cancel
+        finally:
+            peer.close()
+
+    # Drain any cyclic trash a neighbor test left behind BEFORE installing
+    # the hook (review m3): a clean window keeps the blast-radius bound an
+    # honest statement about THIS fetch, not the neighbor's garbage.
+    gc.collect()
+    # Capture window: error-raised ResourceWarnings from __del__ route to
+    # OUR hook (not pytest's), deterministically in both plain and CI-flag
+    # runs; catch_warnings + the finally restore leave no trace.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        prior_hook = sys.unraisablehook
+        sys.unraisablehook = captured.append
+        try:
+            cancelled, wedge_at, cancel_at, held_at_cancel = _run_bounded(
+                "handshake-cancel-pin", body, timeout=60.0)
+        finally:
+            _stop_tls_server(server, thread)
+            gc.collect()
+            sys.unraisablehook = prior_hook
+    assert cancelled is True
+    # Causal confirmation (016): the server was still inside the held
+    # handshake wait at the cancel instant -- the flag clears only when a
+    # handshake ends, and peer#1's can end only via 5s expiry or EOF, with
+    # the peer held open and cancel landing ~1s into the wait.
+    assert held_at_cancel is True, "server left the held handshake before cancel"
+    # Attribution: the server never saw HTTP, so the abandoned socket can
+    # only be _connect's frame-local stream -- not our body cleanup.
+    assert _DripHandler.hits == []
+    print(f"held-phase confirmed: wedge→cancel {cancel_at - wedge_at:.2f}s "
+          f"(5s window), backlog-proven, in_handshake@cancel=True, hits=[]")
+    texts = [f"{type(u.exc_value).__name__}: {u.exc_value} [{u.err_msg}]" for u in captured]
+    print(f"acknowledged upstream defect (httpcore {_PINNED_HTTPCORE}): "
+          f"{len(texts)} captured unraisable(s):")
+    for text in texts:
+        print(f"  - {text}")
+    joined = "\n".join(texts)
+    assert "unclosed <socket.socket" in joined, (
+        "expected httpcore abandonment signature (unclosed socket): absent -- "
+        "upstream may have fixed cancel-during-connect; remove this pin")
+    assert "unclosed transport" in joined, (
+        "expected httpcore abandonment signature (unclosed transport): absent -- "
+        "upstream may have fixed cancel-during-connect; remove this pin")
+    assert len(captured) <= 4, f"blast radius grew: {len(captured)} events"

@@ -37,6 +37,7 @@ from .errors import (
     ContextWindowExceeded,
     NoProvidersConfigured,
     ProviderHTTPError,
+    UnknownModel,
     with_auth_hint,
 )
 from .key_rotation import ROTATE_STATUSES
@@ -49,6 +50,7 @@ from .router import (
     _is_account_quota_exhaustion,
     _is_health_failure,
     _provider_first_wave,
+    pin_misses_catalog,
 )
 from .routing_modes import normalize_routing_mode
 from .task_quality import TASK_GENERAL, resolve_task, validate_task
@@ -583,6 +585,13 @@ class AsyncPool:
             p._prefer_prefix_route, targets, messages, routing=eff
         )
         if not targets:
+            # Same G28 pin check as the sync twin: identity binds to the
+            # wrapped pool's own immutable target index, not a reloaded catalog.
+            if (model is not None and p._all_targets(model=None)
+                    and pin_misses_catalog(model, lambda m: bool(p._all_targets(model=m)))):
+                pin = (f"{provider_list[0]}/{model}"
+                       if provider_list and len(provider_list) == 1 else model)
+                raise UnknownModel([], pin=pin)
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
         now = p._clock()

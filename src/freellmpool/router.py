@@ -46,6 +46,7 @@ from .errors import (
     ContextWindowExceeded,
     NoProvidersConfigured,
     ProviderHTTPError,
+    UnknownModel,
     with_auth_hint,
 )
 from .key_rotation import ROTATE_STATUSES, KeyRotator, configured_slot_name, cool_delay
@@ -107,6 +108,22 @@ _AGENT_CAPABILITY_TIER = 0.05
 _ACCOUNT_BACKOFF_SECONDS = 15 * 60
 _SUCCESS_BATCH_SIZE = 32
 _SUCCESS_FLUSH_INTERVAL = 1.0
+# Model pins that mean "route automatically", never a catalog lookup (G28 R2).
+# Shared by the managed/router/aio pin-miss predicates so pseudo-models can
+# never become `unknown model` on any path.
+PSEUDO_MODELS = frozenset({"auto", "free", "free-coding", "free-fast", "free-quality"})
+
+
+def pin_misses_catalog(model: str | None, has_global_match: Callable[[str], bool]) -> bool:
+    """Whether a model pin names nothing in the pool (G28 R1).
+
+    Global and pre-feature by contract: pseudo-models are exempt, and the
+    caller decides "exists" without provider filters or feature gates, so a
+    provider-excluded-but-existing model or a feature-miss never becomes a
+    404. Callers check pool-nonemptiness separately to keep the true-empty
+    "no providers" behavior.
+    """
+    return model is not None and model not in PSEUDO_MODELS and not has_global_match(model)
 
 
 def _positive_int_setting(env: dict[str, str], name: str, default: int) -> int:
@@ -591,12 +608,21 @@ class Pool:
         else:
             validate_task(task)
             resolved_task = TASK_GENERAL
-        return self._order(
+        ordered = self._order(
             self._all_targets(include=provider_list, model=model),
             difficulty=difficulty,
             routing=eff,
             task=resolved_task,
         )
+        if (not ordered and model is not None and self._all_targets(model=None)
+                and pin_misses_catalog(model, lambda m: bool(self._all_targets(model=m)))):
+            # Same G28 pin check as chat (review M1): a pin miss raises
+            # instead of returning [], so panel/MCP/CLI callers report the
+            # pin with pointers rather than "no providers configured".
+            pin = (f"{provider_list[0]}/{model}"
+                   if provider_list and len(provider_list) == 1 else model)
+            raise UnknownModel([], pin=pin)
+        return ordered
 
     def _mark_cooldown(self, provider_id: str, now: float) -> None:
         until = now + self.cooldown_seconds
@@ -809,6 +835,14 @@ class Pool:
                 self._bump_stats(requests=1, prompt_tokens=reply.prompt_tokens or 0)
                 return reply
         if not attempts:  # provider/model pins matched no configured embedder
+            # G28 pin check against embedder models (review m1): identity
+            # binds to this pool's own embedder index (all constructor
+            # models, enabled or not), mirroring the chat path.
+            names = {m.name for emb in self.embedders for m in emb.models}
+            if model is not None and names and pin_misses_catalog(model, lambda m: m in names):
+                singled = sorted(include) if include else []
+                pin = f"{singled[0]}/{model}" if len(singled) == 1 else model
+                raise UnknownModel([], pin=pin)
             raise NoProvidersConfigured("no candidate embedder/model matched the given filters")
         if client_error is not None:
             raise AllProvidersExhausted(
@@ -902,6 +936,12 @@ class Pool:
                 self._bump_stats(requests=1, prompt_tokens=reply.prompt_tokens or 0)
                 return reply
         if not attempts:  # provider/model pins matched no configured transcriber
+            # G28 pin check against transcriber models (review m1), mirroring embed.
+            names = {m.name for tr in self.transcribers for m in tr.models}
+            if model is not None and names and pin_misses_catalog(model, lambda m: m in names):
+                singled = sorted(include) if include else []
+                pin = f"{singled[0]}/{model}" if len(singled) == 1 else model
+                raise UnknownModel([], pin=pin)
             raise NoProvidersConfigured("no candidate transcriber/model matched the given filters")
         if client_error is not None:
             raise AllProvidersExhausted(
@@ -1188,7 +1228,8 @@ class Pool:
 
         ``model`` / ``providers`` optionally restrict the candidate set.
         ``routing`` overrides the pool's default routing mode for this request.
-        Raises :class:`NoProvidersConfigured` if nothing is usable, or
+        Raises :class:`NoProvidersConfigured` if nothing is usable,
+        :class:`UnknownModel` if the model pin names no catalog model, or
         :class:`AllProvidersExhausted` if every candidate failed.
         """
         messages: list[dict[str, str]] = []
@@ -1313,6 +1354,16 @@ class Pool:
         )
         targets = self._prefer_prefix_route(targets, messages, routing=eff)
         if not targets:
+            # Global pre-feature pin check (G28): identity binds to this
+            # pool's own immutable target index (all constructor models,
+            # enabled or not), not a reloaded catalog. Pins naming nothing
+            # there are UnknownModel; served-elsewhere or feature-missed pins
+            # stay NoProvidersConfigured.
+            if (model is not None and self._all_targets(model=None)
+                    and pin_misses_catalog(model, lambda m: bool(self._all_targets(model=m)))):
+                pin = (f"{provider_list[0]}/{model}"
+                       if provider_list and len(provider_list) == 1 else model)
+                raise UnknownModel([], pin=pin)
             raise NoProvidersConfigured("no candidate (provider, model) matched the given filters")
 
         # Providers recently rate-limited (429) are tried last, not skipped — so
@@ -1629,6 +1680,13 @@ class Pool:
         targets = [t for t in targets if t.provider.adapter != "gemini"]
         targets = self._prefer_prefix_route(targets, messages, routing=eff)
         if not targets:
+            # Same G28 pin check as chat: identity binds to this pool's own
+            # immutable target index, not a reloaded catalog.
+            if (model is not None and self._all_targets(model=None)
+                    and pin_misses_catalog(model, lambda m: bool(self._all_targets(model=m)))):
+                pin = (f"{provider_list[0]}/{model}"
+                       if provider_list and len(provider_list) == 1 else model)
+                raise UnknownModel([], pin=pin)
             raise NoProvidersConfigured("no streamable (provider, model) matched the filters")
 
         now = self._clock()
