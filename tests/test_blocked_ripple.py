@@ -102,7 +102,7 @@ def test_non_blocked_attempt_drops_stale_fallback(monkeypatch, tmp_path):
                  "fallback_models": ["stale/free"], "note": "old"}}}))
     _transport(monkeypatch, lambda request: httpx.Response(403, text="{}"))
     entry = d.refresh_catalog({"GROQ_API_KEY": "k"}, ["groq"], path=path)["providers"]["groq"]
-    assert entry["status"] == "auth_failed"
+    assert entry["status"] == "denied"  # 018: was pinned auth_failed
     assert "fallback_models" not in entry
 
 
@@ -117,8 +117,8 @@ def _report_registry(ttl=True):
                                          "status": "official"}]}}
 
 
-def _report_catalog(last_attempt, row_ttl=True):
-    row = {"status": "blocked", "complete": False, "catalog_access": "public",
+def _report_catalog(last_attempt, row_ttl=True, status="blocked"):
+    row = {"status": status, "complete": False, "catalog_access": "public",
            "checked_at": None, "last_attempt_at": last_attempt.isoformat(),
            "models": [], "fallback_models": ["a/free"], "note": "n"}
     if row_ttl:
@@ -147,6 +147,18 @@ def test_maintenance_blocked_exempt_but_ttl():
     assert "catalog_failed" not in codes
     assert codes == ["catalog_stale"]
     assert stale["findings"][0]["summary"] == "Model discovery is missing or expired."
+
+
+def test_maintenance_denied_yields_catalog_failed():
+    """018 decision: unlike blocked (provider-side, no user action), denied
+    implies a user action (verify scope), so the catalog_failed finding is
+    desired — pinned here so the difference stays deliberate."""
+    report, _ = m.build_public_report(_report_registry(), _report_catalog(NOW, status="denied"),
+                                      now=NOW)
+    codes = [finding["code"] for finding in report["findings"]]
+    assert "catalog_failed" in codes
+    assert report["providers"]["openrouter"]["catalog"]["status"] == "denied"
+    assert m.validate_public_report(report) == report
 
 
 def test_maintenance_verdict_due_ignores_hostile_ttl():
@@ -202,7 +214,7 @@ def test_tier_blocked_order():
     assert _bootstrap_tier_line(mixed) == TIER_BLOCKED
 
 
-def _managed_pool(tmp_path, env, fallback):
+def _managed_pool(tmp_path, env, fallback, status="blocked"):
     from freellmpool.allowances import AllowanceLedger
     from freellmpool.managed import ManagedPool
     from freellmpool.models import Model, Provider
@@ -214,7 +226,7 @@ def _managed_pool(tmp_path, env, fallback):
         "credential_env": "ALPHA_KEY", "discovery": {"supports_public": False},
         "evidence": [], "grants": [], "limits": []}}
     snapshot = {"schema": 1, "generation": "test", "providers": {"alpha": {
-        "status": "blocked", "complete": False, "checked_at": None,
+        "status": status, "complete": False, "checked_at": None,
         "last_attempt_at": NOW.isoformat(), "models": [],
         "fallback_models": fallback, "note": "n"}}}
     pool = ManagedPool(providers, registry=registry, discovery=snapshot, accounts={},
@@ -232,6 +244,65 @@ def test_is_configured_wins_over_blocked(tmp_path):
 def test_managed_blocked_reason_variants(tmp_path):
     assert _managed_pool(tmp_path, {"ALPHA_KEY": "k"}, ["a/free", "b/free"])["reason"] == REASON_N
     assert _managed_pool(tmp_path, {"ALPHA_KEY": "k"}, [])["reason"] == REASON_0
+
+
+REASON_DENIED = ("model listing denied for this credential (often permission scope or "
+                 "account verification); verify with the provider, then run freellmpool "
+                 "update --provider PROVIDER to re-check")
+DENIED_STATUS_TEXT = ("The model listing was denied for this credential (often permission "
+                      "scope or account verification); the key is NOT proven bad and stays saved. "
+                      "A later re-check re-verdicts; continue with other providers.")
+
+
+def test_denied_merge_preserves_previous_models(monkeypatch, tmp_path):
+    """018: denied rides CTO-4 preservation (key alive; prior routes serve while fresh)."""
+    keyed = copy.deepcopy(load_registry()["groq"])
+    keyed["discovery"] = {**keyed["discovery"], "url": "https://127.0.0.1:9/catalog"}
+    monkeypatch.setattr(d, "load_registry", lambda *a, **k: {"groq": keyed})
+    path = tmp_path / "catalog.json"
+    models = [{"id": "groq/free", "modalities": ["chat"]}]
+    path.write_text(json.dumps({"schema": 1, "generation": "old", "providers": {
+        "groq": {"status": "ok", "complete": True, "checked_at": NOW.isoformat(),
+                 "last_attempt_at": NOW.isoformat(), "models": models, "note": "old"}}}))
+    _transport(monkeypatch, lambda request: httpx.Response(403, text="{}"))
+    entry = d.refresh_catalog({"GROQ_API_KEY": "k"}, ["groq"], path=path)["providers"]["groq"]
+    assert entry["status"] == "denied"
+    assert entry["complete"] is True
+    assert entry["models"] == models
+    assert "fallback_models" not in entry
+
+
+def test_denied_buckets_tier_and_reason(tmp_path):
+    """018: denied counts failed, shares the blocked bootstrap tier, reasons scope."""
+    assert d.count_snapshot({"providers": {"k": {"status": "denied"}}}) == (0, 0, 1)
+    row = {"status": "denied", "note": "n", "checked_at": None, "complete": False,
+           "models": [], "last_attempt_at": "2026-09-20T00:00:00+00:00"}
+    assert _bootstrap_tier_line({"providers": {"a": row}}) == TIER_BLOCKED
+    assert _managed_pool(tmp_path, {"ALPHA_KEY": "k"}, [], status="denied")["reason"] == REASON_DENIED
+
+
+def test_setup_denied_status_text_and_break(tmp_path):
+    """018: wizard shows scope guidance and never offers replace-key for denied."""
+    from freellmpool.onboarding import _STATUS_TEXT, run_onboarding
+
+    assert _STATUS_TEXT["denied"] == DENIED_STATUS_TEXT
+
+    def row(name):
+        return {"id": name, "display_name": name.title(), "credential_env": "ALPHA_KEY",
+                "grants": [{"kind": "recurring_quota", "status": "verified"}],
+                "setup": {"signup_url": "https://example.test/signup",
+                          "key_url": "https://example.test/keys", "steps": ["Choose the Free plan."],
+                          "required_env": ["ALPHA_KEY"]}}
+
+    prompts, output = [], []
+    run_onboarding(provider="alpha", registry={"alpha": row("alpha")},
+                   env={"FREELLMPOOL_CONFIG_FILE": str(tmp_path / "denied.toml")},
+                   progress_path=tmp_path / "denied.json",
+                   input_fn=lambda prompt: (prompts.append(prompt), "")[1],
+                   secret_fn=lambda _: "private-value",
+                   check=lambda *_: {"status": "denied"}, output=output.append)
+    assert DENIED_STATUS_TEXT in output
+    assert not any("r=retry check" in prompt for prompt in prompts)
 
 
 def test_update_footer_blocked_variant(monkeypatch, capsys):
@@ -285,3 +356,50 @@ def test_setup_blocked_status_text_and_break(tmp_path):
     assert not any("r=retry check" in prompt for prompt in prompts)
     prompts, _ = flow("error")
     assert any("r=retry check" in prompt for prompt in prompts)
+
+
+FOOTER_DENIED = ("Discovery incomplete: 0 ok, 0 deferred, 1 failed; denied listings need "
+                 "scope/account verification with the provider, then re-verdict on a later "
+                 "`freellmpool update --provider PROVIDER` re-check, verdict may persist. "
+                 "Pricing, account eligibility, and protocol evidence remain separate checks.")
+FOOTER_DENIED_MIXED = ("Discovery incomplete: 0 ok, 0 deferred, 2 failed; run `freellmpool update` "
+                       "to retry, but denied listings need scope/account verification with the "
+                       "provider, then re-verdict on a later re-check and the verdict may persist. "
+                       "Pricing, account eligibility, and protocol evidence remain separate checks.")
+FOOTER_BLOCKED_DENIED = ("Discovery incomplete: 0 ok, 0 deferred, 2 failed; blocked/denied listings "
+                         "re-verdict on a later `freellmpool update --provider PROVIDER` re-check "
+                         "(verify scope/account for denied rows first), verdict may persist. "
+                         "Pricing, account eligibility, and protocol evidence remain separate checks.")
+
+
+def test_maintenance_denied_shares_verdict_due_ttl():
+    """L1: denied is a durable re-verdict schedule like blocked, not a 48h
+    generic expiry."""
+    row_ttl = _report_catalog(NOW, status="denied")
+    report, _ = m.build_public_report(_report_registry(), row_ttl, now=NOW)
+    assert report["providers"]["openrouter"]["catalog"]["status"] == "denied"
+    assert report["providers"]["openrouter"]["catalog"]["expires_at"] == (
+        NOW + timedelta(days=3)).isoformat()
+    assert m.validate_public_report(report) == report
+
+
+def test_update_footer_denied_variants(monkeypatch, capsys):
+    """019: denied rows get scope-first trailers, never a blind-retry trailer."""
+    from freellmpool import managed_cli
+
+    monkeypatch.setattr("freellmpool.discovery.refresh_catalog",
+                        lambda *a, **k: {"providers": {"groq": {"status": "denied", "models": []}}})
+    assert managed_cli.cmd_update(argparse.Namespace(public_only=False, provider=None)) == 0
+    assert FOOTER_DENIED in capsys.readouterr().out
+
+    monkeypatch.setattr("freellmpool.discovery.refresh_catalog",
+                        lambda *a, **k: {"providers": {"groq": {"status": "denied", "models": []},
+                                                       "kilo": {"status": "auth_failed", "models": []}}})
+    assert managed_cli.cmd_update(argparse.Namespace(public_only=False, provider=None)) == 0
+    assert FOOTER_DENIED_MIXED in capsys.readouterr().out
+
+    monkeypatch.setattr("freellmpool.discovery.refresh_catalog",
+                        lambda *a, **k: {"providers": {"groq": {"status": "denied", "models": []},
+                                                       "kilo": {"status": "blocked", "models": []}}})
+    assert managed_cli.cmd_update(argparse.Namespace(public_only=False, provider=None)) == 0
+    assert FOOTER_BLOCKED_DENIED in capsys.readouterr().out

@@ -47,6 +47,38 @@ def redact_secrets(text: str) -> str:
     return redacted
 
 
+def _is_credential_name(name: str) -> bool:
+    upper = name.upper()
+    return (upper == "CLOUDFLARE_ACCOUNT_ID" or "API_KEY" in upper or "TOKEN" in upper
+            or "SECRET" in upper or "PASSWORD" in upper or upper.endswith("_KEY")
+            or upper == "KEY")
+
+
+def credential_values(env: Any) -> list[str]:
+    """Values of credential-named vars (length >= 8) for value-based redaction.
+
+    Shape-based redaction cannot catch unprefixed keys; callers with access
+    to the secret-bearing env must redact these exact values from any
+    dynamic string they render (M4). Short values are skipped: redacting
+    e.g. "1" or "true" would mangle unrelated text.
+    """
+    values: list[str] = []
+    items = env.items() if hasattr(env, "items") else []
+    for name, value in items:
+        if (isinstance(name, str) and isinstance(value, str) and len(value) >= 8
+                and _is_credential_name(name)):
+            values.append(value)
+    return values
+
+
+def redact_secret_values(text: str, secrets: Any) -> str:
+    """Replace exact secret values with [redacted] (value-based redaction)."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "[redacted]")
+    return text
+
+
 def default_inventory_path() -> Path:
     override = os.environ.get("FREELLMPOOL_KEYS_PATH")
     if override:

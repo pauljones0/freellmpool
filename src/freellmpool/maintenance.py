@@ -46,7 +46,7 @@ _PRICES = frozenset({"input", "output", "request", "image", "audio", "video", "c
 _STATUSES = frozenset({"ok", "unchanged", "not_checked", "unsupported", "auth_missing", "auth_failed",
     "rate_limited", "partial", "error", "review_required", "check_failed", "expired", "stale",
     "credential_changed", "malformed", "official", "verified", "observed", "disabled", "requires_client_update",
-    "deferred", "blocked"})
+    "deferred", "blocked", "denied"})
 _MESSAGES = {
     "catalog_failed": "Model catalog check failed; previous evidence has not been renewed.",
     "catalog_stale": "Model discovery is missing or expired.",
@@ -350,7 +350,7 @@ def _deadline(provider: str, prefix: str, expires: Any, now: datetime, subject: 
 
 
 def _verdict_ttl(row: JSON, spec: JSON) -> float:
-    """Blocked re-verdict schedule: row TTL, else spec TTL, else one day."""
+    """Durable-verdict (blocked/denied) re-check schedule: row TTL, else spec TTL, else one day."""
     for value in (row.get("catalog_ttl_seconds"),
                   spec.get("discovery", {}).get("catalog_ttl_seconds") if isinstance(spec.get("discovery"), dict) else None):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
@@ -376,7 +376,9 @@ def _catalog_summary(row: JSON, spec: JSON) -> JSON:
                "checked_at": _stamp(row.get("checked_at")), "last_attempt_at": _stamp(row.get("last_attempt_at")),
                "expires_at": datetime.fromtimestamp(checked + 172800, UTC).isoformat() if checked is not None else None,
                "model_count": len(row.get("models", [])) if isinstance(row.get("models", []), list) else 0}
-    if summary["status"] == "blocked":
+    if summary["status"] in {"blocked", "denied"}:
+        # L1: denied shares the durable re-verdict schedule, not the 48h
+        # generic expiry.
         summary["expires_at"] = _verdict_due(row, spec)
     return summary
 

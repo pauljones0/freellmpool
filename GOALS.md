@@ -1560,6 +1560,75 @@ restated unchanged.
 Effort: M (two supervisor counterexamples + third-party root-cause).
 Fit: high — every typo'd pin now teaches the fix.
 
+## G29 — per-slot key validation + honest denied verdict (Status: complete 2026-09-20)
+
+Pain: no way to validate WHICH saved key works — `status` shows
+routes, the wizard checks one provider at a time interactively, and
+an authenticated 403 (scoped key, unverified account) was labeled
+`auth_failed`: a usable credential pronounced dead with a
+replace-key order.
+
+Bet: a non-interactive `keys check` over the GET-only listing path
+gives one evidence-graded verdict row per configured slot, and splits
+authenticated-403 into `denied` (inconclusive, scope-first fix) in
+every consumer.
+
+Execute: design + adversarial review; TDD implement (red-first);
+supervisor counterexample 018 reproduced end-to-end and closed (root
+re-verified fixed: 200→ok, 401→auth_failed, 403-scope→
+denied/inconclusive, rc0, no replace-key); 019 consumer-wide
+consistency sweep (update trailer, wizard text, Cloudflare
+account-id hints, quota-claim qualification); gates green;
+commit/push.
+
+Done when:
+- [x] `keys check` validates every configured slot of every checkable
+  provider (Cloudflare, Cohere, Gemini, Groq, Mistral, Zhipu) with
+  read-only listing calls: no inference, no rotation-cursor writes,
+  no snapshots; local usage ledger provably unchanged (ledger
+  logical-equality test); listing metering honestly disclaimed as
+  provider policy, not a universal no-quota promise.
+- [x] Verdicts grade evidence: `ok` (accepted), `auth_failed` (401
+  on single-credential providers — proven dead, replace-key fix),
+  `denied` (authenticated 403, any other 403 via the choke-point
+  guard, or Cloudflare 401 joint-auth ambiguity — inconclusive,
+  scope/account fix, never replace-key), `missing`/`unsupported`
+  uncheckable, plus
+  `rate_limited`/`blocked`/`partial`/`deferred`/`timeout`/`error`/
+  `config_error`; exit 0/1/2 + `--strict` fail-closed; `--json`
+  envelope pure (progress on stderr); summary buckets partition
+  rows (loud assert); exception notes value-redacted.
+- [x] 018 denied split consistent in every consumer: discovery
+  `_classify_denied` (authenticated 403 → denied, keyless/mitigated
+  stay blocked, 401 stays auth_failed); managed reasons; setup
+  wizard breaks without replace-key offer; maintenance `denied`
+  status + catalog_failed finding; shared blocked bootstrap tier;
+  update footer scope-first trailers (019); onboarding auth_failed
+  text authentication-only + Cloudflare account-id hints in wizard
+  and keys-check rows (019).
+- [x] Zero-network proof for uncheckable providers (call counting),
+  checkable-set tripwire, canary secrecy, slot-1 logical equality
+  with check_provider, suffix-gap/blank-slot/config.toml coverage;
+  full strict suite green (3114 collected, rc0) + ruff + strict mypy
+  + docs + coverage (87.87%/79.28%) green; pushed.
+
+Honesty residuals: "proven dead" is scoped to keys-check rows on
+single-credential providers (Cloudflare 401s are denied/inconclusive
+— joint token/account-ID auth cannot isolate the bad factor; a
+token-verify disambiguation probe is a follow-up, not this goal);
+discovery keyless-401s mean "add the credential", never a dead key;
+denied shares the blocked bootstrap tier line (row notes precise);
+denied discovery rows preserve prior models while fresh (the key may
+infer fine — a listing-only refusal must not hide working routes),
+so preserved-denied rows serve without a scope warning in `status`
+(the managed reason field excludes routes; warning-while-serving
+needs a new channel — follow-up); unknown future discovery statuses
+stay loud (ValueError → config_error rc1 with the status named);
+`--timeout` bounds the run plus one in-flight call (stated).
+
+Effort: M (supervisor counterexample + consumer-wide sweep).
+Fit: high — "which key is broken?" becomes one command.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

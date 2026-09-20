@@ -34,13 +34,14 @@ _RECURRING = {"zero_price", "recurring_quota", "recurring_credit"}
 _STATUS_TEXT = {
     "ok": "Provider check completed; listing access is not proof of a free allowance.",
     "auth_missing": "Required credential or account field is missing. Re-run this provider after adding it.",
-    "auth_failed": "Authentication or permission was rejected. Check the key and the permissions above.",
+    "auth_failed": "Authentication was rejected (HTTP 401). The credential did not authenticate; check the key before continuing.",
     "rate_limited": "The catalog check hit a rate limit. Wait, then choose r to retry.",
     "unsupported": "This provider has no supported non-billable authentication/listing check. Your key is saved; it is not marked invalid.",
     "partial": "The catalog check was incomplete. Your key is saved; maintenance can retry.",
     "error": "The check could not complete. Your key is saved; follow the diagnostic and retry this provider.",
     "deferred": "Discovery deferred (time budget); run freellmpool update, then retry this provider.",
     "blocked": "The model listing was blocked; a later re-check via freellmpool update --provider PROVIDER re-verdicts and the verdict may persist. Your progress is saved; continue with other providers.",
+    "denied": "The model listing was denied for this credential (often permission scope or account verification); the key is NOT proven bad and stays saved. A later re-check re-verdicts; continue with other providers.",
 }
 
 
@@ -410,6 +411,13 @@ def run_onboarding(
                 note = _safe_note(result.get("note"), (credentials.get(name, "") for name in names))
                 if note:
                     output(note)
+                if status == "auth_failed" and provider_id == "cloudflare":
+                    # 019/M2: a wrong account ID 401s with a valid token; say
+                    # so after the diagnostic it explains, before the wizard
+                    # offers replace-key (which re-collects token AND account
+                    # ID via required_env, so the offer itself stays valid).
+                    output("Cloudflare note: a wrong CLOUDFLARE_ACCOUNT_ID is rejected here "
+                           "with a valid token — re-verify the account ID before replacing the key.")
                 ready = bool(status == "ok" and eligibility is not None and eligibility(provider_id))
                 if ready:
                     output("Free routes are admitted by the gateway. Inference has not been tested.")
@@ -421,7 +429,9 @@ def run_onboarding(
                 if status == "ok" and attested == "s":
                     final_status = "account_unverified"
                 save(provider_id, final_status, note)
-                if status in {"ok", "unsupported", "blocked"}:
+                if status in {"ok", "unsupported", "blocked", "denied"}:
+                    # denied breaks like blocked (018): never offer replace-key
+                    # for a credential the 403 did not prove bad.
                     break
                 while True:
                     answer = input_fn("Enter=next provider, r=retry check, k=replace key, o=open key page, q=quit: ").strip().lower()

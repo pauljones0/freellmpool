@@ -139,14 +139,34 @@ def cmd_update(args: argparse.Namespace) -> int:
     else:
         blocked = any(isinstance(row, dict) and row.get("status") == "blocked"
                       for row in shown.values())
-        retryable = deferred > 0 or any(not isinstance(row, dict) or row.get("status") not in {"ok", "deferred", "blocked"}
+        denied = any(isinstance(row, dict) and row.get("status") == "denied"
+                     for row in shown.values())
+        retryable = deferred > 0 or any(not isinstance(row, dict) or row.get("status") not in {"ok", "deferred", "blocked", "denied"}
                                         for row in shown.values())
         trailer = ("run `freellmpool update` to retry. Pricing, account eligibility, and protocol "
                    "evidence remain separate checks.")
-        if blocked and not retryable:
+        if denied and not blocked and not retryable:
+            # 019: denied rows need out-of-band scope verification first; a
+            # blind-retry trailer would misdirect.
+            trailer = ("denied listings need scope/account verification with the provider, then re-verdict on "
+                       "a later `freellmpool update --provider PROVIDER` re-check, verdict may persist. "
+                       "Pricing, account eligibility, and protocol evidence remain separate checks.")
+        elif blocked and denied and not retryable:
+            trailer = ("blocked/denied listings re-verdict on a later `freellmpool update --provider PROVIDER` "
+                       "re-check (verify scope/account for denied rows first), verdict may persist. "
+                       "Pricing, account eligibility, and protocol evidence remain separate checks.")
+        elif blocked and not retryable:
             trailer = ("blocked listings re-verdict on a later `freellmpool update --provider PROVIDER` "
                        "re-check, verdict may persist. Pricing, account eligibility, and protocol "
                        "evidence remain separate checks.")
+        elif denied and not blocked:
+            trailer = ("run `freellmpool update` to retry, but denied listings need scope/account verification "
+                       "with the provider, then re-verdict on a later re-check and the verdict may persist. "
+                       "Pricing, account eligibility, and protocol evidence remain separate checks.")
+        elif blocked and denied:
+            trailer = ("run `freellmpool update` to retry, but blocked/denied listings re-verdict on a later "
+                       "re-check (verify scope/account for denied rows first) and the verdict may persist. "
+                       "Pricing, account eligibility, and protocol evidence remain separate checks.")
         elif blocked:
             trailer = ("run `freellmpool update` to retry, but blocked listings re-verdict on a later "
                        "re-check and the verdict may persist. Pricing, account eligibility, and protocol "

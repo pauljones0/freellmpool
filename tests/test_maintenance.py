@@ -429,3 +429,8 @@ def test_deferred_catalog_skips_failure_finding_and_deadline():
 
 def test_deferred_status_survives_summary_coercion():
     assert m._status("deferred") == "deferred"
+
+
+def test_denied_status_survives_summary_coercion():
+    """018: denied is a known maintenance status, never coerced to error."""
+    assert m._status("denied") == "denied"

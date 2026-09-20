@@ -386,7 +386,8 @@ def test_partial_second_page_and_repeated_page_preserve_old_evidence(monkeypatch
     assert result["checked_at"] is None
 
 
-@pytest.mark.parametrize(("status", "expected"), [(302, "partial"), (403, "auth_failed"), (429, "rate_limited"), (500, "error")])
+# 018: keyed 403 without mitigation is denied (was pinned auth_failed).
+@pytest.mark.parametrize(("status", "expected"), [(302, "partial"), (403, "denied"), (429, "rate_limited"), (500, "error")])
 def test_http_errors_are_safe_statuses(monkeypatch, status, expected):
     transport(monkeypatch, lambda r: httpx.Response(status, headers={"Location": "https://evil.example"}, text="secret response body"))
     result = d.check_provider("groq", {"GROQ_API_KEY": "secret"})

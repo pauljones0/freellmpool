@@ -150,6 +150,84 @@ cp .env.example .env
 e.g. `set -a; source .env; set +a`, or a tool like
 [`direnv`](https://direnv.net/).
 
+## Checking saved keys (`keys check`)
+
+`freellmpool keys check` validates every configured key slot with a read-only
+model-listing request. It makes no inference calls, touches no rotation
+state, and writes no snapshots — local usage counters are unchanged by a
+check run. The listing requests themselves still occur; how a provider
+meters listing calls is that provider's policy, not something this command
+can promise about:
+
+```bash
+freellmpool keys check                       # every provider, every configured slot
+freellmpool keys check --provider groq       # one provider (case-insensitive id)
+freellmpool keys check --provider groq --slot 2
+freellmpool keys check --json                # machine-readable envelope on stdout
+```
+
+Only providers whose listing request authenticates can yield a key verdict:
+**Cloudflare, Cohere, Gemini, Groq, Mistral, Zhipu**. Every other provider
+reports `unsupported` ("listing check does not authenticate; no key judgment")
+without any network call — a keyless or public listing can never prove a key
+good or bad. Slot 1 is the bare var (`GROQ_API_KEY`), slot N > 1 is `VAR_N`.
+
+Verdicts judge the KEY from what the listing proved. `ok` means the
+key was accepted; `auth_failed` means the credential was rejected at
+authentication (HTTP 401 on a single-credential provider) — the key is
+proven dead. `denied` means the listing was refused without proving the
+key bad: an authenticated 403 (often permission scope or account
+verification, but edge/geo blocks land here too — per RFC 9110 a 403
+does not establish an invalid credential), or a Cloudflare 401, which
+jointly authenticates (token, account ID) and so cannot isolate a bad
+token from a wrong `CLOUDFLARE_ACCOUNT_ID`. `denied` is inconclusive
+and its fix verifies scope out-of-band instead of replacing the key;
+Cloudflare `denied` rows name the account-ID check first.
+
+Scope notes. "Proven dead" applies to `keys check` rows, which always
+authenticate a saved key. Discovery-level keyless 401s (a public
+listing whose provider now requires auth, keyed attempt never sent)
+mean "add the credential", not a dead key. Cloudflare keys can never
+be proven dead by a listing check: a future improvement could
+disambiguate via the token-verify endpoint, but today a Cloudflare
+401 stays inconclusive rather than risk a false death sentence. The
+setup wizard prints the same account-ID warning before offering
+replace-key (which re-collects token AND account ID).
+
+Exit codes (script-safe by default):
+
+- `0` — no key proven dead. Inconclusive rows (`denied`, `rate_limited`,
+  `blocked`, `partial`, `deferred`, `timeout`, transport `error`) and
+  uncheckable rows never fail.
+- `1` — a key was proven dead (`auth_failed`: HTTP 401 outside
+  Cloudflare) or a deterministic local failure occurred (`config_error`:
+  malformed `CLOUDFLARE_ACCOUNT_ID`, broken registry, internal error).
+- `2` — usage error (unknown provider, `--slot` outside 1–9, bad `--timeout`).
+  Note: `keys add` uses exit 3 for its usage errors; `keys check` uses 2.
+
+`--strict` fails closed for CI: exit 1 unless every row is `ok`,
+`unsupported`, or `missing` (and at least one slot was checked). Recipes:
+
+```bash
+# fail CI on anything not proven good-or-uncheckable
+freellmpool keys check --strict
+
+# dead keys only (default mode already exits 1 on these)
+freellmpool keys check --json | jq '[.rows[] | select(.verdict == "auth_failed")]'
+
+# retry list for retryable inconclusive rows (excludes scope-denied rows)
+freellmpool keys check --json | jq -r '.rows[] | select(.fix != null and (.fix | startswith("retry:"))) | .fix'
+
+# scope-denied rows need out-of-band permission checks, not retries
+freellmpool keys check --json | jq -r '.rows[] | select(.fix != null and (.fix | startswith("scope:"))) | .fix'
+```
+
+`--timeout SECONDS` (default 180) bounds the whole run; slots still unattempted
+when the budget expires report `timeout`. Worst case is the timeout plus one
+in-flight listing call. Progress lines go to stderr, so `--json` stdout stays
+pure. Every failure row names its fix; see also `keys checklist` for presence
+todos (which keys to create) as opposed to validation (which saved keys work).
+
 ## A note on free-tier limits
 
 Free tiers change. The per-day hints in

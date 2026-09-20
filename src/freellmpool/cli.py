@@ -1048,6 +1048,249 @@ def cmd_keys_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def _keys_check_usage_error(message: str) -> int:
+    print(f"freellmpool: {message}", file=sys.stderr)
+    return 2
+
+
+def _keys_check_cell(value: Any) -> str:
+    return str(value) if value is not None else "-"
+
+
+def _keys_check_emit(args: argparse.Namespace, rows: list[dict[str, Any]]) -> int:
+    import json
+
+    from .key_inventory import redact_secrets
+
+    checked = sum(1 for row in rows if row.get("attempted"))
+    ok_count = sum(1 for row in rows if row["verdict"] == "ok")
+    failed = sum(1 for row in rows if row["verdict"] in {"auth_failed", "config_error"})
+    inconclusive = sum(1 for row in rows if row["verdict"] in {
+        "rate_limited", "blocked", "partial", "deferred", "error", "timeout", "denied"})
+    uncheckable = sum(1 for row in rows if row["verdict"] in {"unsupported", "missing"})
+    # L3: verdicts partition rows — an unknown future verdict fails loudly
+    # here instead of silently unbalancing the summary.
+    assert failed + inconclusive + uncheckable + ok_count == len(rows), (
+        f"unbucketed keys-check verdicts: "
+        f"{sorted({row['verdict'] for row in rows})}")
+    summary = {"checked": checked, "ok": ok_count, "failed": failed,
+               "inconclusive": inconclusive, "uncheckable": uncheckable}
+    strict = bool(getattr(args, "strict", False))
+    if strict:
+        rc = 1 if checked == 0 or any(
+            row["verdict"] not in {"ok", "unsupported", "missing"} for row in rows) else 0
+    else:
+        rc = 1 if failed else 0
+    if getattr(args, "json", False):
+        envelope = {"version": 1,
+                    "rows": [{key: row.get(key) for key in
+                              ("provider", "slot", "env_var", "verdict", "status",
+                               "note", "fix")} for row in rows],
+                    "summary": summary}
+        print(redact_secrets(json.dumps(envelope, indent=2)))
+    else:
+        table = [("PROVIDER", "SLOT", "ENV_VAR", "VERDICT", "NOTE")]
+        for row in rows:
+            table.append((row["provider"], _keys_check_cell(row["slot"]),
+                          _keys_check_cell(row["env_var"]), row["verdict"], row["note"]))
+        widths = [max(len(line[i]) for line in table) for i in range(4)]
+        for index, line in enumerate(table):
+            text = (f"{line[0]:<{widths[0]}}  {line[1]:<{widths[1]}}  "
+                    f"{line[2]:<{widths[2]}}  {line[3]:<{widths[3]}}  {line[4]}")
+            print(redact_secrets(text.rstrip()))
+            if index > 0 and rows[index - 1].get("fix"):
+                print(redact_secrets(f"  fix: {rows[index - 1]['fix']}"))
+        print(f"keys check: checked={checked} ok={ok_count} failed={failed} "
+              f"inconclusive={inconclusive} uncheckable={uncheckable}")
+    if checked == 0:
+        # 018/F1: timeout/config_error rows also leave checked at 0 — only
+        # claim "all uncheckable" when every verdict actually is.
+        if rows and all(row["verdict"] in {"unsupported", "missing"} for row in rows):
+            print("freellmpool: keys check checked 0 slots; all rows are uncheckable "
+                  "(missing keys or unsupported listings).", file=sys.stderr)
+        else:
+            print("freellmpool: keys check checked 0 slots; no live verdicts obtained "
+                  "(see rows above).", file=sys.stderr)
+    if inconclusive and not strict and rc == 0:
+        # 018/F6: denied rows need scope action, not a retry — advise each kind.
+        retryable = sum(1 for row in rows if (row["fix"] or "").startswith("retry:"))
+        scoped = sum(1 for row in rows if (row["fix"] or "").startswith("scope:"))
+        if scoped and not retryable:
+            advice = "verify scope with the provider(s)"
+        elif scoped:
+            advice = "retry narrowed or verify scope with the provider(s)"
+        else:
+            advice = "retry narrowed"
+        print(f"freellmpool: keys check found {inconclusive} inconclusive row(s); "
+              f"{advice} or re-run with --strict to fail on these.", file=sys.stderr)
+    return rc
+
+
+def cmd_keys_check(args: argparse.Namespace) -> int:
+    """Validate configured key slots via read-only listing checks (G29).
+
+    Non-interactive, zero inference: each configured slot of each checkable
+    provider gets one verdict row. Never reads stdin, never writes snapshots,
+    never touches rotation cursors. Usage errors exit 2 with stderr text only.
+    """
+    import math
+
+    from .catalog import load_external_catalog
+    from .config import effective_env, load_catalog
+    from .discovery import (
+        _MIN_ATTEMPT_SECONDS,
+        KEYS_CHECK_REGISTRY_FIX,
+        KEYS_CHECK_TIMEOUT_NOTE,
+        KEYS_CHECK_UNSUPPORTED_NOTE,
+        check_provider_slot,
+        is_listing_checkable,
+        keys_check_missing_note,
+        keys_check_retry_fix,
+    )
+    from .key_inventory import credential_values, redact_secret_values, redact_secrets
+    from .key_rotation import slot_env_names
+    from .provider_registry import load_registry
+
+    snapshot = effective_env()
+    try:
+        registry = load_registry(snapshot)
+    except Exception:  # noqa: BLE001 - any registry failure becomes one loud row
+        registry = {}
+    if not registry:
+        return _keys_check_emit(args, [{
+            "provider": "*", "slot": None, "env_var": None,
+            "verdict": "config_error", "status": None,
+            "note": ("effective provider registry is empty or failed to load; "
+                     "cannot resolve providers."),
+            "fix": KEYS_CHECK_REGISTRY_FIX, "attempted": False}])
+    try:
+        user_catalog = load_catalog()
+    except Exception:  # noqa: BLE001 - user catalog is optional; registry still works
+        user_catalog = []
+    try:
+        external_catalog = load_external_catalog()
+    except Exception:  # noqa: BLE001 - external cache is optional; registry still works
+        external_catalog = []
+    user_by_id = {entry.id.lower(): entry for entry in user_catalog}
+    external_by_key: dict[str, Any] = {}
+    for item in external_catalog:
+        external_by_key.setdefault(item.slug.lower(), item)
+        external_by_key.setdefault(item.name.lower(), item)
+
+    needle = args.provider.strip().lower() if args.provider else None
+    if needle is not None:
+        canonical = {pid.lower(): pid for pid in registry}
+        if needle in canonical:
+            scope = [canonical[needle]]
+        elif needle in user_by_id:
+            scope = [user_by_id[needle].id]
+        elif needle in external_by_key:
+            scope = [external_by_key[needle].slug]
+        else:
+            known = ", ".join(sorted(registry))
+            return _keys_check_usage_error(
+                f"unknown provider '{args.provider}'. Known registry ids: {known}")
+    else:
+        scope = list(registry)
+        seen = {pid.lower() for pid in scope}
+        for entry in user_catalog:
+            if entry.id.lower() not in seen:
+                seen.add(entry.id.lower())
+                scope.append(entry.id)
+        for item in external_catalog:
+            if item.slug.lower() not in seen and item.name.lower() not in seen:
+                seen.add(item.slug.lower())
+                seen.add(item.name.lower())
+                scope.append(item.slug)
+
+    slot_filter = args.slot
+    if slot_filter is not None and (isinstance(slot_filter, bool)
+                                    or not isinstance(slot_filter, int)
+                                    or not 1 <= slot_filter <= 9):
+        return _keys_check_usage_error(f"--slot must be 1-9 (got {slot_filter}).")
+    timeout = args.timeout
+    if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+            or not math.isfinite(float(timeout)) or timeout <= 0):
+        return _keys_check_usage_error(
+            f"--timeout must be a positive number of seconds (got {timeout}).")
+
+    key_env_for: dict[str, str | None] = {}
+    checkable_for: dict[str, bool] = {}
+    for pid in scope:
+        if pid in registry:
+            key_env_for[pid] = registry[pid].get("credential_env")
+            checkable_for[pid] = is_listing_checkable(registry[pid])
+        else:
+            user_entry = user_by_id.get(pid.lower())
+            key_env_for[pid] = user_entry.key_env if user_entry is not None else None
+            checkable_for[pid] = False
+
+    plan: list[dict[str, Any]] = []
+    for pid in scope:
+        key_env = key_env_for[pid]
+        if not key_env:
+            plan.append({"kind": "row", "row": {
+                "provider": pid, "slot": 1, "env_var": None,
+                "verdict": "unsupported", "status": None,
+                "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None, "attempted": False}})
+            continue
+        names = slot_env_names(key_env)
+        if slot_filter is not None:
+            slots = [slot_filter]
+        else:
+            slots = [n for n in range(1, 10) if snapshot.get(names[n - 1])] or [1]
+        for slot in slots:
+            env_var = names[slot - 1]
+            if not snapshot.get(env_var):
+                plan.append({"kind": "row", "row": {
+                    "provider": pid, "slot": slot, "env_var": env_var,
+                    "verdict": "missing", "status": None,
+                    "note": keys_check_missing_note(slot, env_var), "fix": None,
+                    "attempted": False}})
+            elif not checkable_for[pid]:
+                plan.append({"kind": "row", "row": {
+                    "provider": pid, "slot": slot, "env_var": env_var,
+                    "verdict": "unsupported", "status": None,
+                    "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None,
+                    "attempted": False}})
+            else:
+                plan.append({"kind": "network", "provider": pid,
+                             "slot": slot, "env_var": env_var})
+
+    total = sum(1 for step in plan if step["kind"] == "network")
+    deadline = time.monotonic() + float(timeout)
+    attempt = 0
+    rows: list[dict[str, Any]] = []
+    for step in plan:
+        if step["kind"] == "row":
+            rows.append(step["row"])
+            continue
+        pid, slot = step["provider"], step["slot"]
+        if deadline - time.monotonic() < _MIN_ATTEMPT_SECONDS:
+            rows.append({"provider": pid, "slot": slot, "env_var": step["env_var"],
+                         "verdict": "timeout", "status": None,
+                         "note": KEYS_CHECK_TIMEOUT_NOTE,
+                         "fix": keys_check_retry_fix(pid, slot), "attempted": False})
+            continue
+        attempt += 1
+        print(f"freellmpool: keys check [{attempt}/{total}] {pid} slot {slot}",
+              file=sys.stderr)
+        try:
+            rows.append(check_provider_slot(pid, snapshot, slot))
+        except Exception as exc:  # noqa: BLE001 - per-slot containment, never tracebacks
+            # M4: this note is the only dynamic keys-check string (every other
+            # note/fix is static text + ids/var names), so the exception text
+            # gets value-based redaction against snapshot secrets — shape-based
+            # redaction cannot catch unprefixed keys echoed in str(exc).
+            detail = redact_secret_values(redact_secrets(str(exc)),
+                                           credential_values(snapshot))
+            rows.append({"provider": pid, "slot": slot, "env_var": step["env_var"],
+                         "verdict": "config_error", "status": None,
+                         "note": (f"internal check error ({type(exc).__name__}: {detail})"),
+                         "fix": keys_check_retry_fix(pid, slot), "attempted": False})
+    return _keys_check_emit(args, rows)
+
+
 def cmd_capacity_status(args: argparse.Namespace) -> int:
     from .capacity import build_capacity_report
     from .catalog import load_external_catalog, match_local_provider, sync_external_catalog
@@ -2951,6 +3194,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_keys_add.add_argument("--commercial-allowed", action="store_true")
     p_keys_add.add_argument("-y", "--yes", action="store_true")
     p_keys_add.set_defaults(func=cmd_keys_add)
+    p_keys_check = keys_sub.add_parser(
+        "check",
+        help=("validate configured keys via read-only listing checks "
+              "(disjoint from keys checklist presence todos)"),
+    )
+    p_keys_check.add_argument("-p", "--provider",
+                              help="only check this provider id (case-insensitive)")
+    p_keys_check.add_argument("--slot", type=int,
+                              help="only check key slot N (1-9; 1 is the bare var)")
+    p_keys_check.add_argument("--json", action="store_true",
+                              help="emit machine-readable JSON on stdout")
+    p_keys_check.add_argument("--timeout", type=float, default=180.0,
+                              help="overall wall-clock budget in seconds (default: 180)")
+    p_keys_check.add_argument("--strict", action="store_true",
+                              help="exit 1 unless every row is ok, unsupported, or missing")
+    p_keys_check.set_defaults(func=cmd_keys_check)
 
     p_local = sub.add_parser(
         "local",
@@ -3350,7 +3609,9 @@ def _bootstrap_tier_line(snapshot: dict[str, Any]) -> str:
         return _TIER_TRANSPORT
     if any(row.get("status") == "deferred" for row in rows):
         return _TIER_DEFERRED
-    if any(row.get("status") == "blocked" for row in rows):
+    if any(row.get("status") in {"blocked", "denied"} for row in rows):
+        # denied shares the blocked tier (018): a durable refusal whose
+        # next action is the same later re-check (the row note is precise).
         return _TIER_BLOCKED
     return _TIER_GENERIC
 

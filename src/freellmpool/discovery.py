@@ -21,7 +21,7 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -720,7 +720,9 @@ def _classify_denied(status: int, headers: Any, *, key_env: str | None, key_pres
     """Verdict for a 401/403 listing refusal: (status, note).
 
     Edge-mitigation headers and keyless-403 refusals are provider-side
-    refusals (blocked); everything else keeps today's auth_failed wording.
+    refusals (blocked). Every 403 is denied (permission scope, account
+    verification, or edge policy — a 403 never proves a key bad; RFC 9110
+    15.5.4). The auth_failed fallback is 401-only and authentication-only.
     """
     mitigated = status == 403 and any(headers.get(marker) is not None
                                       for marker in _MITIGATION_HEADERS)
@@ -744,8 +746,25 @@ def _classify_denied(status: int, headers: Any, *, key_env: str | None, key_pres
         return ("auth_failed", f"HTTP 401: keyless public listing refused; the provider now "
                                f"requires authentication via {key_env}. Add the credential, "
                                "then run `freellmpool update` to retry.")
-    return ("auth_failed", f"HTTP {status}: authentication, permissions or account "
-                           "verification failed; listing did not establish entitlement.")
+    if status == 403 and authenticated:
+        # 018: the credential authenticated but the listing is forbidden
+        # (permission scope or account verification). Never auth_failed:
+        # a 403 does not establish an invalid credential.
+        return ("denied", "HTTP 403: listing denied for this credential (often permission "
+                           "scope or account verification); key NOT proven bad; listing did not "
+                           "establish entitlement.")
+    if status == 403:
+        # H2: choke-point invariant — no 403 may reach the auth_failed
+        # fallback below, even on paths _prepare_attempt cannot produce
+        # today (unauthenticated private listing). A 403 never proves a key.
+        return ("denied", "HTTP 403: listing denied for this request (permission scope, "
+                           "account verification, or edge policy); no key proven bad; listing "
+                           "did not establish entitlement.")
+    # M1: fallback is 401-only and authentication-only; permission verdicts
+    # are denied's territory since 018 (Cloudflare account-ID nuance is
+    # added by consumers that know the provider: keys check, wizard).
+    return ("auth_failed", f"HTTP {status}: authentication failed; the credential did not "
+                           "authenticate; listing did not establish entitlement.")
 
 
 async def _afetch_page(client: httpx.AsyncClient, url: str, headers: dict[str, str],
@@ -1078,6 +1097,170 @@ def check_provider(provider_id: str, env: dict[str, str]) -> dict[str, Any]:
                 "checked_at": None, "last_attempt_at": _now(), "note": "Provider is not in the reviewed registry."}
     result = _attempt(provider, env)
     return {key: value for key, value in result.items() if key != "models"} | {"model_count": len(result["models"])}
+
+
+# --- G29 `keys check`: per-slot key validation (GET-only, zero inference) ---
+
+KEYS_CHECK_UNSUPPORTED_NOTE = "listing check does not authenticate; no key judgment"
+KEYS_CHECK_TIMEOUT_NOTE = "overall budget expired; retry narrowed"
+KEYS_CHECK_OK_NOTE = "key accepted on the listing endpoint"
+KEYS_CHECK_PARTIAL_NOTE = ("listing partially read; key NOT proven "
+                           "(redirect or malformed catalog); retry")
+KEYS_CHECK_AUTH_FAILED_NOTE = "key rejected — replace/re-verify"
+KEYS_CHECK_RATE_LIMITED_NOTE = "429: back off and retry"
+KEYS_CHECK_BLOCKED_NOTE = "edge refused listing; key NOT judged; no account action"
+KEYS_CHECK_DENIED_NOTE = ("listing denied: often permission scope or account "
+                          "verification; key not proven bad")
+KEYS_CHECK_DEFERRED_NOTE = "per-call bound expired; retry"
+KEYS_CHECK_ERROR_NOTE = "transport/HTTP failure; retry"
+KEYS_CHECK_ACCOUNT_ID_FIX = "set a valid CLOUDFLARE_ACCOUNT_ID"
+KEYS_CHECK_REGISTRY_FIX = "freellmpool update --renew-evidence"
+
+
+def is_listing_checkable(provider: Mapping[str, Any]) -> bool:
+    """True when a listing check would authenticate, and so judge the key.
+
+    Computed from registry fields (credential + url + non-none auth +
+    private listing), never a hardcoded id list, so registry drift re-scopes
+    automatically; the keys-check tripwire test pins the reviewed set.
+    """
+    spec = provider.get("discovery")
+    if not isinstance(spec, Mapping):
+        return False
+    return (bool(provider.get("credential_env"))
+            and bool(spec.get("url"))
+            and spec.get("auth") not in (None, "none")
+            and spec.get("supports_public") is False)
+
+
+def slot_env_var(key_env: str, slot: int) -> str:
+    """Env var holding a key slot: slot 1 is the bare var, N > 1 is ``VAR_N``."""
+    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= 9:
+        raise ValueError(f"slot must be 1-9 (got {slot!r})")
+    return key_env if slot == 1 else f"{key_env}_{slot}"
+
+
+def keys_check_retry_fix(provider_id: str, slot: int) -> str:
+    """Narrowed re-check command for inconclusive rows."""
+    return f"retry: freellmpool keys check --provider {provider_id} --slot {slot}"
+
+
+def keys_check_replace_fix(provider_id: str, slot: int) -> str:
+    """Replace + re-verify command for a proven-dead key."""
+    return (f"replace: freellmpool keys add {provider_id} --slot {slot}; "
+            f"re-verify: freellmpool setup --provider {provider_id}")
+
+
+def keys_check_scope_fix(provider_id: str, slot: int) -> str:
+    """Out-of-band scope check + narrowed re-check for a denied listing (018)."""
+    return (f"scope: verify model-listing permission / account verification "
+            f"for {provider_id}, then: freellmpool keys check "
+            f"--provider {provider_id} --slot {slot}")
+
+
+def keys_check_missing_note(slot: int, env_var: str) -> str:
+    """Static note for an unconfigured slot (names are never secrets)."""
+    # 018/F8: unconfigured covers absent AND blank (both fail the truthiness gate).
+    return f"slot {slot} unconfigured ({env_var} not set or blank)"
+
+
+def _map_slot_row(provider_id: str, slot: int, env_var: str,
+                  raw: dict[str, Any]) -> dict[str, Any]:
+    """Map one raw listing row onto a keys-check verdict row (total mapping)."""
+    status = raw.get("status")
+    base: dict[str, Any] = {"provider": provider_id, "slot": slot, "env_var": env_var,
+                            "status": status, "catalog_access": raw.get("catalog_access"),
+                            "attempted": True}
+    if status == "ok":
+        return {**base, "verdict": "ok", "note": KEYS_CHECK_OK_NOTE, "fix": None}
+    if status == "partial":
+        return {**base, "verdict": "partial", "note": KEYS_CHECK_PARTIAL_NOTE,
+                "fix": keys_check_retry_fix(provider_id, slot)}
+    if status == "auth_failed":
+        if provider_id == "cloudflare":
+            # H1: Cloudflare jointly authenticates (token, account ID), so a
+            # 401 cannot isolate a bad token from a wrong account ID. The
+            # verdict judges the KEY: denied/inconclusive with an account-ID
+            # scope fix — never auth_failed, never replace-key. The raw
+            # endpoint signal stays in status.
+            return {**base, "verdict": "denied",
+                    "note": ("HTTP 401 does not isolate a bad token from a wrong "
+                             "CLOUDFLARE_ACCOUNT_ID; key NOT proven bad"),
+                    "fix": ("scope: re-verify CLOUDFLARE_ACCOUNT_ID for cloudflare (a wrong "
+                            "account ID fails auth with a valid token), then: freellmpool keys "
+                            f"check --provider {provider_id} --slot {slot}")}
+        return {**base, "verdict": "auth_failed", "note": KEYS_CHECK_AUTH_FAILED_NOTE,
+                "fix": keys_check_replace_fix(provider_id, slot)}
+    if status == "rate_limited":
+        return {**base, "verdict": "rate_limited", "note": KEYS_CHECK_RATE_LIMITED_NOTE,
+                "fix": keys_check_retry_fix(provider_id, slot)}
+    if status == "blocked":
+        return {**base, "verdict": "blocked", "note": KEYS_CHECK_BLOCKED_NOTE,
+                "fix": keys_check_retry_fix(provider_id, slot)}
+    if status == "denied":
+        # 018: an authenticated 403 proves nothing about the key; the fix is
+        # out-of-band scope verification, never replace-key, never retry.
+        return {**base, "verdict": "denied", "note": KEYS_CHECK_DENIED_NOTE,
+                "fix": keys_check_scope_fix(provider_id, slot)}
+    if status == "deferred":
+        return {**base, "verdict": "deferred", "note": KEYS_CHECK_DEFERRED_NOTE,
+                "fix": keys_check_retry_fix(provider_id, slot)}
+    if status == "error":
+        return {**base, "verdict": "error", "note": KEYS_CHECK_ERROR_NOTE,
+                "fix": keys_check_retry_fix(provider_id, slot)}
+    if status == "auth_missing":
+        # Only reachable on a configured slot via a bad CLOUDFLARE_ACCOUNT_ID:
+        # every other auth_missing path needs a falsy key, excluded above.
+        return {**base, "verdict": "config_error",
+                "note": (f"CLOUDFLARE_ACCOUNT_ID is missing or invalid; slot {slot} "
+                         f"({env_var}) cannot authenticate"),
+                "fix": KEYS_CHECK_ACCOUNT_ID_FIX}
+    if status == "unsupported":
+        # 018/F5: reachable only when _prepare_attempt refuses pre-network
+        # (missing endpoint or non-same-origin URL from a corrupt bundle):
+        # no network ran, so attempted is False and checked must exclude it.
+        base["attempted"] = False
+        return {**base, "verdict": "unsupported",
+                "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None}
+    raise ValueError(f"unmapped discovery status: {status!r}")
+
+
+def check_provider_slot(provider_id: str, env: dict[str, str], slot: int) -> dict[str, Any]:
+    """Validate one key slot over the GET-only listing path. Zero inference.
+
+    Slot 1 reads the bare credential var, slot N > 1 reads ``VAR_N``. Slots
+    whose check would not authenticate yield ``unsupported`` without touching
+    the network; unconfigured (absent or blank) slots yield ``missing``. The
+    row carries ``catalog_access`` for internal auditing; CLI output must
+    project the whitelisted fields only and never render it.
+    """
+    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= 9:
+        raise ValueError(f"slot must be 1-9 (got {slot!r})")
+    provider = load_registry(env).get(provider_id)
+    if provider is None:
+        return {"provider": provider_id, "slot": slot, "env_var": None,
+                "verdict": "unsupported", "status": None,
+                "note": "Provider is not in the reviewed registry.", "fix": None,
+                "catalog_access": None, "attempted": False}
+    key_env = provider.get("credential_env")
+    if not is_listing_checkable(provider):
+        return {"provider": provider_id, "slot": slot,
+                "env_var": (slot_env_var(key_env, slot)
+                            if isinstance(key_env, str) and key_env else None),
+                "verdict": "unsupported", "status": None,
+                "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None,
+                "catalog_access": None, "attempted": False}
+    if not isinstance(key_env, str) or not key_env:
+        raise ValueError(f"checkable provider {provider_id!r} has no credential env")
+    env_var = slot_env_var(key_env, slot)
+    if not env.get(env_var):
+        return {"provider": provider_id, "slot": slot, "env_var": env_var,
+                "verdict": "missing", "status": None,
+                "note": keys_check_missing_note(slot, env_var), "fix": None,
+                "catalog_access": None, "attempted": False}
+    slot_env = dict(env)
+    slot_env[key_env] = env[env_var]
+    return _map_slot_row(provider_id, slot, env_var, check_provider(provider_id, slot_env))
 
 
 def _atomic_write(path: Path, result: dict[str, Any]) -> None:

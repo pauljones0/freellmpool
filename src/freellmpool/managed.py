@@ -289,6 +289,11 @@ class ManagedPool(Pool):
                               "names in update table)" if count else "no reviewed fallback candidates")
                 reason = (f"model listing blocked; {candidates}; run freellmpool update "
                           "--provider PROVIDER later to re-check (re-verdicts; verdict may persist)")
+            elif row.get("status") == "denied" and row.get("complete") is not True:
+                # 018: an authenticated 403 names a scope problem, not a dead key.
+                reason = ("model listing denied for this credential (often permission scope or "
+                          "account verification); verify with the provider, then run freellmpool "
+                          "update --provider PROVIDER to re-check")
             elif row.get("complete") is not True:
                 reason = "complete model discovery needed; run freellmpool update"
             elif checked is None or checked > now or now - checked > max_age:

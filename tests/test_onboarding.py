@@ -48,7 +48,8 @@ def test_failed_auth_is_saved_and_resumable_without_reentering_key(tmp_path):
     assert json.loads(progress.read_text())["providers"]["alpha"]["status"] == "checked"
 
 
-@pytest.mark.parametrize("status", ["unsupported", "partial", "auth_missing", "auth_failed", "error"])
+@pytest.mark.parametrize("status", ["unsupported", "partial", "auth_missing", "auth_failed", "error",
+                                   "denied"])
 def test_discovery_outcomes_do_not_enable_routes_or_leak_keys(tmp_path, status):
     output = []
     answers = iter(["", "", ""])
@@ -170,6 +171,46 @@ def test_wizard_opens_exact_provider_key_page_and_then_continues(tmp_path):
     answers = iter(["o", "", ""])
     assert run_onboarding(provider="alpha", registry=_registry(), env={"FREELLMPOOL_CONFIG_FILE": str(tmp_path / "config.toml")}, progress_path=tmp_path / "progress.json", input_fn=lambda _: next(answers), secret_fn=lambda _: "private-key", check=lambda *_: {"status": "ok"}, output=lambda _: None, open_url=opened.append) == 0
     assert opened == ["https://example.test/keys"]
+
+
+AUTH_FAILED_TEXT = ("Authentication was rejected (HTTP 401). The credential did not "
+                    "authenticate; check the key before continuing.")
+CLOUDFLARE_AUTH_FAILED_HINT = ("Cloudflare note: a wrong CLOUDFLARE_ACCOUNT_ID is rejected here "
+                               "with a valid token — re-verify the account ID before replacing the key.")
+
+
+def test_auth_failed_text_is_authentication_only_with_cloudflare_hint(tmp_path):
+    """019: auth_failed (401) no longer claims a permission verdict; Cloudflare
+    rows warn that a wrong account ID surfaces here with a valid token."""
+    from freellmpool.onboarding import _STATUS_TEXT
+
+    assert _STATUS_TEXT["auth_failed"] == AUTH_FAILED_TEXT
+    assert "permission" not in _STATUS_TEXT["auth_failed"].lower()
+
+    def flow(provider_id):
+        registry = _registry()
+        registry[provider_id] = {"id": provider_id, "display_name": provider_id.title(),
+                                 "credential_env": provider_id.upper() + "_KEY",
+                                 "grants": [{"kind": "recurring_quota", "status": "verified"}],
+                                 "setup": {"signup_url": "https://example.test/signup",
+                                           "key_url": "https://example.test/keys",
+                                           "steps": ["Choose the Free plan."],
+                                           "required_env": [provider_id.upper() + "_KEY"]}}
+        output = []
+        run_onboarding(provider=provider_id, registry=registry,
+                       env={"FREELLMPOOL_CONFIG_FILE": str(tmp_path / f"{provider_id}.toml")},
+                       progress_path=tmp_path / f"{provider_id}.json",
+                       input_fn=lambda _: "", secret_fn=lambda _: "private-value",
+                       check=lambda *_: {"status": "auth_failed", "note": "diagnostic-note"},
+                       output=output.append)
+        return output
+
+    cloudflare_out = flow("cloudflare")
+    assert CLOUDFLARE_AUTH_FAILED_HINT in cloudflare_out
+    # M2: guidance reads after the diagnostic it explains, not before it.
+    assert cloudflare_out.index("diagnostic-note") < cloudflare_out.index(
+        CLOUDFLARE_AUTH_FAILED_HINT)
+    assert CLOUDFLARE_AUTH_FAILED_HINT not in flow("alpha")
 
 
 @pytest.mark.parametrize("eligible", [False, True])
