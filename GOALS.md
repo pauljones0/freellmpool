@@ -1392,6 +1392,27 @@ Done when:
 
 Effort: M. Fit: high — compounds G24.
 
+## G26 — DNS hard bound + drip-bounded source reads (Status: active 2026-09-20)
+
+Pain: stalled system-resolver delay is a documented whole-machine
+residual (shutdown lag characterized, not bounded); public-sources
+reads are idle-8s but drip-unbounded. A hostile/slow network can
+still wedge first use past its loud bounded promise.
+
+Bet: bounding resolver shutdown lag and drip reads closes the
+last known unbounded wait in the fresh-consumer path.
+
+Execute: reproduce stall/drip live with bounded harnesses;
+define bound semantics + observable DoD; design/plan gates;
+TDD implement with adversarial review; prove from a clean
+environment; gates green; commit/push. Same gates and
+evidence rules as G24/G25.
+
+Done when: stall/drip reproduced, fixed TDD, adversarially
+reviewed, proven from a clean environment; gates green; pushed.
+
+Effort: M. Fit: high — completes the G24 boundedness promise.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:
