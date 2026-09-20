@@ -1263,6 +1263,231 @@ def check_provider_slot(provider_id: str, env: dict[str, str], slot: int) -> dic
     return _map_slot_row(provider_id, slot, env_var, check_provider(provider_id, slot_env))
 
 
+# --- G30 `--canary`: opt-in inference canary for uncheckable providers ---
+
+CANARY_TARGETS: dict[str, str] = {
+    "openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "nvidia": "nvidia/nemotron-3-super-120b-a12b",
+    "vercel": "poolside/laguna-s-2.1-free",
+    "aion": "aion-labs/aion-2.0",
+    "modelscope": "MiniMax/MiniMax-M3",
+}
+CANARY_MAX_TOKENS = 16
+CANARY_TIMEOUT_SECONDS = 20.0
+CANARY_PROMPT = "Reply with exactly OK."
+KEYS_CHECK_CANARY_DENIED_NOTE = ("canary refused for this credential (permission scope or "
+                                 "account access); key NOT proven bad")
+KEYS_CHECK_CANARY_BILLING_NOTE = ("canary refused: billing or no free route; key NOT proven bad")
+KEYS_CHECK_CANARY_REDIRECT_NOTE = "canary redirected; key NOT judged"
+KEYS_CHECK_CANARY_CONSENT = ("freellmpool: --canary spends ONE inference call (max_tokens=16) per "
+                             "listed slot on a free model; every dispatched attempt is recorded "
+                             "in quota, including failures.")
+
+
+def is_canary_eligible(provider_id: str, record: Mapping[str, Any] | None, local: Any | None,
+                       slot: int, env: Mapping[str, str]) -> bool:
+    """True when a canary may judge this slot (G30 eligibility rules 1-6).
+
+    `record` is the reviewed-registry entry (None for registry-external
+    providers); `local` is the catalog Provider (adapter/key_optional live
+    there, not in the registry). The pinned set lives in CANARY_TARGETS;
+    grant terms (paid_overage_possible False + no required account
+    conditions) are pinned by test, not evaluated at runtime.
+    """
+    if record is None or provider_id not in CANARY_TARGETS:
+        return False
+    key_env = record.get("credential_env")
+    if not isinstance(key_env, str) or not key_env:
+        return False
+    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= 9:
+        return False
+    if not env.get(slot_env_var(key_env, slot)):
+        return False
+    if is_listing_checkable(record):
+        return False
+    if record.get("inference_auth") == "none":
+        return False
+    if local is None or getattr(local, "key_optional", False) is True:
+        return False
+    return getattr(local, "adapter", None) == "openai"
+
+
+def keys_check_canary_retry_fix(provider_id: str, slot: int) -> str:
+    """Narrowed re-canary command (the fix must reproduce --canary)."""
+    return (f"retry: freellmpool keys check --provider {provider_id} --slot {slot} --canary")
+
+
+def keys_check_canary_scope_fix(provider_id: str, slot: int) -> str:
+    """Out-of-band permission check + narrowed re-canary for a refused canary."""
+    return (f"scope: verify model/inference permission / account access "
+            f"for {provider_id}, then: freellmpool keys check "
+            f"--provider {provider_id} --slot {slot} --canary")
+
+
+def _canary_default_post() -> Any:
+    """Single-shot network POST for canaries (no retries, no backoff sleep)."""
+    from functools import partial
+
+    from . import client
+
+    return partial(client.default_post, max_attempts=1)
+
+
+def _map_canary_http(provider_id: str, slot: int, env_var: str, model: str,
+                     status: int, headers: Any) -> dict[str, Any]:
+    """Map one raw canary HTTP outcome onto a verdict row (total mapping)."""
+    base: dict[str, Any] = {"provider": provider_id, "slot": slot, "env_var": env_var,
+                            "catalog_access": None, "attempted": True,
+                            "via": "canary", "canary_model": model}
+    retry = keys_check_canary_retry_fix(provider_id, slot)
+    if 200 <= status <= 299:
+        return {**base, "status": "ok", "verdict": "ok",
+                "note": f"key accepted on {model} canary", "fix": None}
+    if status == 401:
+        return {**base, "status": "auth_failed", "verdict": "auth_failed",
+                "note": KEYS_CHECK_AUTH_FAILED_NOTE,
+                "fix": keys_check_replace_fix(provider_id, slot)}
+    if status == 403:
+        mitigated = headers is not None and any(
+            headers.get(marker) is not None for marker in _MITIGATION_HEADERS)
+        if mitigated:
+            return {**base, "status": "blocked", "verdict": "blocked",
+                    "note": KEYS_CHECK_BLOCKED_NOTE, "fix": retry}
+        return {**base, "status": "denied", "verdict": "denied",
+                "note": KEYS_CHECK_CANARY_DENIED_NOTE,
+                "fix": keys_check_canary_scope_fix(provider_id, slot)}
+    if status == 402:
+        return {**base, "status": "denied", "verdict": "denied",
+                "note": KEYS_CHECK_CANARY_BILLING_NOTE,
+                "fix": keys_check_canary_scope_fix(provider_id, slot)}
+    if status == 404:
+        return {**base, "status": "error", "verdict": "error",
+                "note": f"canary target {model} not found; catalog drift suspected",
+                "fix": retry}
+    if status in (408, 504):
+        return {**base, "status": "deferred", "verdict": "deferred",
+                "note": KEYS_CHECK_DEFERRED_NOTE, "fix": retry}
+    if status == 429:
+        return {**base, "status": "rate_limited", "verdict": "rate_limited",
+                "note": KEYS_CHECK_RATE_LIMITED_NOTE, "fix": retry}
+    if 300 <= status <= 399:
+        return {**base, "status": "error", "verdict": "error",
+                "note": KEYS_CHECK_CANARY_REDIRECT_NOTE, "fix": retry}
+    if 400 <= status <= 499:
+        return {**base, "status": "error", "verdict": "error",
+                "note": f"canary malformed/unsupported by target ({status}); key NOT judged",
+                "fix": retry}
+    return {**base, "status": "error", "verdict": "error",
+            "note": KEYS_CHECK_ERROR_NOTE, "fix": retry}
+
+
+def check_canary_slot(provider_id: str, env: dict[str, str], slot: int,
+                      *, post: Any = None) -> dict[str, Any]:
+    """Judge one key slot with a single-shot inference canary (G30).
+
+    Exactly one POST to the pinned free target (max_tokens=16, thinking
+    floor disabled, no retries). Attempt-based quota: every dispatched
+    attempt records, including failures; connect-phase failures
+    (ConnectError/ConnectTimeout/PoolTimeout — httpx cannot split
+    DNS/refused/TLS) record nothing. The AllowanceLedger is never
+    touched. Notes are static strings; exception text is never rendered.
+    """
+    from . import client
+    from .errors import ProviderHTTPError
+    from .models import Provider
+    from .quota import QuotaStore
+
+    if isinstance(slot, bool) or not isinstance(slot, int) or not 1 <= slot <= 9:
+        raise ValueError(f"slot must be 1-9 (got {slot!r})")
+    provider = load_registry(env).get(provider_id)
+    model = CANARY_TARGETS.get(provider_id)
+    key_env = provider.get("credential_env") if provider else None
+    if provider is None or model is None or not key_env:
+        return {"provider": provider_id, "slot": slot, "env_var": None,
+                "verdict": "unsupported", "status": None,
+                "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None,
+                "catalog_access": None, "attempted": False}
+    env_var = slot_env_var(key_env, slot)
+    if not env.get(env_var):
+        return {"provider": provider_id, "slot": slot, "env_var": env_var,
+                "verdict": "missing", "status": None,
+                "note": keys_check_missing_note(slot, env_var), "fix": None,
+                "catalog_access": None, "attempted": False}
+    key = env[env_var]
+    slot_env = dict(env)
+    slot_env[key_env] = key
+    target = Provider(provider_id, provider.get("display_name", provider_id),
+                      "openai", provider["api_base_url"], (), key_env=key_env,
+                      auth="bearer", key_optional=False, extra_env=())
+    captured: dict[str, Any] = {}
+    inner = post or _canary_default_post()
+
+    def spy(url: str, headers: dict[str, str], body: dict[str, Any],
+            timeout: float) -> Any:
+        result = inner(url, headers, body, timeout)
+        captured["result"] = result
+        return result
+
+    quota = QuotaStore()
+
+    def charge() -> None:
+        quota.record(provider_id, model)
+
+    def mapped(status: int | None, headers: Any, fallback: int) -> dict[str, Any]:
+        # Raw captured status is authoritative (a synthesized 502 on an
+        # empty-choices 2xx must not misjudge an accepted key); the
+        # exception status is the fallback when nothing was captured.
+        return _map_canary_http(provider_id, slot, env_var, model,
+                                status if status is not None else fallback,
+                                headers)
+
+    try:
+        client.call(target, model, [{"role": "user", "content": CANARY_PROMPT}],
+                    api_key=key, env=slot_env, max_tokens=CANARY_MAX_TOKENS,
+                    temperature=0, timeout=CANARY_TIMEOUT_SECONDS,
+                    enforce_thinking_floor=False, post=spy)
+    except ProviderHTTPError as exc:
+        charge()
+        result = captured.get("result")
+        return mapped(getattr(result, "status", None),
+                      getattr(result, "headers", None), exc.status)
+    except httpx.TimeoutException as exc:
+        # ReadTimeout dispatched (charge); connect-phase timeouts did not.
+        if not isinstance(exc, (httpx.ConnectTimeout, httpx.PoolTimeout)):
+            charge()
+        return {"provider": provider_id, "slot": slot, "env_var": env_var,
+                "verdict": "deferred", "status": "deferred",
+                "note": KEYS_CHECK_DEFERRED_NOTE,
+                "fix": keys_check_canary_retry_fix(provider_id, slot),
+                "catalog_access": None, "attempted": True,
+                "via": "canary", "canary_model": model}
+    except httpx.ConnectError:
+        return {"provider": provider_id, "slot": slot, "env_var": env_var,
+                "verdict": "error", "status": "error",
+                "note": KEYS_CHECK_ERROR_NOTE,
+                "fix": keys_check_canary_retry_fix(provider_id, slot),
+                "catalog_access": None, "attempted": True,
+                "via": "canary", "canary_model": model}
+    except Exception:  # noqa: BLE001 - static note; never render str(exc)
+        charge()
+        return {"provider": provider_id, "slot": slot, "env_var": env_var,
+                "verdict": "error", "status": "error",
+                "note": KEYS_CHECK_ERROR_NOTE,
+                "fix": keys_check_canary_retry_fix(provider_id, slot),
+                "catalog_access": None, "attempted": True,
+                "via": "canary", "canary_model": model}
+    charge()
+    result = captured.get("result")
+    if result is None:  # pragma: no cover - defensive; openai adapter always posts
+        return {"provider": provider_id, "slot": slot, "env_var": env_var,
+                "verdict": "error", "status": "error",
+                "note": KEYS_CHECK_ERROR_NOTE,
+                "fix": keys_check_canary_retry_fix(provider_id, slot),
+                "catalog_access": None, "attempted": True,
+                "via": "canary", "canary_model": model}
+    return mapped(result.status, result.headers, result.status)
+
+
 def _atomic_write(path: Path, result: dict[str, Any]) -> None:
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:

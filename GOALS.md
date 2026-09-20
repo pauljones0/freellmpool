@@ -1629,6 +1629,54 @@ stay loud (ValueError → config_error rc1 with the status named);
 Effort: M (supervisor counterexample + consumer-wide sweep).
 Fit: high — "which key is broken?" becomes one command.
 
+## G30 — opt-in inference canary for uncheckable keys (Status: complete 2026-09-20)
+
+Pain: G29 judged keys for only 6 listing-checkable providers. Keyed
+OpenRouter/NVIDIA/Vercel/Aion/ModelScope users got `unsupported` and
+discovered dead keys only as confusing 401/429s at inference time.
+
+Bet: an explicit opt-in flag sends ONE tiny single-shot chat
+completion per unsupported slot to a registry-pinned free model and
+maps the raw HTTP outcome onto the same evidence-graded verdicts —
+only a clean 401 proves dead.
+
+Execute: design + 3-reviewer plan gate (v1 FAIL-fixable on all three;
+v2 + v2.1 folds verified, final PASS); TDD implement (red-first,
+MockTransport/fake-POST offline); adversarial review of the diff;
+gates green; commit/push.
+
+Done when:
+- [x] `--canary` judges the 5 eligible providers (OpenRouter, NVIDIA,
+  Vercel, Aion, ModelScope) with one POST each (max_tokens=16,
+  thinking floor off, max_attempts=1, 20s bound, per-slot key);
+  listing-checkable providers stay GET-only even with the flag.
+- [x] Total verdict mapping: 2xx (any text) → ok; 401 → auth_failed;
+  403 → denied (mitigated → blocked); 402 → denied; 404/4xx-group/3xx
+  → error; 408/504/TimeoutException → deferred; 429 → rate_limited;
+  transport → error; overall budget → timeout. No new verdicts.
+- [x] Honest spend: flag IS consent (stderr banner, once, only when
+  canary steps are planned); attempt-based quota (every dispatched
+  attempt records incl. failures; connect-phase records nothing);
+  allowance ledger never touched; canary rows carry `via`/
+  `canary_model`, listing rows byte-identical.
+- [x] Free-only lock: pins match unconditional hard-free grants
+  (paid_overage_possible False + no account conditions); Ollama
+  excluded (paid-overage grant), llm7 excluded (key-optional),
+  credential-less and registry-external stay unsupported.
+- [x] 25 canary tests green (tripwire, grant terms, totality, quota
+  boundary, single-dispatch bound, secrecy, strict, slots); full
+  strict suite green (3139 collected, rc0) + ruff + strict mypy +
+  docs + coverage (87.89%/79.32%) green; pushed.
+
+Honesty residuals: canary targets can drift (404 → named drift error,
+re-pin); 429 Retry-After deliberately not honored (single-shot, no
+sleep); `partial` unreachable for canary rows by design; quota shows
+canary spend indistinguishably from real usage (accepted: it IS real
+spend); Cloudflare token-verify disambiguation still a follow-up.
+
+Effort: M (plan-gate iterations + total mapping). Fit: high — closes
+the G29 coverage gap without weakening any G29 guarantee.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

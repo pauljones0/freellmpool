@@ -1082,11 +1082,18 @@ def _keys_check_emit(args: argparse.Namespace, rows: list[dict[str, Any]]) -> in
     else:
         rc = 1 if failed else 0
     if getattr(args, "json", False):
-        envelope = {"version": 1,
-                    "rows": [{key: row.get(key) for key in
-                              ("provider", "slot", "env_var", "verdict", "status",
-                               "note", "fix")} for row in rows],
-                    "summary": summary}
+        projected = []
+        for row in rows:
+            entry = {key: row.get(key) for key in
+                     ("provider", "slot", "env_var", "verdict", "status",
+                      "note", "fix")}
+            if row.get("via") == "canary":
+                # G30: additive keys on canary rows only; listing rows keep
+                # the exact G29 shape so default-path goldens pass unmodified.
+                entry["via"] = "canary"
+                entry["canary_model"] = row.get("canary_model")
+            projected.append(entry)
+        envelope = {"version": 1, "rows": projected, "summary": summary}
         print(redact_secrets(json.dumps(envelope, indent=2)))
     else:
         table = [("PROVIDER", "SLOT", "ENV_VAR", "VERDICT", "NOTE")]
@@ -1139,11 +1146,15 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
     from .config import effective_env, load_catalog
     from .discovery import (
         _MIN_ATTEMPT_SECONDS,
+        KEYS_CHECK_CANARY_CONSENT,
         KEYS_CHECK_REGISTRY_FIX,
         KEYS_CHECK_TIMEOUT_NOTE,
         KEYS_CHECK_UNSUPPORTED_NOTE,
+        check_canary_slot,
         check_provider_slot,
+        is_canary_eligible,
         is_listing_checkable,
+        keys_check_canary_retry_fix,
         keys_check_missing_note,
         keys_check_retry_fix,
     )
@@ -1225,6 +1236,7 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
             key_env_for[pid] = user_entry.key_env if user_entry is not None else None
             checkable_for[pid] = False
 
+    canary = bool(getattr(args, "canary", False))
     plan: list[dict[str, Any]] = []
     for pid in scope:
         key_env = key_env_for[pid]
@@ -1248,16 +1260,25 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
                     "note": keys_check_missing_note(slot, env_var), "fix": None,
                     "attempted": False}})
             elif not checkable_for[pid]:
-                plan.append({"kind": "row", "row": {
-                    "provider": pid, "slot": slot, "env_var": env_var,
-                    "verdict": "unsupported", "status": None,
-                    "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None,
-                    "attempted": False}})
+                record = registry.get(pid)
+                local = user_by_id.get(pid.lower()) if record is not None else None
+                if canary and record is not None and is_canary_eligible(
+                        pid, record, local, slot, snapshot):
+                    plan.append({"kind": "canary", "provider": pid,
+                                 "slot": slot, "env_var": env_var})
+                else:
+                    plan.append({"kind": "row", "row": {
+                        "provider": pid, "slot": slot, "env_var": env_var,
+                        "verdict": "unsupported", "status": None,
+                        "note": KEYS_CHECK_UNSUPPORTED_NOTE, "fix": None,
+                        "attempted": False}})
             else:
                 plan.append({"kind": "network", "provider": pid,
                              "slot": slot, "env_var": env_var})
 
-    total = sum(1 for step in plan if step["kind"] == "network")
+    total = sum(1 for step in plan if step["kind"] in {"network", "canary"})
+    if canary and any(step["kind"] == "canary" for step in plan):
+        print(KEYS_CHECK_CANARY_CONSENT, file=sys.stderr)
     deadline = time.monotonic() + float(timeout)
     attempt = 0
     rows: list[dict[str, Any]] = []
@@ -1266,17 +1287,23 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
             rows.append(step["row"])
             continue
         pid, slot = step["provider"], step["slot"]
+        is_canary = step["kind"] == "canary"
+        retry_fix = keys_check_canary_retry_fix if is_canary else keys_check_retry_fix
         if deadline - time.monotonic() < _MIN_ATTEMPT_SECONDS:
             rows.append({"provider": pid, "slot": slot, "env_var": step["env_var"],
                          "verdict": "timeout", "status": None,
                          "note": KEYS_CHECK_TIMEOUT_NOTE,
-                         "fix": keys_check_retry_fix(pid, slot), "attempted": False})
+                         "fix": retry_fix(pid, slot), "attempted": False})
             continue
         attempt += 1
-        print(f"freellmpool: keys check [{attempt}/{total}] {pid} slot {slot}",
+        print(f"freellmpool: keys check [{attempt}/{total}] {pid} slot {slot}"
+              f"{' (canary)' if is_canary else ''}",
               file=sys.stderr)
         try:
-            rows.append(check_provider_slot(pid, snapshot, slot))
+            if is_canary:
+                rows.append(check_canary_slot(pid, snapshot, slot))
+            else:
+                rows.append(check_provider_slot(pid, snapshot, slot))
         except Exception as exc:  # noqa: BLE001 - per-slot containment, never tracebacks
             # M4: this note is the only dynamic keys-check string (every other
             # note/fix is static text + ids/var names), so the exception text
@@ -1287,7 +1314,7 @@ def cmd_keys_check(args: argparse.Namespace) -> int:
             rows.append({"provider": pid, "slot": slot, "env_var": step["env_var"],
                          "verdict": "config_error", "status": None,
                          "note": (f"internal check error ({type(exc).__name__}: {detail})"),
-                         "fix": keys_check_retry_fix(pid, slot), "attempted": False})
+                         "fix": retry_fix(pid, slot), "attempted": False})
     return _keys_check_emit(args, rows)
 
 
@@ -3209,6 +3236,9 @@ def build_parser() -> argparse.ArgumentParser:
                               help="overall wall-clock budget in seconds (default: 180)")
     p_keys_check.add_argument("--strict", action="store_true",
                               help="exit 1 unless every row is ok, unsupported, or missing")
+    p_keys_check.add_argument("--canary", action="store_true",
+                              help=("opt-in: judge unsupported slots with one tiny inference call "
+                                    "each on a free model (spend is recorded in quota)"))
     p_keys_check.set_defaults(func=cmd_keys_check)
 
     p_local = sub.add_parser(

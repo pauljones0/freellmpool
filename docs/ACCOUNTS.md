@@ -155,9 +155,10 @@ e.g. `set -a; source .env; set +a`, or a tool like
 `freellmpool keys check` validates every configured key slot with a read-only
 model-listing request. It makes no inference calls, touches no rotation
 state, and writes no snapshots — local usage counters are unchanged by a
-check run. The listing requests themselves still occur; how a provider
-meters listing calls is that provider's policy, not something this command
-can promise about:
+check run (unless you pass `--canary`, which explicitly spends one tiny
+inference call per canaried slot; see below). The listing requests
+themselves still occur; how a provider meters listing calls is that
+provider's policy, not something this command can promise about:
 
 ```bash
 freellmpool keys check                       # every provider, every configured slot
@@ -170,7 +171,31 @@ Only providers whose listing request authenticates can yield a key verdict:
 **Cloudflare, Cohere, Gemini, Groq, Mistral, Zhipu**. Every other provider
 reports `unsupported` ("listing check does not authenticate; no key judgment")
 without any network call — a keyless or public listing can never prove a key
-good or bad. Slot 1 is the bare var (`GROQ_API_KEY`), slot N > 1 is `VAR_N`.
+good or bad (without `--canary`; with it, five more providers get canary
+verdicts). Slot 1 is the bare var (`GROQ_API_KEY`), slot N > 1 is `VAR_N`.
+
+### Judging unsupported keys (`--canary`, opt-in spend)
+
+`freellmpool keys check --canary` sends ONE single-shot chat completion
+(`max_tokens=16`, thinking floor disabled, no retries) per otherwise
+`unsupported` slot to a registry-pinned free model, for **OpenRouter,
+NVIDIA, Vercel, Aion, ModelScope**. The flag IS consent: this spends
+real quota — every dispatched attempt is recorded in quota, including
+failures (only connect-phase failures, where nothing was sent, are not
+recorded). The allowance ledger is never touched. Listing-checkable
+providers keep the GET-only path even with `--canary`.
+
+Canary rows reuse the same verdicts with canary-specific notes/fixes
+(the retry/scope fixes carry `--canary` so they reproduce the run):
+only a clean 401 proves dead; 403/402 stay inconclusive (`denied`
+family); drift (404), malformed outcomes, redirects, and transport
+failures are `error`; timeouts are `deferred`/`timeout`. Excluded on
+purpose: Ollama (its free grant permits paid overage on unverifiable
+account conditions — never canaried under a bare flag), `llm7`
+(key-optional: a 2xx could never judge the key), providers without a
+credential, and registry-external entries. Canary rows add `"via":
+"canary"` + `"canary_model"` to the JSON envelope; listing rows are
+byte-identical to a no-flag run.
 
 Verdicts judge the KEY from what the listing proved. `ok` means the
 key was accepted; `auth_failed` means the credential was rejected at
@@ -200,8 +225,9 @@ Exit codes (script-safe by default):
   `blocked`, `partial`, `deferred`, `timeout`, transport `error`) and
   uncheckable rows never fail.
 - `1` — a key was proven dead (`auth_failed`: HTTP 401 outside
-  Cloudflare) or a deterministic local failure occurred (`config_error`:
-  malformed `CLOUDFLARE_ACCOUNT_ID`, broken registry, internal error).
+  Cloudflare, whether listing- or canary-proven) or a deterministic
+  local failure occurred (`config_error`: malformed
+  `CLOUDFLARE_ACCOUNT_ID`, broken registry, internal error).
 - `2` — usage error (unknown provider, `--slot` outside 1–9, bad `--timeout`).
   Note: `keys add` uses exit 3 for its usage errors; `keys check` uses 2.
 
