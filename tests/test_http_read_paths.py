@@ -32,10 +32,13 @@ def run_path(kind, client, monkeypatch):
     if kind == "limits":
         monkeypatch.setattr(limits, "_client", lambda: client)
         return limits.collect_proposals(registry())["providers"]["groq"]
-    monkeypatch.setattr(d, "_client", lambda: client)
     spec = load_registry()["openrouter"]
     if kind == "catalog":
+        # Catalog reads are async; reuse the sync test client's transport.
+        monkeypatch.setattr(d, "_aclient",
+                            lambda: httpx.AsyncClient(transport=client._transport))
         return d._attempt(spec, {}, public_only=True)
+    monkeypatch.setattr(d, "_client", lambda: client)
     spec["evidence"] = spec["evidence"][:1]
     return d.check_public_sources(registry={"openrouter": spec})["sources"][0]
 

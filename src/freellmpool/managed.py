@@ -42,9 +42,10 @@ from .errors import (
     ContextWindowExceeded,
     ProviderHTTPError,
     StructuredOutputError,
+    with_auth_hint,
 )
 from .free_policy import admit, credential_fingerprint, fresh, load_accounts, timestamp
-from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
+from .key_rotation import ROTATE_STATUSES, KeyRotator, configured_slot_name, cool_delay
 from .media import check_image_url, image_input_tokens
 from .metrics import Metrics
 from .models import EmbedReply, Model, Provider, Reply, TranscribeReply
@@ -268,8 +269,10 @@ class ManagedPool(Pool):
             reason = ""
             if not provider.is_configured(request_env):
                 reason = "API key or required account field missing"
+            elif row.get("status") == "deferred" and row.get("complete") is not True:
+                reason = "model discovery deferred (time budget); run freellmpool update"
             elif row.get("complete") is not True:
-                reason = "complete model discovery needed"
+                reason = "complete model discovery needed; run freellmpool update"
             elif checked is None or checked > now or now - checked > max_age:
                 reason = "model discovery expired; run freellmpool update"
             account = accounts.get(pid, {})
@@ -907,7 +910,11 @@ class ManagedPool(Pool):
                             route.provider.id, slot,
                             len(route.provider.api_keys(route.env)), key_exc,
                         )
-                        attempts.append((route.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                        attempts.append((route.name, with_auth_hint(
+                            f"key slot {slot + 1}: HTTP {key_exc.status}",
+                            provider_id=route.provider.id,
+                            key_env=configured_slot_name(route.provider.key_env or "", route.env, slot),
+                            status=key_exc.status)))
             except Exception as exc:
                 self._check_cancelled()
                 delay = self._failure(route, exc)
@@ -925,7 +932,9 @@ class ManagedPool(Pool):
                 if (isinstance(exc, ProviderHTTPError) and state.get("active_slot", -1) >= 0
                         and len(route.provider.api_keys(route.env)) > 1):
                     detail = f"key slot {state['active_slot'] + 1}: {detail}"
-                attempts.append((route.name, detail))
+                attempts.append((route.name, with_auth_hint(
+                    detail, provider_id=route.provider.id, key_env=route.provider.key_env,
+                    status=exc.status if isinstance(exc, ProviderHTTPError) else None)))
             if not queue and retryable:
                 wake = min(end for _, end in retryable)
                 delay = max(.01, wake - time.monotonic())

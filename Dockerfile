@@ -29,7 +29,9 @@ RUN adduser -D -u 10001 freellmpool
 USER freellmpool
 
 EXPOSE 8080
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+# Cold proxy/mcp first-run bootstrap blocks <=40s+eps (+system-resolver
+# residual) on catalog discovery; 90s start-period keeps margin over 40+8=48.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=90s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/livez', timeout=2)"
 ENTRYPOINT ["freellmpool"]
 CMD ["proxy", "--host", "0.0.0.0", "--port", "8080", "--allow-lan", "--allow-no-auth", "--allowed-authority", "127.0.0.1:8080", "--allowed-authority", "localhost:8080"]

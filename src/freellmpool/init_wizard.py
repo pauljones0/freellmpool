@@ -159,6 +159,7 @@ def render_detect_only(report: InitReport, *, port: int = DEFAULT_INIT_PORT) -> 
         f"proxy key configured : {'yes' if proxy.proxy_key_configured else 'no'}",
         "",
         "Recommended next commands:",
+        "  freellmpool setup --resume",
         "  freellmpool init --yes --agent opencode",
         f"  freellmpool init --yes --agent metaswarm --tailnet --port {port}",
         "  freellmpool mcp",

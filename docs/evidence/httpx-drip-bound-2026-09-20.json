@@ -1,0 +1,9 @@
+{
+  "httpx_version": "0.28.1",
+  "phase_timeout_s": 0.2,
+  "sum_phase_timeouts_s": 0.8,
+  "elapsed_s": 1.695,
+  "bytes": 12,
+  "timed_out": false,
+  "network": "loopback synthetic only"
+}

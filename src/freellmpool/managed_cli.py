@@ -8,6 +8,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -53,17 +54,66 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+_UPDATE_FOOTER_OK = ("Discovery updated. Pricing, account eligibility, and protocol evidence "
+                     "remain separate checks.")
+_UPDATE_BUSY_LINE = ("freellmpool: another catalog refresh is running; showing last-good catalog "
+                     "without refreshing (retry `freellmpool update`).")
+_UPDATE_BUSY_RENEW_SKIP = "freellmpool: evidence renewal skipped (catalog refresh is busy)."
+
+
+def _read_last_good(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"providers": {}}
+    if not isinstance(data, dict) or not isinstance(data.get("providers"), dict):
+        return {"providers": {}}
+    data["providers"] = {pid: row for pid, row in data["providers"].items() if isinstance(row, dict)}
+    return data
+
+
 def cmd_update(args: argparse.Namespace) -> int:
-    from .discovery import default_discovery_path, refresh_catalog, refresh_evidence
+    from .discovery import (
+        DiscoveryBusy,
+        budget_seconds,
+        count_snapshot,
+        default_discovery_path,
+        discovery_summary_line,
+        refresh_catalog,
+        refresh_evidence,
+        safe_print,
+        sanitize_pid,
+        stderr_progress_printer,
+    )
     env = {} if args.public_only else effective_env()
     path = default_discovery_path(env).with_name("public-discovery.json") if args.public_only else None
-    result = refresh_catalog(env, provider_ids=args.provider, public_only=args.public_only, path=path)
-    if getattr(args, "renew_evidence", False):
+    start = time.monotonic()
+    try:
+        result = refresh_catalog(env, provider_ids=args.provider, public_only=args.public_only, path=path,
+                                 deadline=start + budget_seconds(env), progress=stderr_progress_printer())
+        refreshed = True
+    except DiscoveryBusy:
+        safe_print(_UPDATE_BUSY_LINE, file=sys.stderr)
+        if getattr(args, "renew_evidence", False):
+            safe_print(_UPDATE_BUSY_RENEW_SKIP, file=sys.stderr)
+        result = _read_last_good(path or default_discovery_path(env))
+        refreshed = False
+    if getattr(args, "renew_evidence", False) and refreshed:
         refresh_evidence(env, provider_ids=args.provider, public_only=args.public_only)
-    for pid, row in result.get("providers", {}).items():
-        if not args.provider or pid in args.provider:
-            print(f"{pid:<14} {row.get('status', 'unknown'):<16} {len(row.get('models', [])):>4} catalog routes")
-    print("Discovery updated. Pricing, account eligibility, and protocol evidence remain separate checks.")
+    rows = result.get("providers", {})
+    shown = {pid: row for pid, row in rows.items() if not args.provider or pid in args.provider}
+    safe_print(discovery_summary_line({"providers": shown}, time.monotonic() - start), file=sys.stderr)
+    for pid, row in shown.items():
+        models = row.get("models", [])
+        safe_print(f"{sanitize_pid(pid):<14} {row.get('status', 'unknown'):<16} {len(models) if isinstance(models, list) else 0:>4} catalog routes")
+    ok, deferred, failed = count_snapshot({"providers": shown})
+    # Never print "updated" unless this run refreshed every requested provider to ok.
+    if refreshed and failed == 0 and deferred == 0:
+        safe_print(_UPDATE_FOOTER_OK)
+    else:
+        safe_print(f"Discovery incomplete: {ok} ok, {deferred} deferred, {failed} failed; "
+                   "run `freellmpool update` to retry. Pricing, account eligibility, and protocol "
+                   "evidence remain separate checks.")
     return 0
 
 
@@ -289,10 +339,18 @@ def cmd_setup_clients(args: argparse.Namespace) -> int:
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
-    from .discovery import refresh_catalog
+    from .discovery import DiscoveryBusy, budget_seconds, refresh_catalog, stderr_progress_printer
     from .onboarding import run_onboarding
     def check(pid: str, env: dict[str, str]) -> dict[str, Any]:
-        result = refresh_catalog(env, provider_ids=[pid])
+        # CTO-2: setup is interactive (user-paced), so each check arms its own
+        # full budget. A shared wall deadline would expire while the user reads.
+        try:
+            result = refresh_catalog(env, provider_ids=[pid],
+                                     deadline=time.monotonic() + budget_seconds(env),
+                                     progress=stderr_progress_printer())
+        except DiscoveryBusy:
+            return {"status": "error",
+                    "note": "Another catalog refresh is running; retry this provider later."}
         return cast(dict[str, Any], result.get("providers", {}).get(pid, {"status": "error"}))
     result = run_onboarding(provider=args.provider, resume=args.resume, check=check,
                             eligibility=lambda pid: any(r.provider.id == pid for r in ManagedPool.from_default_config().snapshot().routes))

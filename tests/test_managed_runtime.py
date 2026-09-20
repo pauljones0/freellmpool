@@ -651,3 +651,64 @@ def test_snapshot_tolerates_garbage_catalog_max_age(tmp_path):
                        ledger=AllowanceLedger(tmp_path / "allowances.db"),
                        post=lambda *args: successful())
     assert pool.snapshot().routes, "garbage max-age must not break snapshot"
+
+
+def _reason(pool, pid="alpha"):
+    return next(row for row in pool.managed_status()["providers"] if row["id"] == pid)["reason"]
+
+
+def test_status_names_update_command(tmp_path):
+    pool = make_pool(tmp_path, ids=("alpha",))
+    pool._discovery_override["providers"]["alpha"]["complete"] = False
+    assert _reason(pool) == "complete model discovery needed; run freellmpool update"
+
+
+def test_managed_deferred_reason_exact(tmp_path):
+    pool = make_pool(tmp_path, ids=("alpha",))
+    row = pool._discovery_override["providers"]["alpha"]
+    row["status"] = "deferred"
+    row["complete"] = False
+    assert _reason(pool) == "model discovery deferred (time budget); run freellmpool update"
+
+
+def test_preserved_deferred_serves_routes(tmp_path):
+    pool = make_pool(tmp_path, ids=("alpha",))
+    pool._discovery_override["providers"]["alpha"]["status"] = "deferred"
+    assert pool.snapshot().routes, "preserved-deferred keeps serving while fresh"
+    assert _reason(pool) == "ready"
+
+
+def test_deferred_snapshot_yields_no_deferred_origin_routes(tmp_path):
+    pool = make_pool(tmp_path, ids=("alpha", "beta"))
+    for row in pool._discovery_override["providers"].values():
+        row["status"] = "deferred"
+        row["complete"] = False
+        row["models"] = []
+    assert list(pool.snapshot().routes) == []
+    status = pool.managed_status()
+    assert status["eligible_routes"] == 0 and status["strict_free"] is True
+
+
+def test_terminal_sites_pass_base_key_env(tmp_path):
+    from freellmpool.client import HTTPResult
+
+    pool = make_pool(tmp_path, ids=("alpha",),
+                     post=lambda *args: HTTPResult(401, {}, "bad key"))
+    with pytest.raises(AllProvidersExhausted) as error:
+        pool.ask("hi")
+    assert "(provider rejected the request)" in str(error.value)
+
+
+def test_managed_auth_failure_names_resolved_slot(tmp_path):
+    from test_key_rotation import make_keyed_pool
+
+    from freellmpool.client import HTTPResult
+
+    env = {"ALPHA_API_KEY": "canary-one", "ALPHA_API_KEY_3": "canary-three",
+           "ALPHA_API_KEY_4": "canary-four"}
+    pool = make_keyed_pool(tmp_path, env, post=lambda *args: HTTPResult(401, {}, "bad key"))
+    with pytest.raises(AllProvidersExhausted) as error:
+        pool.ask("hi")
+    text = str(error.value)
+    assert "(check key ALPHA_API_KEY_3)" in text
+    assert "canary-one" not in text and "canary-three" not in text and "canary-four" not in text

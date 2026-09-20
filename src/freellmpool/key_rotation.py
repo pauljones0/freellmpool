@@ -31,6 +31,18 @@ def slot_env_names(key_env: str) -> tuple[str, ...]:
     return (key_env, *(f"{key_env}_{i}" for i in range(2, MAX_SLOTS + 1)))
 
 
+def configured_slot_name(key_env: str, env: dict[str, str], slot: int) -> str:
+    """Name of configured slot ``slot``, mirroring api_keys compaction.
+
+    Slot indices count configured keys only, so index != suffix when slots
+    are unset or blank. Out-of-range slots fall back to the base name.
+    """
+    names = [name for name in slot_env_names(key_env) if env.get(name)]
+    if 0 <= slot < len(names):
+        return names[slot]
+    return key_env
+
+
 class KeyRotator:
     """Per-provider sticky cursor + per-slot cooldowns (no key material).
 

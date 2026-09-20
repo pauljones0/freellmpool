@@ -16,8 +16,8 @@ def _del_opt_out(monkeypatch):
 def _stub_refresh(monkeypatch, *, fail=False):
     calls = []
 
-    def fake(env):
-        calls.append(dict(env))
+    def fake(env, **kwargs):
+        calls.append((dict(env), kwargs))
         if fail:
             raise RuntimeError("simulated offline first run")
         return {}

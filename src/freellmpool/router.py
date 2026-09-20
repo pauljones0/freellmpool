@@ -46,8 +46,9 @@ from .errors import (
     ContextWindowExceeded,
     NoProvidersConfigured,
     ProviderHTTPError,
+    with_auth_hint,
 )
-from .key_rotation import ROTATE_STATUSES, KeyRotator, cool_delay
+from .key_rotation import ROTATE_STATUSES, KeyRotator, configured_slot_name, cool_delay
 from .metrics import Metrics, Stat, score_stat
 from .models import EmbedReply, Provider, Reply, TranscribeReply
 from .observe import EventHook, emit
@@ -777,10 +778,17 @@ class Pool:
                             if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                                 raise
                             self._cool_key_slot(emb.id, slot, len(emb.api_keys(self.env)), key_exc)
-                            attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                            attempts.append((target.name, with_auth_hint(
+                                f"key slot {slot + 1}: HTTP {key_exc.status}",
+                                provider_id=target.provider.id,
+                                key_env=configured_slot_name(target.provider.key_env or "", self.env, slot),
+                                status=key_exc.status)))
                     assert reply is not None  # trials is never empty; body returns or raises
                 except Exception as exc:  # noqa: BLE001 — try the next embedder
-                    attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
+                    attempts.append((target.name, with_auth_hint(
+                        f"{type(exc).__name__}: {exc}", provider_id=target.provider.id,
+                        key_env=target.provider.key_env,
+                        status=exc.status if isinstance(exc, ProviderHTTPError) else None)))
                     self._record_route_failure(target, exc, lease)
                     if (
                         isinstance(exc, ProviderHTTPError)
@@ -865,10 +873,17 @@ class Pool:
                             if slot < 0 or key_exc.status not in ROTATE_STATUSES or trial + 1 >= len(trials):
                                 raise
                             self._cool_key_slot(tr.id, slot, len(tr.api_keys(self.env)), key_exc)
-                            attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                            attempts.append((target.name, with_auth_hint(
+                                f"key slot {slot + 1}: HTTP {key_exc.status}",
+                                provider_id=target.provider.id,
+                                key_env=configured_slot_name(target.provider.key_env or "", self.env, slot),
+                                status=key_exc.status)))
                     assert reply is not None  # trials is never empty; body returns or raises
                 except Exception as exc:  # noqa: BLE001 — try the next transcriber
-                    attempts.append((target.name, f"{type(exc).__name__}: {exc}"))
+                    attempts.append((target.name, with_auth_hint(
+                        f"{type(exc).__name__}: {exc}", provider_id=target.provider.id,
+                        key_env=target.provider.key_env,
+                        status=exc.status if isinstance(exc, ProviderHTTPError) else None)))
                     self._record_route_failure(target, exc, lease)
                     if (
                         isinstance(exc, ProviderHTTPError)
@@ -1428,7 +1443,11 @@ class Pool:
                             target.provider.id, slot,
                             len(target.provider.api_keys(self.env)), key_exc,
                         )
-                        attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                        attempts.append((target.name, with_auth_hint(
+                            f"key slot {slot + 1}: HTTP {key_exc.status}",
+                            provider_id=target.provider.id,
+                            key_env=configured_slot_name(target.provider.key_env or "", self.env, slot),
+                            status=key_exc.status)))
                 assert reply is not None  # trials is never empty; body returns or raises
             except ProviderHTTPError as exc:
                 is_ctx, limit = context_limit_from_error(exc.status, str(exc))
@@ -1480,7 +1499,9 @@ class Pool:
                         )
                     )
                 emit(self._on_event, "error", target=target.name, reason=str(exc))
-                attempts.append((target.name, str(exc)))
+                attempts.append((target.name, with_auth_hint(
+                    str(exc), provider_id=target.provider.id,
+                    key_env=target.provider.key_env, status=exc.status)))
                 continue
             except Exception as exc:  # network error, etc. — try the next one
                 non_ctx_failure = True
@@ -1682,7 +1703,11 @@ class Pool:
                             target.provider.id, slot,
                             len(target.provider.api_keys(self.env)), key_exc,
                         )
-                        attempts.append((target.name, f"key slot {slot + 1}: HTTP {key_exc.status}"))
+                        attempts.append((target.name, with_auth_hint(
+                            f"key slot {slot + 1}: HTTP {key_exc.status}",
+                            provider_id=target.provider.id,
+                            key_env=configured_slot_name(target.provider.key_env or "", self.env, slot),
+                            status=key_exc.status)))
                         continue
                     open_error = key_exc
                 except Exception as try_exc:  # noqa: BLE001 — StopIteration + transport errors
@@ -1726,7 +1751,9 @@ class Pool:
                     self.metrics.record_failure(target.name, str(exc))
                 self._record_route_failure(target, exc, lease)
                 emit(self._on_event, "error", target=target.name, reason=str(exc))
-                attempts.append((target.name, str(exc)))
+                attempts.append((target.name, with_auth_hint(
+                    str(exc), provider_id=target.provider.id,
+                    key_env=target.provider.key_env, status=exc.status)))
                 continue
             if open_error is not None:
                 err = open_error
@@ -1734,7 +1761,10 @@ class Pool:
                 self.metrics.record_failure(target.name, f"{type(err).__name__}: {err}")
                 self._record_route_failure(target, exc=err, lease=lease)
                 emit(self._on_event, "error", target=target.name, reason=f"{type(err).__name__}")
-                attempts.append((target.name, f"{type(err).__name__}: {err}"))
+                attempts.append((target.name, with_auth_hint(
+                    f"{type(err).__name__}: {err}", provider_id=target.provider.id,
+                    key_env=target.provider.key_env,
+                    status=err.status if isinstance(err, ProviderHTTPError) else None)))
                 continue
             assert gen is not None and first is not None  # open_error None implies first byte
 

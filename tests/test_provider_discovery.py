@@ -119,8 +119,8 @@ def test_aion_native_listing_uses_models_array():
 
 
 def transport(monkeypatch, responder):
-    client = httpx.Client(transport=httpx.MockTransport(responder), follow_redirects=False)
-    monkeypatch.setattr(d, "_client", lambda: client)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(responder), follow_redirects=False)
+    monkeypatch.setattr(d, "_aclient", lambda: client)
     return client
 
 
@@ -344,7 +344,7 @@ def test_cohere_and_cloudflare_pagination_are_complete(monkeypatch, tmp_path):
         return httpx.Response(200, json={"success": True, "result": [{"id": "opaque", "name": f"@cf/model-{page}", "task": {"name": "Text Generation"}}], "result_info": {"total_pages": 2}})
     transport(monkeypatch, responder)
     # A fresh client is needed per provider, as real context managers close it.
-    monkeypatch.setattr(d, "_client", lambda: httpx.Client(transport=httpx.MockTransport(responder)))
+    monkeypatch.setattr(d, "_aclient", lambda: httpx.AsyncClient(transport=httpx.MockTransport(responder)))
     result = d.refresh_catalog({"COHERE_API_KEY": "cohere-secret", "CLOUDFLARE_API_TOKEN": "cf-secret", "CLOUDFLARE_ACCOUNT_ID": "a" * 32}, ["cohere", "cloudflare"], path=tmp_path / "d.json")
     assert len(calls) == 4
     assert {row["id"] for row in result["providers"]["cloudflare"]["models"]} == {"@cf/model-1", "@cf/model-2"}

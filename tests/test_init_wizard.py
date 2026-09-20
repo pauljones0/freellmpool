@@ -271,3 +271,15 @@ def test_init_unknown_agent_errors(monkeypatch, tmp_path, capsys):
 
     assert main(["init", "--yes", "--agent", "bogus"]) == 3
     assert "unknown agent" in capsys.readouterr().err
+
+
+def test_init_recommends_setup(monkeypatch, tmp_path, capsys):
+    from freellmpool.cli import main
+
+    _isolated_env(monkeypatch, tmp_path)
+    _patch_init(monkeypatch, tailnet=False)
+
+    assert main(["init", "--yes"]) == 0
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[lines.index("Recommended next commands:") + 1] == "  freellmpool setup --resume"

@@ -412,3 +412,20 @@ def test_private_baseline_accepts_reviewed_same_origin_source_path_change():
     assert again["findings"] == report["findings"]
     with pytest.raises(ValueError):
         m.validate_public_baseline(baseline)
+
+
+def test_deferred_catalog_skips_failure_finding_and_deadline():
+    data = catalog(status="deferred")
+    data["providers"]["openrouter"]["complete"] = False
+    data["providers"]["openrouter"]["checked_at"] = None
+    report, _ = public(data)
+    codes = [finding["code"] for finding in report["findings"]]
+    assert "catalog_failed" not in codes
+    assert "catalog_stale" not in codes
+    assert "catalog_due" not in codes
+    assert report["providers"]["openrouter"]["catalog"]["status"] == "deferred"
+    assert m.validate_public_report(report) == report
+
+
+def test_deferred_status_survives_summary_coercion():
+    assert m._status("deferred") == "deferred"

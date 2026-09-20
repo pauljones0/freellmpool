@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from .config import effective_env
+from .discovery import DiscoveryBusy
 from .maintenance import (
     _read,
     _write,
@@ -19,6 +20,9 @@ from .maintenance import (
     status_report,
     validate_public_report,
 )
+
+_MAINTENANCE_BUSY_LINE = ("freellmpool: another catalog refresh is running; maintenance refresh "
+                          "skipped (retry later).")
 
 
 def _arguments(parser: argparse.ArgumentParser) -> None:
@@ -49,6 +53,9 @@ def cmd_maintenance(args: argparse.Namespace) -> int:
             _write(args.output, report)
         print(json.dumps(report, indent=2, sort_keys=True) if args.json else format_report(report))
         return 0
+    except DiscoveryBusy:
+        print(_MAINTENANCE_BUSY_LINE, file=sys.stderr)
+        return 2
     except (OSError, ValueError, httpx.HTTPError):
         print("Maintenance could not produce a valid report. Retry: freellmpool maintenance --refresh", file=sys.stderr)
         return 2

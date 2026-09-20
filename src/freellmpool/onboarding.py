@@ -39,6 +39,7 @@ _STATUS_TEXT = {
     "unsupported": "This provider has no supported non-billable authentication/listing check. Your key is saved; it is not marked invalid.",
     "partial": "The catalog check was incomplete. Your key is saved; maintenance can retry.",
     "error": "The check could not complete. Your key is saved; follow the diagnostic and retry this provider.",
+    "deferred": "Discovery deferred (time budget); run freellmpool update, then retry this provider.",
 }
 
 

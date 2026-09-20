@@ -13,7 +13,9 @@ from freellmpool import discovery as d
 from freellmpool.provider_registry import load_registry
 
 
-class TrackedStream(httpx.SyncByteStream):
+class TrackedStream(httpx.SyncByteStream, httpx.AsyncByteStream):
+    """Dual-protocol stream: catalog path serves it async, sources path sync."""
+
     def __init__(self, chunks):
         self.chunks = chunks
         self.consumed = 0
@@ -24,7 +26,15 @@ class TrackedStream(httpx.SyncByteStream):
             self.consumed += len(chunk)
             yield chunk
 
+    async def __aiter__(self):
+        for chunk in self.chunks:
+            self.consumed += len(chunk)
+            yield chunk
+
     def close(self):
+        self.closed = True
+
+    async def aclose(self):
         self.closed = True
 
 
@@ -33,8 +43,10 @@ def install(monkeypatch, stream, *, limit, status=200, headers=None):
     spec["evidence"] = spec["evidence"][:1]
     monkeypatch.setattr(d, "load_registry", lambda *args, **kwargs: {"openrouter": spec})
     monkeypatch.setattr(d, "_MAX_RESPONSE_BYTES", limit)
-    monkeypatch.setattr(d, "_client", lambda: httpx.Client(transport=httpx.MockTransport(
-        lambda request: httpx.Response(status, stream=stream, headers=headers))))
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(status, stream=stream, headers=headers))
+    monkeypatch.setattr(d, "_client", lambda: httpx.Client(transport=transport))
+    monkeypatch.setattr(d, "_aclient", lambda: httpx.AsyncClient(transport=transport))
     return spec
 
 

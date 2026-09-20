@@ -15,8 +15,9 @@ import re
 import shlex
 import signal
 import sys
+import time
 from collections.abc import Callable, Container, Sequence
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from . import __version__
 from .config import (
@@ -2539,6 +2540,14 @@ def cmd_mcp(args: argparse.Namespace) -> int:
     return 0
 
 
+_TIMEOUT_DISCOVERY_NOTE = (" (covers inference only; catalog discovery has a separate budget, "
+    "default 40s, excluding system DNS time; cold start stays under ~60s)")
+_PROXY_MCP_FIRST_RUN_NOTE = (" (first run: catalog discovery up to the discovery budget, default 40s, "
+    "excluding system DNS time, before serving)")
+_JOBS_RUN_FIRST_RUN_NOTE = (" (first run may spend the discovery budget, default 40s, "
+    "excluding system DNS time, before running)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="freellmpool",
@@ -2569,7 +2578,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="sampling temperature (default: 0.0, or the role's default)",
     )
-    p_ask.add_argument("--timeout", type=float, default=90.0, help="upstream provider timeout seconds")
+    p_ask.add_argument("--timeout", type=float, default=90.0, help="upstream provider timeout seconds" + _TIMEOUT_DISCOVERY_NOTE)
     p_ask.add_argument(
         "-r",
         "--role",
@@ -2636,7 +2645,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-tokens", type=int, default=400, help="max output tokens per model"
     )
     p_tokenmax.add_argument(
-        "--timeout", type=float, default=90.0, help="upstream provider timeout seconds"
+        "--timeout", type=float, default=90.0, help="upstream provider timeout seconds" + _TIMEOUT_DISCOVERY_NOTE
     )
     p_tokenmax.add_argument(
         "--no-synthesize",
@@ -2677,7 +2686,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_battle.add_argument(
         "--max-tokens", type=int, default=512, help="max output tokens per model"
     )
-    p_battle.add_argument("--timeout", type=float, default=90.0, help="upstream timeout seconds")
+    p_battle.add_argument("--timeout", type=float, default=90.0, help="upstream timeout seconds" + _TIMEOUT_DISCOVERY_NOTE)
     p_battle.add_argument(
         "--routing",
         choices=PUBLIC_ROUTING_ALIASES,
@@ -2714,7 +2723,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_recipe_run.add_argument("--opinions", type=int, default=3, help="panel size for panel recipes")
     p_recipe_run.add_argument("--synthesize", action="store_true", help="append panel synthesis")
     p_recipe_run.add_argument("--max-tokens", type=int, default=None, help="max output tokens")
-    p_recipe_run.add_argument("--timeout", type=float, default=90.0, help="upstream timeout seconds")
+    p_recipe_run.add_argument("--timeout", type=float, default=90.0, help="upstream timeout seconds" + _TIMEOUT_DISCOVERY_NOTE)
     p_recipe_run.add_argument(
         "--run-id", help="checkpoint panel answers under this id (panel recipes)"
     )
@@ -2764,7 +2773,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_jobs_run = jobs_sub.add_parser(
         "run",
-        help="process pending jobs in the foreground (no daemon)",
+        help="process pending jobs in the foreground (no daemon)" + _JOBS_RUN_FIRST_RUN_NOTE,
+        description="process pending jobs in the foreground (no daemon)" + _JOBS_RUN_FIRST_RUN_NOTE,
     )
     p_jobs_run.add_argument("--limit", type=int, default=None, help="max jobs to run this invocation")
     p_jobs_run.add_argument(
@@ -3117,7 +3127,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor = sub.add_parser("doctor", help="show local diagnostics without calling providers")
     p_doctor.set_defaults(func=cmd_doctor)
 
-    p_proxy = sub.add_parser("proxy", help="run the OpenAI-compatible proxy server")
+    p_proxy = sub.add_parser("proxy", help="run the OpenAI-compatible proxy server" + _PROXY_MCP_FIRST_RUN_NOTE,
+                         description="run the OpenAI-compatible proxy server" + _PROXY_MCP_FIRST_RUN_NOTE)
     p_proxy.add_argument("--host", default=None,
                          help="bind address ([settings] host, else 127.0.0.1)")
     p_proxy.add_argument("--port", type=int, default=None,
@@ -3255,7 +3266,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_profile_doctor.set_defaults(func=cmd_profile_doctor)
 
     p_mcp = sub.add_parser(
-        "mcp", help="run an MCP server (stdio) so MCP clients can use free models"
+        "mcp", help="run an MCP server (stdio) so MCP clients can use free models" + _PROXY_MCP_FIRST_RUN_NOTE,
+        description="run an MCP server (stdio) so MCP clients can use free models" + _PROXY_MCP_FIRST_RUN_NOTE,
     )
     p_mcp.add_argument(
         "--full-tools",
@@ -3295,26 +3307,69 @@ def _needs_bootstrap(args: argparse.Namespace) -> bool:
     )
 
 
-def _ensure_first_run_discovery() -> bool:
+_TIER_TRANSPORT = ("freellmpool: could not reach providers (check network connectivity and "
+                   "proxy settings); retry the command, or run `freellmpool update` when online.")
+_TIER_DEFERRED = ("freellmpool: model discovery deferred (time budget); "
+                  "run `freellmpool update` to complete it.")
+_TIER_GENERIC = ("freellmpool: no free routes found - check connectivity, then run "
+                 "`freellmpool update` to refresh the model catalog.")
+_BOOTSTRAP_BUSY_LINE = ("freellmpool: another catalog refresh is running; proceeding without fresh "
+                        "discovery (run `freellmpool update` later to refresh).")
+
+
+def _bootstrap_tier_line(snapshot: dict[str, Any]) -> str:
+    """Pick the actionable first line for a zero-route bootstrap (CTO-3: ADD, no short-circuit)."""
+    from .discovery import _NOTE_NETWORK_FAILURE
+
+    providers = snapshot.get("providers", {}) if isinstance(snapshot, dict) else {}
+    rows = [row for row in providers.values() if isinstance(row, dict)] if isinstance(providers, dict) else []
+    if (any(row.get("note") == _NOTE_NETWORK_FAILURE for row in rows)
+            and not any(row.get("checked_at") for row in rows)
+            and not any(row.get("status") == "deferred" for row in rows)):
+        return _TIER_TRANSPORT
+    if any(row.get("status") == "deferred" for row in rows):
+        return _TIER_DEFERRED
+    return _TIER_GENERIC
+
+
+def _ensure_first_run_discovery() -> dict[str, Any] | None:
     """Refresh the model catalog once when local discovery state is missing.
 
-    Returns True when a refresh was attempted. Any failure degrades to
-    today's behavior (the handler reports its own error). Set
-    FREELLMPOOL_NO_AUTO_DISCOVERY=1 to disable (the test suite does).
+    Returns the refreshed snapshot, {} when the refresh failed or was busy
+    (today's handler error follows), or None when no refresh was attempted.
+    Set FREELLMPOOL_NO_AUTO_DISCOVERY=1 to disable (the test suite does).
     """
     if os.environ.get("FREELLMPOOL_NO_AUTO_DISCOVERY") == "1":
-        return False
-    from .discovery import default_discovery_path, refresh_catalog
+        return None
+    from .discovery import (
+        DiscoveryBusy,
+        budget_seconds,
+        default_discovery_path,
+        deferred_failed_csv,
+        discovery_summary_line,
+        refresh_catalog,
+        safe_print,
+        stderr_progress_printer,
+    )
 
     env = effective_env()
     if default_discovery_path(env).exists():
-        return False
-    print("freellmpool: first run - discovering free routes (one-time)...", file=sys.stderr)
+        return None
+    safe_print("freellmpool: first run - discovering free routes (one-time)...", file=sys.stderr)
+    start = time.monotonic()
     try:
-        refresh_catalog(env)
+        snapshot = refresh_catalog(env, deadline=start + budget_seconds(env),
+                                   progress=stderr_progress_printer())
+    except DiscoveryBusy:
+        safe_print(_BOOTSTRAP_BUSY_LINE, file=sys.stderr)
+        return {}
     except Exception:  # offline first run keeps today's handler error below
-        pass
-    return True
+        return {}
+    csv = deferred_failed_csv(snapshot)
+    if csv is not None:
+        safe_print(csv, file=sys.stderr)
+    safe_print(discovery_summary_line(snapshot, time.monotonic() - start), file=sys.stderr)
+    return snapshot
 
 
 def _snapshot_has_chat_routes() -> bool:
@@ -3334,13 +3389,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     handler: Callable[[argparse.Namespace], int] = args.func
-    bootstrapped = _needs_bootstrap(args) and _ensure_first_run_discovery()
-    if bootstrapped and not _snapshot_has_chat_routes():
-        print(
-            "freellmpool: no free routes found - check connectivity, then run "
-            "`freellmpool update` to refresh the model catalog.",
-            file=sys.stderr,
-        )
+    snapshot = _ensure_first_run_discovery() if _needs_bootstrap(args) else None
+    if snapshot is not None and not _snapshot_has_chat_routes():
+        print(_bootstrap_tier_line(snapshot), file=sys.stderr)
     try:
         return handler(args)
     except (EOFError, KeyboardInterrupt):

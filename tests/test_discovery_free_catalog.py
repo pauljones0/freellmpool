@@ -23,7 +23,7 @@ def model(name="example:free", price="0"):
 
 def install(monkeypatch, spec, rows):
     monkeypatch.setattr(d, "load_registry", lambda *args, **kwargs: {spec["id"]: spec})
-    monkeypatch.setattr(d, "_client", lambda: httpx.Client(transport=httpx.MockTransport(
+    monkeypatch.setattr(d, "_aclient", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
         lambda request: httpx.Response(200, json={"data": rows}))))
 
 
@@ -80,7 +80,7 @@ def test_old_cache_projects_current_free_rules_even_when_refresh_fails(monkeypat
     assert list(loaded["providers"]) == ["openrouter"]
     assert loaded["providers"]["openrouter"]["models"] == [model()]
     assert json.loads(path.read_text()) == old  # Read-only status never rewrites state.
-    monkeypatch.setattr(d, "_client", lambda: httpx.Client(transport=httpx.MockTransport(
+    monkeypatch.setattr(d, "_aclient", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
         lambda request: httpx.Response(503))))
     failed = d.refresh_catalog(env, ["openrouter"])
     assert failed["providers"]["openrouter"]["models"] == [model()]

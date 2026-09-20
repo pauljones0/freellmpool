@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,7 +45,8 @@ _PRICES = frozenset({"input", "output", "request", "image", "audio", "video", "c
     "input_tiers", "output_tiers", "input_cache_read_tiers", "input_cache_write_tiers", "unrecognized_price"})
 _STATUSES = frozenset({"ok", "unchanged", "not_checked", "unsupported", "auth_missing", "auth_failed",
     "rate_limited", "partial", "error", "review_required", "check_failed", "expired", "stale",
-    "credential_changed", "malformed", "official", "verified", "observed", "disabled", "requires_client_update"})
+    "credential_changed", "malformed", "official", "verified", "observed", "disabled", "requires_client_update",
+    "deferred"})
 _MESSAGES = {
     "catalog_failed": "Model catalog check failed; previous evidence has not been renewed.",
     "catalog_stale": "Model discovery is missing or expired.",
@@ -413,11 +415,12 @@ def build_public_report(registry: JSON, catalog: JSON, *, evidence: JSON | None 
                 valid = False
                 summary["status"] = "partial"
         if accessible:
-            if summary["status"] not in {"ok", "auth_missing", "unsupported", "not_checked"}:
+            if summary["status"] not in {"ok", "auth_missing", "unsupported", "not_checked", "deferred"}:
                 add(_finding(pid, "catalog_failed"))
-            expiry = _deadline(pid, "catalog", summary["expires_at"], current)
-            if expiry is not None:
-                add(expiry)
+            if summary["status"] != "deferred":
+                expiry = _deadline(pid, "catalog", summary["expires_at"], current)
+                if expiry is not None:
+                    add(expiry)
         if valid:
             fresh_catalogs.add(pid)
             prior = old["providers"].get(pid)
@@ -835,6 +838,7 @@ def run_maintenance(env: dict[str, str], *, public_only: bool = False, baseline_
     preventing a trustworthy public report propagate to the workflow incident step.
     """
     from .conformance import ConformanceStore, default_conformance_path
+    from .discovery import budget_seconds, stderr_progress_printer
     from .free_policy import load_accounts
     from .provider_registry import load_registry
     services = refreshers if refreshers is not None else _services(public_only)
@@ -853,6 +857,8 @@ def run_maintenance(env: dict[str, str], *, public_only: bool = False, baseline_
             policy = services["policy"](effective)
         registry = _public_registry() if public_only else load_registry(env=effective, renew_evidence=False)
         catalog = services["catalog"](effective, public_only=public_only,
+            deadline=time.monotonic() + budget_seconds(effective),
+            progress=stderr_progress_printer(),
             **({"path": root / "public-discovery.json"} if public_only else {}))
         evidence = services["evidence"](effective, **({"path": root / "public-evidence.json", "public_only": True} if public_only else {}))
         # Keep original policy fields for renewal digest validation in the report.

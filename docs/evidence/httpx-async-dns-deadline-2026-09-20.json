@@ -1,0 +1,8 @@
+{
+  "fixture": "actual HTTPX AsyncClient with controlled slow socket.getaddrinfo; no external network",
+  "httpx_version": "0.28.1",
+  "resolver_calls": 1,
+  "budget_s": 0.05,
+  "timeout_raised_after_s": 0.051,
+  "asyncio_run_returned_after_s": 1.268
+}

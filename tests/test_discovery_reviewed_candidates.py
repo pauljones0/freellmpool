@@ -22,7 +22,7 @@ def provider():
 
 def install(monkeypatch, spec, body, status=200):
     monkeypatch.setattr(d, "load_registry", lambda *args, **kwargs: {"zhipu": spec})
-    monkeypatch.setattr(d, "_client", lambda: httpx.Client(transport=httpx.MockTransport(
+    monkeypatch.setattr(d, "_aclient", lambda: httpx.AsyncClient(transport=httpx.MockTransport(
         lambda request: httpx.Response(status, json=body))))
 
 

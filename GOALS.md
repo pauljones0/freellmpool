@@ -1221,6 +1221,160 @@ coverage 87.15% line / 78.31% branch (floors 80/70).
 
 Effort: L. Fit: high — reliability/security of the free-tier promise.
 
+## Goal chain G24–G25 (accepted 2026-09-20)
+
+Two consumer-trust goals, sequenced from the G23 closeout mandate:
+first-use must stay trustworthy when real free capacity is missing or
+changes. Execute strictly in order; each goal's Done-when is the audit
+for "did we completely solve this pain?" — including a
+clean-environment demonstration, not just unit tests. On completing
+G24, immediately create G25 as the active session goal in the same
+turn and continue automatically. If a goal is truly blocked, record
+the blocker here and continue with the next useful review/goal — never
+hold the night hostage. Standing constraints: free-only (no account
+creation, purchases, quota circumvention, or paid inference), TDD
+regressions, fixture-labeled vs live-labeled evidence, secret-safe
+diagnostics, explicit unknown capacity, metaswarm design/plan/coverage
+gates, at most two live review/implement children, no nested fanout.
+
+## G24 — Trustworthy first use with missing/changing free capacity (Status: complete 2026-09-20)
+
+Pain: a fresh consumer following the one-command README path may hit
+keyless unavailable/slow, all reviewed allowances exhausted or
+unknown, an invalid/revoked key, interrupted setup, or provider/model
+drift — and get a hanging loop, a misleading free promise, leaked
+secrets, or a paid fallback instead of an actionable next step.
+
+Bet: a bounded fresh-consumer audit in an isolated empty HOME, ranked
+against current upstream primary evidence for free-route
+availability, surfaces the highest-impact remaining end-to-end pain;
+fixing that one pain with a defined consumer contract and observable
+DoD measurably hardens first use.
+
+Execute:
+1. Bounded fresh-consumer audit: README one-command path and
+   setup/resume/client handoff in an isolated empty HOME; exercise
+   keyless unavailable/slow, exhausted/unknown allowances,
+   invalid/revoked key, interrupted setup, provider/model drift.
+   Reproduce the highest-impact remaining end-to-end pain first; do
+   not reimplement shipped G1/G3/G8/G10.
+2. If the paths already work, rank a short next-goal slate from
+   recent primary-source/user-problem research and take the strongest
+   verified gap.
+3. Define the consumer contract + observable DoD; design review gate,
+   plan review gate, then implement the first bet with bounded
+   children (TDD).
+4. Adversarially challenge architecture/code/goal completion; prove
+   the fix from a clean environment. Label fake-provider fixture
+   evidence separately from live free-route evidence.
+5. Full suite + gates green, GOALS.md closeout, commit, push.
+
+Done when:
+- [x] Highest-impact remaining first-use pain reproduced end-to-end
+  (or slate-ranked gap chosen with primary-source evidence).
+- [x] Consumer contract + observable DoD defined and met.
+- [x] Fix implemented TDD with regression tests; adversarial review
+  passed; clean-environment proof recorded.
+- [x] Full suite + gates pass; commit pushed.
+
+Audit result 2026-09-20 (2 bounded workers + parent live repros, all in
+isolated empty HOME; primary evidence in /tmp/g24_primary_evidence.md,
+slate in /tmp/g24_slate.md):
+- R1 FIRST BET: first-run discovery hangs silently on slow/broken
+  networks (parent LIVE: blackhole proxy, 45s silence, exit 124;
+  worker independently LIVE). No overall deadline (cli.py:3298),
+  20s/10s x 16 sequential, ask --timeout starts after discovery.
+- R2: cold `status` "complete model discovery needed" never names
+  `freellmpool update` (managed.py:272 vs :274). 1-line fix, in scope.
+- R3: bogus-key 401 guidance swallowed — CLI prints str(exc),
+  ignores client_message with the key var (cli.py:225-227,
+  errors.py:43). In scope.
+- R4: init wizard never recommends `setup` (init_wizard.py:161-164).
+  In scope.
+- G25: kilo-403 status→update→status loop (parent LIVE, multi-obs)
+  + --resume no-op + resume re-asks skipped. Setup/interrupt/resume/
+  handoff otherwise verified working live.
+
+Consumer contract (first bet):
+1. First run is loud and bounded: discovery completes (success or
+   honest failure) within 60s with progress on stderr, whenever the
+   system resolver answers (stalled-resolver delay is a documented
+   whole-machine residual; DNS hard bound is G26).
+2. Every zero-route/error names the next command.
+3. 4xx names provider + key variable, never the secret.
+4. No silent paid fallback; no secret echo; unknown capacity explicit.
+
+Observable DoD:
+- Blackhole-proxy cold ask exits <60s with progress + connectivity
+  cause + next step (not exit 124 silence).
+- Refused-proxy cold ask exits fast with an actionable first line
+  (the handler's own error may follow; no short-circuit).
+- Happy-path cold ask (live keyless) still discovers + replies.
+- Cold status names `update`; bogus key names the var (grep-clean);
+  init shows setup.
+- Fixture slow-provider suite proves deadline/progress/causes/exits
+  (red-then-green); full gates green; clean-env proof; pushed.
+
+Effort: L. Fit: high — first-use trust is the free-gateway promise.
+
+Closeout 2026-09-20:
+- Gates: design 5/5 PASS (v5+v5.1+v5.2+v5.3, supervisor-006/007
+  folded); plan 3/3 PASS (v6+v6.1+v6.2, supervisor-008 folded);
+  adversarial review FAIL→folded→green (2 vacuous proofs
+  rewritten non-vacuous + 10 minors).
+- Shipped (TDD, red-then-green): 40s discovery budget with
+  asyncio.wait_for per-page absolute deadline (sync/async twins,
+  budget-aware lock, deferred rows, CTO-4 preserve); progress
+  order + 3-tier classifier + CSV + summary on all 5 callers;
+  deferred ripple (maintenance exempt/deadline-skip, managed
+  reason); R2/R3/R4 message fixes (11 sites + 1 genuine 401 path,
+  resolved slot names); Dockerfile 90s start-period.
+- LIVE evidence (isolated empty HOME, real network unless noted):
+  refused-proxy cold ask 0s exit 4 + transport tier; blackhole
+  ask 41s + blackhole update 40s, both bounded with progress +
+  deferred tier/incomplete footer; keyless cold ask exit 0 in 9s
+  with a live reply; bogus OPENROUTER key live 401 naming
+  `(check key OPENROUTER_API_KEY)` with the canary absent from
+  all transcripts + state; status names update; init shows
+  setup first. Transcripts: /tmp/g24_live_*.txt (live-labeled).
+- FIXTURE evidence: tests/test_discovery_budget.py (drip/header
+  abort with elapsed windows, CTO-4, DNS residual, decoder
+  parity, busy lock, EPIPE, schema-1) +
+  tests/test_bootstrap_wiring.py (tiers/exits/busy/help/purity/
+  canary) + units (auth-hint, slot names, maintenance,
+  Dockerfile); 5 pre-existing seam files migrated to _aclient.
+- Full suite + ruff + CI strict mypy (22 modules) + check_docs +
+  coverage floors (80/70) green.
+- Residuals → G25: kilo-403 loop, --resume no-op, resume
+  re-asks, proxy str(exc) fallback now carries key-var names
+  (names-only, CTO-8 noted), busy+renew-evidence prints a skip
+  note, check_provider is unbounded by design (wizard-only),
+  public-sources reads are idle-8s (drip-unbounded). → G26: DNS
+  hard bound (system-resolver shutdown lag characterized, not
+  bounded).
+
+## G25 — Runner-up consumer-trust gap (Status: active 2026-09-20)
+
+Pain: kilo-403 status→update→status loop (parent LIVE, multi-obs)
+from the G24 slate, plus --resume no-op and resume re-asking
+skipped providers. Setup/interrupt/resume/handoff otherwise
+verified working live in G24.
+
+Bet: closing the kilo-403 loop (verdict + fallback candidates)
+with the same contract–DoD–proof discipline compounds
+first-use trust.
+
+Execute: reproduce the kilo loop live; define verdict semantics
++ fallback-candidate contract + observable DoD; design/plan
+gates; TDD implement with adversarial review; prove from a
+clean environment; gates green; commit/push. Same gates and
+evidence rules as G24.
+
+Done when: kilo loop reproduced, fixed TDD, adversarially
+reviewed, proven from a clean environment; gates green; pushed.
+
+Effort: M. Fit: high — compounds G24.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

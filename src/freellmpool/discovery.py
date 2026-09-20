@@ -6,29 +6,168 @@ provider response bodies. Failed or partial refreshes cannot renew last-good age
 
 from __future__ import annotations
 
+import asyncio
 import copy
+import errno
 import fcntl
 import hashlib
 import json
 import os
 import re
+import sys
 import tempfile
+import time
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
+from .config import finite_float
 from .free_policy import model_matches_grant, timestamp
-from .http_read import ACCEPT_ENCODING, bounded_response_bytes
+from .http_read import ACCEPT_ENCODING, abounded_response_bytes, bounded_response_bytes
 from .provider_registry import evidence_path, load_registry, policy_digest
 
 _MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+# First-run discovery budget (G24): absolute wall-clock bound enforced with
+# asyncio.wait_for per page. Covers connect/handshake/headers/body under the
+# event loop's control; system-resolver stalls are the documented residual.
+DISCOVERY_BUDGET_SECONDS = 40.0
+_MIN_ATTEMPT_SECONDS = 5.0
+_MIN_PAGE_SECONDS = 3.0
+_NOTE_NETWORK_FAILURE = "Catalog network failure; last-good evidence preserved."
+# Per-request idle phases preserve budget (fast-fail idle stalls); they are
+# per-chunk waits, NOT a total bound. The bound is wait_for(timeout=R).
+_IDLE_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=2.0)
+_DEFERRED_SKIP_NOTE = ("Skipped: discovery time budget exhausted (provider not "
+                       "attempted); run `freellmpool update` to retry.")
+_REFRESH_IN_LOOP = ("freellmpool: refresh_catalog cannot run inside a running event "
+                    "loop; await arefresh_catalog instead.")
+_CHECK_IN_LOOP = "freellmpool: check_provider cannot run inside a running event loop."
 _ACCOUNT_ID = re.compile(r"[a-fA-F0-9]{32}\Z")
+
+
+class DiscoveryBusy(OSError):
+    """Another catalog refresh holds the lock; the caller kept last-good data."""
+
+
+def _deferred_page_note(page: int) -> str:
+    return (f"Skipped: discovery time budget exhausted (page {page} not fetched); "
+            "run `freellmpool update` to retry.")
+
+
+def budget_seconds(env: dict[str, str]) -> float:
+    """Discovery wall budget from env, clamped so typos cannot wedge first run."""
+    return finite_float(env.get("FREELLMPOOL_DISCOVERY_BUDGET_SECONDS"), 40.0,
+                        minimum=5.0, maximum=45.0)
+
+
+def _ensure_no_running_loop(message: str) -> None:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError(message)
+
+
+def _emit_progress(progress: Callable[..., None] | None, **event: Any) -> None:
+    if progress is None:
+        return
+    try:
+        progress(**event)
+    except Exception:  # noqa: BLE001 - caller progress bugs must not break refresh
+        pass
+
+
+def safe_print(*args: Any, **kwargs: Any) -> None:
+    """print() for human diagnostics; a closed pipe ends output, not the run."""
+    try:
+        print(*args, **kwargs)
+    except BrokenPipeError:
+        return
+
+
+_MAIN_BUSY_LINE = ("freellmpool: another catalog refresh is running; scheduled refresh skipped "
+                   "(retry later).")
+
+
+_PID_SAFE = re.compile(r"[^A-Za-z0-9_.-]+")
+_PID_RUN = re.compile(r"[A-Za-z0-9]{32,}")
+
+
+def sanitize_pid(pid: Any) -> str:
+    """Pid for stderr lines: registry ids pass through, hostile bytes collapse.
+
+    Long alphanumeric runs (account-id-shaped) are shortened so a hostile
+    registry file cannot smuggle credential-shaped tokens into diagnostics.
+    """
+    text = pid if isinstance(pid, str) else str(pid)
+    text = _PID_SAFE.sub("_", text)
+    text = _PID_RUN.sub(lambda match: match.group(0)[:8] + "_", text)
+    return text[:64] or "provider"
+
+
+def progress_provider_line(pid: str, index: int, total: int) -> str:
+    return f"freellmpool: discovering {sanitize_pid(pid)} ({index + 1}/{total})..."
+
+
+def progress_page_line(pid: str, page: int) -> str:
+    return f"freellmpool: discovering {sanitize_pid(pid)} page {page}..."
+
+
+def stderr_progress_printer() -> Callable[..., None]:
+    """Format provider/page refresh events as stderr progress lines (G24 order)."""
+    def progress(**event: Any) -> None:
+        pid = event.get("provider_id", "provider")
+        if "page" in event:
+            if event["page"] >= 2:
+                safe_print(progress_page_line(pid, event["page"]), file=sys.stderr)
+        else:
+            safe_print(progress_provider_line(pid, event.get("index", 0), event.get("total", 0)),
+                       file=sys.stderr)
+
+    return progress
+
+
+def count_snapshot(snapshot: dict[str, Any]) -> tuple[int, int, int]:
+    """(ok, deferred, failed) over snapshot providers; failed is any other status."""
+    ok = deferred = failed = 0
+    providers = snapshot.get("providers", {})
+    if not isinstance(providers, dict):
+        return 0, 0, 0
+    for row in providers.values():
+        if not isinstance(row, dict):
+            failed += 1
+        elif row.get("status") == "ok":
+            ok += 1
+        elif row.get("status") == "deferred":
+            deferred += 1
+        else:
+            failed += 1
+    return ok, deferred, failed
+
+
+def discovery_summary_line(snapshot: dict[str, Any], elapsed: float) -> str:
+    ok, deferred, failed = count_snapshot(snapshot)
+    return (f"freellmpool: discovery: {ok} ok, {deferred} deferred, {failed} failed "
+            f"({elapsed:.0f}s)")
+
+
+def deferred_failed_csv(snapshot: dict[str, Any]) -> str | None:
+    """Name non-ok providers when the caller prints no table; None when all ok."""
+    providers = snapshot.get("providers", {})
+    if not isinstance(providers, dict):
+        return None
+    names = [sanitize_pid(pid) for pid, row in providers.items()
+             if not isinstance(row, dict) or row.get("status") != "ok"]
+    if not names:
+        return None
+    return f"freellmpool: deferred/failed providers: {', '.join(names)}"
 _PRICE_ALIASES = {"prompt": "input", "completion": "output",
                   "input_cache_read": "input_cache_reads", "input_cache_write": "input_cache_writes"}
 _PRICE_KEYS = {"input", "output", "request", "image", "audio", "video", "cached_input",
@@ -187,6 +326,10 @@ def _free_snapshot(snapshot: dict[str, Any], registry: dict[str, dict[str, Any]]
 
 def _client() -> httpx.Client:
     return httpx.Client(timeout=httpx.Timeout(20, connect=10), follow_redirects=False)
+
+
+def _aclient() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=_IDLE_TIMEOUT, follow_redirects=False)
 
 
 def _decimal(value: Any, divisor: int = 1) -> str | None:
@@ -413,26 +556,66 @@ def _next_url(provider: dict[str, Any], url: str, body: dict[str, Any], count: i
     return None
 
 
-def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False) -> dict[str, Any]:
-    now = _now()
-    result: dict[str, Any] = {"status": "error", "last_attempt_at": now,
-        "checked_at": None, "complete": False, "models": [], "note": "Catalog check failed."}
+class _AttemptContext(NamedTuple):
+    url: str
+    headers: dict[str, str]
+    authenticated: bool
+    key: str
+
+
+class _EarlyResult(Exception):
+    """Pre-network phase fully determines the row (unsupported/auth outcomes)."""
+
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__("pre-network outcome")
+        self.row = row
+
+
+class _DoneEarly(Exception):
+    """A page response fully determines the row (auth/rate-limit outcomes)."""
+
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__("page outcome")
+        self.row = row
+
+
+class _BudgetExhausted(Exception):
+    """wait_for fired or a pre-check tripped: defer current row, stop the world."""
+
+    def __init__(self, row: dict[str, Any]) -> None:
+        super().__init__("discovery budget exhausted")
+        self.row = row
+
+
+def _blank_result(now: str) -> dict[str, Any]:
+    return {"status": "error", "last_attempt_at": now,
+            "checked_at": None, "complete": False, "models": [], "note": "Catalog check failed."}
+
+
+def _deferred_row(now: str, note: str) -> dict[str, Any]:
+    return {"status": "deferred", "last_attempt_at": now, "checked_at": None,
+            "complete": False, "models": [], "note": note}
+
+
+def _prepare_attempt(provider: dict[str, Any], env: dict[str, str], result: dict[str, Any],
+                     *, public_only: bool = False) -> _AttemptContext:
+    """Pre-network phase; raises _EarlyResult for unsupported/auth outcomes."""
     spec = provider["discovery"]
     url = spec.get("url")
     if not url:
-        return {**result, "status": "unsupported", "note": "No supported listing endpoint; no key judgment made."}
+        raise _EarlyResult({**result, "status": "unsupported", "note": "No supported listing endpoint; no key judgment made."})
     key_name = provider.get("credential_env")
     key = env.get(key_name, "") if key_name else ""
     public = spec["supports_public"]
     if (public_only and not public) or (not key and spec["auth"] != "none" and not public):
-        return {**result, "status": "auth_missing", "note": "A private listing credential is required."}
+        raise _EarlyResult({**result, "status": "auth_missing", "note": "A private listing credential is required."})
     if "{account_id}" in url:
         account_id = env.get("CLOUDFLARE_ACCOUNT_ID", "")
         if not _ACCOUNT_ID.fullmatch(account_id):
-            return {**result, "status": "auth_missing", "note": "A valid Cloudflare account ID is required."}
+            raise _EarlyResult({**result, "status": "auth_missing", "note": "A valid Cloudflare account ID is required."})
         url = url.replace("{account_id}", account_id)
     if not _same_origin(url, url):
-        return {**result, "status": "unsupported", "note": "Unsupported catalog URL."}
+        raise _EarlyResult({**result, "status": "unsupported", "note": "Unsupported catalog URL."})
     headers = {"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING}
     # Public listing checks deliberately omit credentials. Inference entitlement
     # and actual key validity remain separate even when an API ignores bad keys.
@@ -442,26 +625,62 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
             headers["x-goog-api-key"] = key
         else:
             headers["Authorization"] = f"Bearer {key}"
-    url = _url_with(url, **spec.get("params", {}))
-    origin = url
+    return _AttemptContext(url=_url_with(url, **spec.get("params", {})), headers=headers,
+                           authenticated=authenticated, key=key)
+
+
+async def _afetch_page(client: httpx.AsyncClient, url: str, headers: dict[str, str],
+                       timeout: httpx.Timeout, result: dict[str, Any]) -> Any:
+    async with client.stream("GET", url, headers=headers, timeout=timeout) as response:
+        if response.status_code in {401, 403}:
+            raise _DoneEarly({**result, "status": "auth_failed", "note": f"HTTP {response.status_code}: authentication, permissions or account verification failed; listing did not establish entitlement."})
+        if response.status_code == 429:
+            raise _DoneEarly({**result, "status": "rate_limited", "note": "Listing rate limited; prior evidence age is unchanged."})
+        if 300 <= response.status_code < 400:
+            raise ValueError("Catalog redirects are not followed")
+        response.raise_for_status()
+        return json.loads(await abounded_response_bytes(response, _MAX_RESPONSE_BYTES),
+                          object_pairs_hook=_unique_object)
+
+
+async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
+                          result: dict[str, Any], *, deadline: float | None,
+                          progress: Callable[..., None] | None = None) -> dict[str, Any]:
+    spec = provider["discovery"]
+    now = result["last_attempt_at"]
+    origin = context.url
+    url = context.url
     seen: set[str] = set()
     collected: dict[str, dict[str, Any]] = {}
     total_raw = 0
+    page = 0
     try:
-        with _client() as client:
+        async with _aclient() as client:
             for _ in range(min(int(spec.get("max_pages", 100)), 100)):
                 if url in seen or not _same_origin(url, origin):
                     raise ValueError("Unsafe or repeated pagination URL")
                 seen.add(url)
-                with client.stream("GET", url, headers=headers) as response:
-                    if response.status_code in {401, 403}:
-                        return {**result, "status": "auth_failed", "note": f"HTTP {response.status_code}: authentication, permissions or account verification failed; listing did not establish entitlement."}
-                    if response.status_code == 429:
-                        return {**result, "status": "rate_limited", "note": "Listing rate limited; prior evidence age is unchanged."}
-                    if 300 <= response.status_code < 400:
-                        raise ValueError("Catalog redirects are not followed")
-                    response.raise_for_status()
-                    body = json.loads(bounded_response_bytes(response, _MAX_RESPONSE_BYTES), object_pairs_hook=_unique_object)
+                page += 1
+                _emit_progress(progress, provider_id=provider["id"], page=page)
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining < _MIN_PAGE_SECONDS:
+                        raise _BudgetExhausted(_deferred_row(now, _deferred_page_note(page)))
+                    # PINNED clamp. httpcore's connect phase covers getaddrinfo, so a
+                    # resolver stall fails here (error + network note) when
+                    # remaining > 5; wait_for owns shorter horizons. Either way
+                    # the fetch fails fast and loop shutdown may lag the
+                    # executor thread (documented v5.2 residual, G26).
+                    request_timeout = httpx.Timeout(connect=min(5.0, remaining), read=min(10.0, remaining),
+                                                    write=min(5.0, remaining), pool=min(2.0, remaining))
+                    try:
+                        body = await asyncio.wait_for(
+                            _afetch_page(client, url, context.headers, request_timeout, result),
+                            timeout=remaining)
+                    except TimeoutError:
+                        raise _BudgetExhausted(_deferred_row(now, _deferred_page_note(page))) from None
+                else:
+                    body = await _afetch_page(client, url, context.headers, _IDLE_TIMEOUT, result)
                 if not isinstance(body, dict):
                     raise ValueError("Malformed catalog document")
                 raw_rows = _raw_rows(provider["id"], body)
@@ -479,7 +698,7 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
                     if not collected:
                         raise ValueError("Empty catalog cannot replace evidence")
                     encoded = json.dumps(list(collected.values()))
-                    if key and key in encoded:
+                    if context.key and context.key in encoded:
                         raise ValueError("Provider reflected a credential")
                     for candidate in _reviewed_policy_candidates(provider):
                         # Even a paid/unsupported listing row takes precedence over
@@ -487,26 +706,58 @@ def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool
                         collected.setdefault(candidate["id"], candidate)
                     free_models = free_catalog_models(provider, list(collected.values()))
                     note = ("Listing checked for reviewed free candidates; account free eligibility and capabilities remain unverified."
-                            if authenticated else "Public listing checked for reviewed free candidates; API key validity, account free eligibility and capabilities remain unverified.")
+                            if context.authenticated else "Public listing checked for reviewed free candidates; API key validity, account free eligibility and capabilities remain unverified.")
                     if any(model["metadata"].get("unlisted") is True for model in free_models):
                         note += " Some candidates are unlisted and come from reviewed policy; their availability remains unverified."
                     return {**result, "status": "ok", "checked_at": now, "complete": True,
                             "models": free_models, "source_url": spec["url"],
-                            "catalog_access": "authenticated" if authenticated else "public",
+                            "catalog_access": "authenticated" if context.authenticated else "public",
                             "catalog_ttl_seconds": spec.get("catalog_ttl_seconds", 86400),
                             "note": note}
                 url = next_url
             raise ValueError("Catalog exceeded pagination budget")
+    except _DoneEarly as done:
+        return done.row
     except (ValueError, TypeError, KeyError, OverflowError):
         return {**result, "status": "partial", "note": "Incomplete, empty or malformed catalog; last-good evidence preserved."}
     except httpx.HTTPStatusError as error:
         return {**result, "status": "error", "note": f"Catalog HTTP {error.response.status_code}; last-good evidence preserved."}
     except httpx.HTTPError:
-        return {**result, "status": "error", "note": "Catalog network failure; last-good evidence preserved."}
+        return {**result, "status": "error", "note": _NOTE_NETWORK_FAILURE}
+
+
+async def _aattempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False,
+                  deadline: float | None = None,
+                  progress: Callable[..., None] | None = None) -> dict[str, Any]:
+    now = _now()
+    result = _blank_result(now)
+    try:
+        context = _prepare_attempt(provider, env, result, public_only=public_only)
+    except _EarlyResult as early:
+        return early.row
+    return await _afetch_attempt(provider, context, result, deadline=deadline, progress=progress)
+
+
+def _attempt(provider: dict[str, Any], env: dict[str, str], *, public_only: bool = False) -> dict[str, Any]:
+    now = _now()
+    result = _blank_result(now)
+    try:
+        context = _prepare_attempt(provider, env, result, public_only=public_only)
+    except _EarlyResult as early:
+        return early.row
+    # Pre-network outcomes above never touch the loop. check_provider is
+    # sync-only: fail loudly instead of a cryptic asyncio.run error.
+    _ensure_no_running_loop(_CHECK_IN_LOOP)
+    return asyncio.run(_afetch_attempt(provider, context, result, deadline=None))
 
 
 def check_provider(provider_id: str, env: dict[str, str]) -> dict[str, Any]:
-    """GET-only wizard check. Does not write snapshots or authorize inference."""
+    """GET-only wizard check. Does not write snapshots or authorize inference.
+
+    Unbounded by design: idle phase timeouts only, no deadline. Bounded
+    callers (bootstrap, update, setup, maintenance, main) pass a deadline
+    to refresh_catalog instead.
+    """
     provider = load_registry(env).get(provider_id)
     if provider is None:
         return {"status": "unsupported", "complete": False, "model_count": 0,
@@ -534,13 +785,9 @@ def _atomic_write(path: Path, result: dict[str, Any]) -> None:
             os.unlink(temporary)
 
 
-def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
-                    public_only: bool = False, path: Path | str | None = None) -> dict[str, Any]:
-    """Refresh requested catalogs and atomically reconcile against last-good data.
-
-    A lock serializes writers (including separate scheduled/CLI processes). The
-    snapshot contains a complete last-good generation, never a half-written page.
-    """
+def _prepare_refresh(env: dict[str, str], provider_ids: list[str] | None,
+                     public_only: bool, path: Path | str | None
+                     ) -> tuple[Path, dict[str, dict[str, Any]], list[str]]:
     default_path = default_discovery_path(env)
     if public_only:
         default_path = default_path.with_name("public-discovery.json")
@@ -550,10 +797,39 @@ def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
     requested = list(dict.fromkeys(provider_ids if provider_ids is not None else registry))
     if any(provider_id not in registry for provider_id in requested):
         raise ValueError("Requested provider is absent or removed from the reviewed registry")
-    lock_path = destination.with_suffix(destination.suffix + ".lock")
+    return destination, registry, requested
+
+
+async def _acquire_lock(lock_path: Path, deadline: float | None) -> Any:
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
-    with os.fdopen(descriptor, "a+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    lock = os.fdopen(descriptor, "a+")
+    try:
+        if deadline is None:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, lambda: fcntl.flock(lock, fcntl.LOCK_EX))
+            return lock
+        while True:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return lock
+            except OSError as error:
+                if error.errno not in (errno.EACCES, errno.EAGAIN):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise DiscoveryBusy("another catalog refresh is running") from None
+                await asyncio.sleep(0.05)
+    except BaseException:
+        lock.close()
+        raise
+
+
+async def _arefresh_impl(env: dict[str, str], registry: dict[str, dict[str, Any]],
+                         requested: list[str], public_only: bool, destination: Path, *,
+                         deadline: float | None,
+                         progress: Callable[..., None] | None) -> dict[str, Any]:
+    lock_path = destination.with_suffix(destination.suffix + ".lock")
+    lock = await _acquire_lock(lock_path, deadline)
+    with lock:
         snapshot = _free_snapshot(_load(destination), registry)
         if public_only:
             # Public artifacts may be built in a directory that previously held
@@ -565,10 +841,31 @@ def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
                 and value.get("catalog_access") == "public"}}
         # Removed providers cannot survive in an old snapshot.
         snapshot["providers"] = {key: value for key, value in snapshot["providers"].items() if key in registry}
+        rows: dict[str, dict[str, Any]] = {}
+        total = len(requested)
+        for index, provider_id in enumerate(requested):
+            if deadline is not None and deadline - time.monotonic() < _MIN_ATTEMPT_SECONDS:
+                rows[provider_id] = _deferred_row(_now(), _DEFERRED_SKIP_NOTE)
+                for rest in requested[index + 1:]:
+                    rows[rest] = _deferred_row(_now(), _DEFERRED_SKIP_NOTE)
+                break
+            _emit_progress(progress, provider_id=provider_id, index=index, total=total)
+            try:
+                rows[provider_id] = await _aattempt(
+                    registry[provider_id], env, public_only=public_only, deadline=deadline,
+                    progress=progress)
+            except _BudgetExhausted as exhausted:
+                rows[provider_id] = exhausted.row
+                for rest in requested[index + 1:]:
+                    rows[rest] = _deferred_row(_now(), _DEFERRED_SKIP_NOTE)
+                break
         for provider_id in requested:
-            attempted = _attempt(registry[provider_id], env, public_only=public_only)
+            attempted = rows[provider_id]
             previous = snapshot["providers"].get(provider_id)
             if attempted["status"] != "ok" and previous:
+                # CTO-4: preserved rows (including preserved-deferred) keep
+                # complete + models and serve while fresh; only the attempt
+                # facts are overwritten. Fresh-deferred keeps complete False.
                 preserved = dict(previous)
                 preserved.update({key: attempted[key] for key in ("status", "last_attempt_at", "note")})
                 snapshot["providers"][provider_id] = preserved
@@ -577,6 +874,36 @@ def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
         snapshot.update(schema=1, generation=uuid.uuid4().hex, updated_at=_now())
         _atomic_write(destination, snapshot)
         return snapshot
+
+
+def refresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
+                    public_only: bool = False, path: Path | str | None = None, *,
+                    deadline: float | None = None,
+                    progress: Callable[..., None] | None = None) -> dict[str, Any]:
+    """Refresh requested catalogs and atomically reconcile against last-good data.
+
+    A lock serializes writers (including separate scheduled/CLI processes). The
+    snapshot contains a complete last-good generation, never a half-written page.
+
+    With ``deadline`` (monotonic seconds), network I/O is bounded: providers
+    that cannot start or finish in time are marked ``deferred`` and the single
+    locked write still happens. Without it, legacy blocking-lock semantics
+    apply. Async consumers inside a running loop must await arefresh_catalog.
+    """
+    _ensure_no_running_loop(_REFRESH_IN_LOOP)
+    destination, registry, requested = _prepare_refresh(env, provider_ids, public_only, path)
+    return asyncio.run(_arefresh_impl(env, registry, requested, public_only, destination,
+                                      deadline=deadline, progress=progress))
+
+
+async def arefresh_catalog(env: dict[str, str], provider_ids: list[str] | None = None,
+                           public_only: bool = False, path: Path | str | None = None, *,
+                           deadline: float | None = None,
+                           progress: Callable[..., None] | None = None) -> dict[str, Any]:
+    """Async twin of refresh_catalog for consumers inside a running loop."""
+    destination, registry, requested = _prepare_refresh(env, provider_ids, public_only, path)
+    return await _arefresh_impl(env, registry, requested, public_only, destination,
+                                deadline=deadline, progress=progress)
 
 
 class _SourceText(HTMLParser):
@@ -695,6 +1022,8 @@ def check_public_sources(provider_ids: list[str] | None = None, *,
             try:
                 if not _same_origin(url, url):
                     raise ValueError("Unsupported evidence URL")
+                # CTO-7 residual: idle-8s phases only; a sub-timeout drip here is
+                # unbounded (same phase-sum fallacy v5 killed for catalog). G25.
                 with client.stream("GET", url, headers={"Accept": "text/html, application/json", "Accept-Encoding": ACCEPT_ENCODING}, timeout=8) as response:
                     record["http_status"] = response.status_code
                     if response.status_code == 200:
@@ -796,7 +1125,15 @@ def main(argv: list[str] | None = None) -> int:
         from .config import effective_env
 
         env = effective_env()
-    result = refresh_catalog(env, args.providers, public_only=args.public_only, path=args.output)
+    start = time.monotonic()
+    try:
+        result = refresh_catalog(env, args.providers, public_only=args.public_only, path=args.output,
+                                 deadline=start + budget_seconds(env),
+                                 progress=stderr_progress_printer())
+    except DiscoveryBusy:
+        safe_print(_MAIN_BUSY_LINE, file=sys.stderr)
+        return 2
+    safe_print(discovery_summary_line(result, time.monotonic() - start), file=sys.stderr)
     print(json.dumps({"generation": result["generation"], "providers": {
         key: {"status": row["status"], "models": len(row["models"]),
               "checked_at": row.get("checked_at")}

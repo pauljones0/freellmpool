@@ -3,6 +3,21 @@
 from __future__ import annotations
 
 
+def with_auth_hint(detail: str, *, provider_id: str, key_env: str | None,
+                   status: int | None) -> str:
+    """Append the key-var action to a 401/403 attempts detail (R3, CLI-only).
+
+    Slot sites pass the resolved slot name, terminal sites the base key_env;
+    anything else (other statuses, unknown status) returns the detail unchanged.
+    Key material must never reach this function — names only.
+    """
+    if status not in (401, 403):
+        return detail
+    if key_env:
+        return f"{detail} (check key {key_env})"
+    return f"{detail} (provider rejected the request)"
+
+
 class FreeLLMPoolError(Exception):
     """Base class for all freellmpool errors."""
 

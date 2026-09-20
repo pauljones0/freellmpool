@@ -284,3 +284,13 @@ def test_rotator_advance_is_thread_safe():
     for thread in threads:
         thread.join()
     assert rot.usable_slots("alpha", 7, now=0.0)[0] == (8 * 2000) % 7
+
+
+def test_configured_slot_name_index_not_suffix():
+    from freellmpool.key_rotation import configured_slot_name
+
+    env = {"ALPHA_API_KEY": "one", "ALPHA_API_KEY_3": "three"}
+    assert configured_slot_name("ALPHA_API_KEY", env, 0) == "ALPHA_API_KEY"
+    assert configured_slot_name("ALPHA_API_KEY", env, 1) == "ALPHA_API_KEY_3"
+    gapped = {"ALPHA_API_KEY": "one", "ALPHA_API_KEY_2": "", "ALPHA_API_KEY_3": "three"}
+    assert configured_slot_name("ALPHA_API_KEY", gapped, 1) == "ALPHA_API_KEY_3"

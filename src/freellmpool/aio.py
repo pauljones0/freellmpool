@@ -37,6 +37,7 @@ from .errors import (
     ContextWindowExceeded,
     NoProvidersConfigured,
     ProviderHTTPError,
+    with_auth_hint,
 )
 from .key_rotation import ROTATE_STATUSES
 from .models import Provider, Reply
@@ -730,7 +731,9 @@ class AsyncPool:
                         _ChatAttempt(target, retry_error=exc, lease=retry_lease)
                     )
                 emit(p._on_event, "error", target=target.name, reason=str(exc))
-                attempts.append((target.name, str(exc)))
+                attempts.append((target.name, with_auth_hint(
+                    str(exc), provider_id=target.provider.id,
+                    key_env=target.provider.key_env, status=exc.status)))
                 continue
             except Exception as exc:  # noqa: BLE001
                 non_ctx_failure = True
