@@ -42,6 +42,7 @@ from .conformance import (
     run_target_canaries,
 )
 from .errors import AllProvidersExhausted, NoProvidersConfigured
+from .heal import maybe_start_heal_executor
 from .mode import (
     WISE_DEFAULT_MAX_TOKENS,
     WISE_DEFAULT_ROUTING,
@@ -1940,8 +1941,14 @@ def cmd_proxy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
+    # G33: demand-heal daemon (None unless AUTOHEAL + managed pool);
+    # handlers share its tick store; iteration 0 runs in the background
+    # so the proxy binds with zero heal delay. Stopped in the finally
+    # below: bounded join, then the shutdown flush owns the disk.
+    heal_executor = maybe_start_heal_executor(pool)
+    tick_store = heal_executor.ticks if heal_executor is not None else None
     httpd = serve(pool, host=bind_host, port=bind_port, api_key=proxy_key,
-                  allowed_authorities=allowed_authorities)
+                  allowed_authorities=allowed_authorities, tick_store=tick_store)
     n_models = sum(len(p.models) for p in pool.providers)
     auth_enabled = proxy_key is not None
     auth_note = "  auth: Bearer key required\n" if auth_enabled else ""
@@ -1968,9 +1975,13 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         )
     finally:
         try:
-            pool.flush()
+            if heal_executor is not None:
+                heal_executor.stop()
         finally:
-            httpd.server_close()
+            try:
+                pool.flush()
+            finally:
+                httpd.server_close()
     return 0
 
 
@@ -2175,7 +2186,11 @@ def _run_tailnet_serve(
             )
             return 2
 
-    httpd = serve(pool, host=bind_host, port=port, api_key=explicit_key)
+    # G33: demand-heal daemon (tailnet parity with the main proxy path).
+    heal_executor = maybe_start_heal_executor(pool)
+    tick_store = heal_executor.ticks if heal_executor is not None else None
+    httpd = serve(pool, host=bind_host, port=port, api_key=explicit_key,
+                  tick_store=tick_store)
     n_models = sum(len(p.models) for p in pool.providers)
     print(
         f"freellmpool tailnet serve on {base_url}/v1  "
@@ -2198,9 +2213,13 @@ def _run_tailnet_serve(
         )
     finally:
         try:
-            pool.flush()
+            if heal_executor is not None:
+                heal_executor.stop()
         finally:
-            httpd.server_close()
+            try:
+                pool.flush()
+            finally:
+                httpd.server_close()
     return 0
 
 

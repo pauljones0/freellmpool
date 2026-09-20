@@ -53,6 +53,7 @@ from .errors import (
     FreeLLMPoolError,
     NoProvidersConfigured,
 )
+from .heal import TickStore, maybe_record_tick
 from .models import Model
 from .readiness import ModelReadiness, ProviderReadiness, ReadinessSnapshot, readiness_snapshot
 from .router import Pool
@@ -514,7 +515,8 @@ def _task_hint(headers, req: dict) -> object:
     return header if header is not None else req.get("task")
 
 
-def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=()):
+def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=(),
+                   tick_store: TickStore | None = None):
     # Ring buffer of recently-served (provider, model). Appended from worker
     # threads and snapshotted by /status, so guard it: a deque append is atomic,
     # but iterating it (list(recent)) concurrently with an append can raise.
@@ -581,7 +583,8 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             # expect {"type":"error","error":{"type":..,"message":..}}.
             self._send(status, {"type": "error", "error": {"type": code, "message": message}}, headers)
 
-        def _exhausted(self, exc: AllProvidersExhausted, *, anthropic=False):
+        def _exhausted(self, exc: AllProvidersExhausted, *, anthropic=False,
+                       had_tools: bool = False):
             status = exc.client_status
             status = status if isinstance(status, int) and 400 <= status < 600 else 502
             headers = {}
@@ -591,6 +594,10 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             code = "rate_limit_error" if status == 429 else "invalid_request_error" if status < 500 else "all_providers_exhausted"
             send = self._anthropic_error if anthropic else self._error
             send(status, exc.client_message or str(exc), code, headers=headers)
+            # G33 demand tick: memory-only increment when the store is
+            # threaded, AUTOHEAL is on, and this was a terminal tools-429.
+            # Observes only — routing and responses are already decided.
+            maybe_record_tick(tick_store, pool.env, had_tools, exc)
 
         def _authorized(self) -> bool:
             """If a proxy key is configured, require a matching Bearer token
@@ -998,7 +1005,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 self._anthropic_error(413, str(exc), "context_length_exceeded")
                 return
             except AllProvidersExhausted as exc:
-                self._exhausted(exc, anthropic=True)
+                self._exhausted(exc, anthropic=True, had_tools=bool(chat.get("tools")))
                 return
             # Record recent served
             record_recent(
@@ -1179,7 +1186,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 self._error(503, str(exc), "no_providers")
                 return
             except AllProvidersExhausted as exc:
-                self._exhausted(exc)
+                self._exhausted(exc, had_tools=False)
                 return
             self._send(200, _to_embeddings_response(reply))
 
@@ -1233,7 +1240,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 self._error(503, str(exc), "no_providers")
                 return
             except AllProvidersExhausted as exc:
-                self._exhausted(exc)
+                self._exhausted(exc, had_tools=False)
                 return
             if response_format == "text":
                 payload = reply.text.encode("utf-8")
@@ -1311,7 +1318,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             except ContextWindowExceeded as exc:
                 self._error(413, str(exc), "context_length_exceeded")
             except AllProvidersExhausted as exc:
-                self._exhausted(exc)
+                self._exhausted(exc, had_tools=bool(tools))
             except FreeLLMPoolError as exc:  # pragma: no cover - defensive
                 self._error(500, str(exc), "freellmpool_error")
             return None
@@ -1512,7 +1519,8 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 if isinstance(exc, AllProvidersExhausted):
                     client_status = getattr(exc, "client_status", None)
                     if isinstance(client_status, int) and 400 <= client_status < 500:
-                        self._exhausted(exc)
+                        # Pre-commit text-only stream (unreachable with tools).
+                        self._exhausted(exc, had_tools=False)
                         return
                 # nothing streamable succeeded — fall back to a buffered completion
                 reply = self._resolve(
@@ -3117,12 +3125,14 @@ def serve(
     api_key: str | None = None,
     *,
     allowed_authorities=(),
+    tick_store: TickStore | None = None,
 ) -> ThreadingHTTPServer:
     """Build the proxy server. If ``api_key`` is set (or ``FREELLMPOOL_PROXY_KEY``
     is in the environment), POSTs must present ``Authorization: Bearer <key>``."""
     if api_key is None:
         api_key = os.environ.get("FREELLMPOOL_PROXY_KEY") or None
-    handler = make_handler(pool, api_key, allowed_authorities=allowed_authorities)
+    handler = make_handler(pool, api_key, allowed_authorities=allowed_authorities,
+                           tick_store=tick_store)
     httpd = _BoundedThreadingHTTPServer((host, port), handler)
     httpd.pool = pool
     # Worker threads are daemons so a stuck request can't block process/server

@@ -69,12 +69,51 @@ zero-pass or 429-heavy runs, max 24h, reset when the bench is restored), and a
 `FREELLMPOOL_HEAL_BUDGET_SECONDS` wall-box (default 300, clamped 60–600,
 checked between probes). `verify` without `--heal` only offers; timers and
 `maintenance --refresh` heal only with `FREELLMPOOL_AUTOHEAL=1` (explicit
-`--heal` always runs). Run history lives in `heal.json` next to the other
+`--heal` always runs; the proxy demand daemon below heals under the
+same flag). Run history lives in `heal.json` next to the other
 state files — never inside conformance evidence, so fresh and healed runs
 stay distinguishable by trigger. For background healing, add
 `Environment=FREELLMPOOL_AUTOHEAL=1` to the installed verify/refresh units
 (`systemctl --user edit freellmpool-verify.service`); the installer never
 enables it unprompted.
+
+## Proxy demand ticks (G33 autoheal daemon)
+
+With `FREELLMPOOL_AUTOHEAL=1`, `proxy` (and `tailnet serve`) start a daemon
+that heals only when real tool traffic is being rate-limited: each terminal
+tools-bearing request that exhausts all providers with a 429 records one
+tick — a memory-only increment, never disk I/O on the request path. Text
+requests, non-429 failures, and anything but terminal exhaustion never tick.
+The daemon evaluates once a minute and heals only when ≥5 ticks land inside
+a 600-second window (same bounds and cooldowns as above); healthy benches
+and closed gates consume the demand without probing. A steady
+below-threshold trickle never heals — windows expire, so low-traffic
+rate-limiting starves by design rather than accumulating stale demand.
+
+Demand state lives in `heal_ticks.json` next to the other state files
+(`FREELLMPOOL_HEAL_TICKS_PATH` overrides). Ticks move memory→disk exactly
+once across threads and processes; a corrupt tick file backs the flush off
+(ticks restored to memory, retried next pass) and a failed flush never
+migrates ticks into an expired window — backed-off ticks restore only to
+their matching live window, otherwise they expire under the same honest
+crash-loss policy as a crash between passes (documented, never silently
+invented). If a move stays in flight past the 50 ms demand spin budget,
+that pass reads conservative no-demand and the next pass sees the
+flushed ticks: healing can be delayed by one pass, never duplicated
+or lost.
+A tick recorded while demand is being read likewise surfaces on the next
+pass. A long-running heal pass skips missed minute anchors rather than
+stacking catch-up runs, and consumes into the live window when it lands.
+Overlapping runs from separate processes sharing one tick file (proxy +
+`tailnet serve`) may drop same-window peer demand on consume; windows,
+thresholds, and fresh ticks re-arm, so the loss is bounded and
+self-healing. Shutdown stops the daemon (bounded 5 s join, mid-run pass
+detached by design with its post-run consume skipped) and flushes pending
+ticks so the next start resumes full demand. Account-quota 429s tick like
+any other tools-429 — the low-yield backoff contains the resulting heal
+spend to a decaying trickle instead. These interleavings are pinned by
+`tests/test_proxy_heal.py` (`test_020_*`, ported from independent
+frozen-source probes).
 
 ## Public issues and history
 

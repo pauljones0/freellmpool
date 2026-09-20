@@ -1677,6 +1677,61 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G33 — proxy demand-driven heal (Status: complete 2026-09-21)
+
+Pain: agent sessions 429-spiral against the proxy while the tool bench
+sits collapsed; recovery needs a human to run `verify --heal`. G31
+covers verify/status/timers — the proxy path where the pain is felt
+records no demand signal and heals nothing.
+
+Bet: terminal tools-429s record demand ticks (memory-only, off the hot
+path); an AUTOHEAL-gated out-of-band executor heals when demand
+passes threshold, honoring restart-persisted ticks within seconds of
+proxy start with zero bind delay.
+
+Execute: grounding survey + spike + 3-reviewer plan gate (v1 FAIL on
+all three axes → v2 folds contradictions, merge/executor lifecycle,
+consent/minimality); TDD implement in isolated worktree (red-first,
+offline); adversarial review; gates green; commit/push.
+
+Done when:
+- [x] Ticks only on terminal tools-429 (`had_tools` threaded to all
+  `_exhausted` sites; mid-stream out of scope, ≤2/request bound);
+  AUTOHEAL-gated recording; retry_after ignored by design;
+  account-quota not excluded (backoff containment, disclosed).
+- [x] TickStore: aligned 600 s windows, threshold 5, flush-as-move,
+  lossless same-window merge, expiry on rollover, torn/silent-safe;
+  executor: iteration-0 + anchored 60 s, read-only pre-checks,
+  consume-unless-busy, BaseException-proof, idempotent start,
+  legacy-pool None gate, tailnet parity.
+- [x] Startup ordering: executor after pool, before serve_forever, no
+  synchronous heal; two-process tick-loss test; request-path purity
+  (record writes no files); docs + G31 "only" amendment with
+  starvation disclosure.
+- [x] Full strict suite green (3273 collected, rc0) + ruff + strict
+  mypy + docs + coverage (lines 88.11% ≥ 80%, branches 79.68% ≥ 70%)
+  green; adversarial review SHIP (5 SHOULDs + NITs all closed);
+  pushed.
+
+020 closure (independent frozen-source probes, repro
+free-g33-concurrency-6308bb9f): demand/flush double-count → seqlock
+exactly-once demand (no disk on record path); cross-window failed-flush
+migration → restore-only-to-matching-live-bucket; catch-up stacking →
+skip-not-stack anchors. Ported as `test_020_*` with corrected
+expectations; Daybreak interleavings re-verified against repaired
+source (positive control unchanged).
+
+Honesty residuals: account-outage burn (decaying trickle via
+low-yield backoff); crash loses ≤60 s of ticks; consume wipes ≤ run
+duration of mid-run ticks; mid-stream 429s don't tick; constants are
+judgment calls pinned by tests. 021 acceptance limit: a move in flight
+past the 50 ms spin budget reads conservative no-demand for one pass
+(delay, not loss); overlapping multi-process runs may drop same-window
+peer demand on consume (bounded, self-healing).
+
+Effort: M (tick store + executor + proxy threading). Fit: high —
+self-restoring proxy during 429 spirals, zero incantation.
+
 ## G32 — Cloudflare token-verify disambiguation (Status: complete 2026-09-21)
 
 Pain: every Cloudflare 401 was inconclusive `denied` — a dead token, a
@@ -1770,7 +1825,8 @@ Honesty residuals: probes count calls (a tools feature may issue a
 followup); per-run cap can stop the 4th target (boundedness wins —
 3 passes still restore minimum); quota shows heal spend as ordinary
 verify spend; AUTOHEAL timers re-probe on schedule only when thin;
-proxy-async demand healing deferred to G32 with reviewer notes.
+proxy-async demand healing deferred to G33 with reviewer notes (G32
+took the Cloudflare-verify slot).
 
 Effort: M (plan-gate rescope + lease/state machinery). Fit: high —
 the #1 ranked gap: recovery becomes one obvious command.

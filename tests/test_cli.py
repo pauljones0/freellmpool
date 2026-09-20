@@ -1284,12 +1284,14 @@ def _patch_pool(monkeypatch, providers=None):
 def _patch_serve(monkeypatch, captured=None):
     """Replace proxy.serve with a fake that records host/port/key and short-circuits."""
     class FakeServer:
-        def __init__(self, pool, host="127.0.0.1", port=8080, api_key=None, allowed_authorities=()):
+        def __init__(self, pool, host="127.0.0.1", port=8080, api_key=None, allowed_authorities=(),
+                     tick_store=None):
             if captured is not None:
                 captured["host"] = host
                 captured["port"] = port
                 captured["api_key"] = api_key
                 captured["allowed_authorities"] = allowed_authorities
+                captured["tick_store"] = tick_store
             self.pool = pool
 
         def serve_forever(self):
@@ -1733,6 +1735,7 @@ def test_cli_proxy_allows_unsafe_bind_with_allow_lan_and_key(monkeypatch, capsys
         "port": 8080,
         "api_key": "sentinel-lan-proxy-secret",
         "allowed_authorities": (),
+        "tick_store": None,  # no AUTOHEAL in this path: no store threaded
     }
     assert len(formatter_calls) == 1
     assert set(formatter_calls[0]) == {"base_url", "auth_enabled", "token_label"}

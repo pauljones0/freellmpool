@@ -415,3 +415,417 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
     return {"ran": True, "reason": reason,
             "targets": probed, "passes": passes, "probes": dispatched,
             "skipped": skipped}
+
+
+# --- G33 proxy demand-driven heal (spike v2) ---
+# Terminal tools-429s record demand ticks (memory-only, off the hot path);
+# an AUTOHEAL-gated daemon executor heals when demand passes threshold.
+
+HEAL_TICK_SCHEMA = 1
+HEAL_TICK_WINDOW_SECONDS = 600
+HEAL_TICK_THRESHOLD = 5
+HEAL_EXECUTOR_INTERVAL_SECONDS = 60.0
+HEAL_EXECUTOR_STOP_JOIN_SECONDS = 5.0
+PROXY_TICK_TRIGGER = "proxy-tick"
+
+
+def default_ticks_path(env: Any | None = None) -> Path:
+    """State path for heal_ticks.json (env-overridable for tests)."""
+    from .maintenance import state_directory
+
+    source = os.environ if env is None else env
+    override = source.get("FREELLMPOOL_HEAL_TICKS_PATH", "")
+    if override:
+        return Path(override).expanduser()
+    return state_directory(dict(source)) / "heal_ticks.json"
+
+
+def _should_tick(had_tools: bool, exc: Any) -> bool:
+    """Pure tick decision: terminal tools-429 only (spike v2 §1)."""
+    return bool(had_tools) and getattr(exc, "client_status", None) == 429
+
+
+def maybe_record_tick(ticks: TickStore | None, env: Any, had_tools: bool,
+                      exc: Any) -> bool:
+    """Record a demand tick iff store present + AUTOHEAL + terminal tools-429.
+
+    The proxy `_exhausted` path calls this once per terminal failure; the
+    AUTOHEAL gate keeps non-opted users at zero state and zero overhead.
+    """
+    if ticks is None or not autoheal_enabled(env):
+        return False
+    if not _should_tick(had_tools, exc):
+        return False
+    ticks.record()
+    return True
+
+
+def _tick_bucket(now: float) -> int:
+    return int(now // HEAL_TICK_WINDOW_SECONDS)
+
+
+def _bucket_start_iso(bucket: int) -> str:
+    return datetime.fromtimestamp(bucket * HEAL_TICK_WINDOW_SECONDS, UTC).isoformat()
+
+
+def _parse_bucket(value: Any) -> int | None:
+    parsed = _parse_ts(value)
+    if parsed is None:
+        return None
+    return int(parsed.timestamp() // HEAL_TICK_WINDOW_SECONDS)
+
+
+_DEMAND_SPIN_RETRIES = 100
+_DEMAND_SPIN_SLEEP_SECONDS = 0.0005
+
+
+class TickStore:
+    """Demand-tick store: memory counts, flush-as-move persistence.
+
+    `record()` performs no file writes (request-path safe). `flush()`
+    swaps the memory counter out under lock, then merges under an
+    explicit flock: same window adds (lossless), a newer side wins and
+    the older is discarded as expiry (same as single-process rollover).
+    `demand()` sums memory + file (moves subtract-before-add, so no
+    double-count). Coherence across the move boundary comes from a
+    seqlock generation: odd means a move is in flight, even means
+    stable; `demand()` spins on odd and retries on change, so every
+    accepted view counts each tick exactly once (020#1). `record()`
+    never waits on I/O — the lock is held across nanosecond counter
+    ops only, never across file work. Torn reads and unknown schemas
+    back off WITHOUT writing — never blank-overwrite. Separate file
+    (not heal.json keys): HealStore.load drops unknown keys, so reuse
+    would force heal.py changes.
+    """
+
+    def __init__(self, path: Path | None = None) -> None:
+        self.path = Path(path) if path is not None else default_ticks_path()
+        self._thread_lock = threading.Lock()
+        self._bucket = _tick_bucket(time.time())
+        self._count = 0
+        self._gen = 0
+
+    def _now(self, now: float | None) -> float:
+        return time.time() if now is None else now
+
+    def record(self, now: float | None = None) -> None:
+        """Count one tick (memory-only; never touches the disk).
+
+        A window rollover bumps the seqlock generation by 2: concurrent
+        demand views invalidate and respin instead of returning the
+        expired window's count (021 SHOULD-4). Same-bucket records
+        don't bump (no retry storm; a tick recorded mid-demand
+        surfaces on the next pass). +2 preserves odd/even parity, so
+        a rollover landing inside a flush move can't strand it odd.
+        """
+        bucket = _tick_bucket(self._now(now))
+        with self._thread_lock:
+            if bucket != self._bucket:
+                self._bucket, self._count = bucket, 0
+                self._gen += 2
+            self._count += 1
+
+    def _file_window_count(self, current: int) -> int:
+        """Lock-free tolerant file count for one window (whole reads only)."""
+        raw = self._read_raw()
+        if not raw or raw.get("schema") != HEAL_TICK_SCHEMA \
+                or _parse_bucket(raw.get("window_start")) != current:
+            return 0
+        count = raw.get("count")
+        return count if isinstance(count, int) and count > 0 else 0
+
+    def demand(self, now: float | None = None) -> bool:
+        """True iff memory + file hold ≥ threshold ticks in this window.
+
+        Seqlock read: spin while a move is in flight (odd generation),
+        accept only a view whose generation is unchanged across both
+        reads — every accepted view counts each tick exactly once
+        across the flush boundary (020#1). A tick recorded mid-read
+        (same bucket) surfaces on the next pass: delayed, never
+        double-counted. Past the spin budget (a wedged peer flock),
+        fail closed to the durable file side. Executor-cadence only —
+        never called on the request path.
+        """
+        current = _tick_bucket(self._now(now))
+        fallback = 0
+        for _ in range(_DEMAND_SPIN_RETRIES):
+            with self._thread_lock:
+                gen0 = self._gen
+                mem_bucket, mem_count = self._bucket, self._count
+            if gen0 % 2 == 1:
+                time.sleep(_DEMAND_SPIN_SLEEP_SECONDS)
+                continue
+            file_count = self._file_window_count(current)
+            with self._thread_lock:
+                gen1 = self._gen
+            if gen0 == gen1:
+                mem = mem_count if mem_bucket == current else 0
+                return mem + file_count >= HEAL_TICK_THRESHOLD
+            fallback = file_count
+        return fallback >= HEAL_TICK_THRESHOLD
+
+    def _read_raw(self) -> dict[str, Any] | None:
+        """Raw read: {} = absent (safe to write fresh); None = back off."""
+        try:
+            data = json.loads(self.path.read_text())
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    @contextmanager
+    def _file_lock(self) -> Any:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(self.path) + ".lock", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield self
+        finally:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            finally:
+                os.close(fd)
+
+    def _write(self, bucket: int, count: int) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(json.dumps({"schema": HEAL_TICK_SCHEMA,
+                                   "window_start": _bucket_start_iso(bucket),
+                                   "count": count}, indent=2, sort_keys=True))
+        os.replace(tmp, self.path)
+
+    def flush(self, now: float | None = None) -> bool:
+        """Move memory ticks to disk; False = backed off, ticks restored
+        to the matching live window (expired on rollover; see _restore)."""
+        current = _tick_bucket(self._now(now))
+        with self._thread_lock:
+            taken_bucket, taken = self._bucket, self._count
+            self._bucket, self._count = current, 0
+            if taken:
+                self._gen += 1  # odd: move in flight (demand spins)
+        if taken == 0:
+            return True
+        try:
+            with self._file_lock():
+                raw = self._read_raw()
+                if raw is None or (raw and raw.get("schema") != HEAL_TICK_SCHEMA):
+                    raise _TickBackoff
+                if not raw:
+                    self._write(taken_bucket, taken)  # absent: fresh write
+                    return True
+                file_bucket = _parse_bucket(raw.get("window_start"))
+                file_count = raw.get("count")
+                file_count = file_count if isinstance(file_count, int) and file_count > 0 else 0
+                if file_bucket is None or taken_bucket > file_bucket:
+                    self._write(taken_bucket, taken)  # later wins; older expires
+                elif taken_bucket == file_bucket:
+                    self._write(taken_bucket, file_count + taken)
+                # taken older than file: expiry — drop without writing.
+        except _TickBackoff:
+            self._restore(taken_bucket, taken)
+            return False
+        except OSError:
+            self._restore(taken_bucket, taken)
+            return False
+        finally:
+            with self._thread_lock:
+                self._gen += 1  # even: stable again
+        return True
+
+    def _restore(self, bucket: int, count: int) -> None:
+        """Return backed-off ticks to their matching live bucket (020#2).
+
+        Same bucket as memory → add back. Taken older than memory (a
+        concurrent record rolled forward, or consume reset) → drop as
+        rollover expiry; memory (newer by construction) is preserved
+        untouched. Never migrates ticks across windows.
+        """
+        with self._thread_lock:
+            if self._bucket == bucket:
+                self._count += count
+            # else: expired — drop taken, preserve memory.
+
+    def consume(self, now: float | None = None) -> None:
+        """Reset demand after an evaluated iteration (memory + file).
+
+        The file write is best-effort and merge-aware: it never clobbers
+        a NEWER peer window. Mid-run ticks are wiped (bounded loss ≤ run
+        duration, disclosed in spike v2 §2).
+        """
+        current = _tick_bucket(self._now(now))
+        with self._thread_lock:
+            prior = self._bucket
+            self._bucket, self._count = current, 0
+            self._gen += 1  # odd: consume in flight (demand spins)
+        try:
+            with self._file_lock():
+                raw = self._read_raw()
+                if raw is None or raw.get("schema") != HEAL_TICK_SCHEMA:
+                    return
+                file_bucket = _parse_bucket(raw.get("window_start"))
+                if file_bucket is not None and file_bucket > prior:
+                    return
+                self._write(current, 0)
+        except OSError:
+            pass
+        finally:
+            with self._thread_lock:
+                self._gen += 1  # even: stable again
+
+    def atexit_flush(self) -> None:
+        """Best-effort shutdown flush; never raises."""
+        try:
+            self.flush()
+        except Exception:
+            pass
+
+
+class _TickBackoff(Exception):
+    """Internal: flush must back off without writing (torn/unknown)."""
+
+
+class HealExecutor:
+    """Out-of-band demand-heal daemon (spike v2 §3).
+
+    Iteration 0 runs immediately on start (startup evaluation honoring
+    restart-persisted ticks with zero proxy-bind delay), then on an
+    anchored schedule, skip-not-stack. `iterate_once` never raises
+    (BaseException → stderr + structured return) so the daemon can
+    never die silently. `run_fn(pool, store)` defaults to run_heal
+    with trigger="proxy-tick" (seam for deterministic tests).
+    """
+
+    def __init__(self, pool: Any, ticks: TickStore, store: HealStore, *,
+                 interval: float = HEAL_EXECUTOR_INTERVAL_SECONDS,
+                 minimum: int = DEFAULT_MINIMUM, run_fn: Any = None) -> None:
+        if interval <= 0:
+            raise ValueError("heal executor interval must be positive")
+        self._pool = pool
+        self._ticks = ticks
+        self._store = store
+        self._interval = interval
+        self._minimum = minimum
+        self._run_fn = run_fn
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._monotonic = time.monotonic
+
+    @property
+    def ticks(self) -> TickStore:
+        """The demand store (shared with proxy handlers)."""
+        return self._ticks
+
+    def _run(self) -> dict[str, Any]:
+        if self._run_fn is not None:
+            return dict(self._run_fn(self._pool, self._store))
+        return run_heal(self._pool, self._store, trigger=PROXY_TICK_TRIGGER)
+
+    def iterate_once(self, now: float | None = None) -> dict[str, Any]:
+        """One flush+evaluate+maybe-heal pass; never raises."""
+        try:
+            return self._iterate(now if now is not None else time.time())
+        except BaseException as exc:  # daemon must never die (COMP G9)
+            print(f"heal executor error: {exc.__class__.__name__}: {exc}",
+                  file=sys.stderr)
+            return {"acted": False, "reason": "error"}
+
+    def _iterate(self, now: float) -> dict[str, Any]:
+        self._ticks.flush(now=now)
+        if not autoheal_enabled(getattr(self._pool, "env", None) or {}):
+            return {"acted": False, "reason": "disabled"}
+        if not self._ticks.demand(now=now):
+            return {"acted": False, "reason": "no-demand"}
+        ready = self._pool.managed_status().get("tools_ready", 0)
+        if not isinstance(ready, int) or ready >= self._minimum:
+            self._ticks.consume(now=now)  # stale demand on a healthy bench
+            return {"acted": False, "reason": "healthy"}
+        blocked = gate_open(self._store.view(),
+                            datetime.fromtimestamp(now, UTC))
+        if blocked is not None:
+            self._ticks.consume(now=now)  # gate persists; fresh ticks re-arm
+            return {"acted": False, "reason": blocked}
+        result = self._run()
+        if result.get("reason") != "busy" and not self._stop_event.is_set():
+            # Consume on every evaluated outcome except contention: heals,
+            # failures, and errors all re-arm via fresh ticks; only busy
+            # (transient, probe-free) retries on kept demand (spike v2 §2).
+            # Fresh time, not the pass-start stamp: a run that crossed a
+            # window boundary must not rewrite the file backward (021#1).
+            # Skipped entirely once stopped: the shutdown flush owns the
+            # disk then, and a detached pass must not wipe it (021#2).
+            self._ticks.consume()
+        return {"acted": bool(result.get("ran")), "reason": result.get("reason")}
+
+    def start(self) -> HealExecutor:
+        """Register shutdown flush, start the daemon (iteration 0 runs now).
+
+        Single-use: start once per instance. Restart-after-stop is not
+        supported (the stop event stays set); construct a new executor.
+        """
+        import atexit
+
+        atexit.register(self._ticks.atexit_flush)
+        self._thread = threading.Thread(target=self._loop, name="heal-executor",
+                                        daemon=True)
+        self._thread.start()
+        return self
+
+    def _loop(self) -> None:
+        start = self._monotonic()
+        while True:
+            self.iterate_once()
+            now = self._monotonic()
+            # Skip-not-stack (020#3): jump to the anchor strictly after
+            # now, so a 190 s iteration waits out the remainder instead
+            # of firing immediate catch-up rounds.
+            slot = int((now - start) // self._interval) + 1
+            delay = start + slot * self._interval - now
+            if self._stop_event.wait(timeout=max(0.0, delay)):
+                return
+
+    def stop(self) -> None:
+        """Signal stop, bounded join (detaches mid-run by design), flush."""
+        import atexit
+
+        self._stop_event.set()
+        thread, self._thread = self._thread, None
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(timeout=HEAL_EXECUTOR_STOP_JOIN_SECONDS)
+        try:
+            atexit.unregister(self._ticks.atexit_flush)
+        except Exception:
+            pass
+        self._ticks.atexit_flush()
+
+
+_EXECUTORS: dict[int, HealExecutor] = {}
+_EXECUTORS_LOCK = threading.Lock()
+
+
+def maybe_start_heal_executor(pool: Any, *,
+                              interval: float = HEAL_EXECUTOR_INTERVAL_SECONDS,
+                              ) -> HealExecutor | None:
+    """Start (idempotently) the proxy demand-heal daemon, or None.
+
+    None unless AUTOHEAL-opted into effective env AND the pool is a
+    managed pool (legacy base Pool lacks managed_status/probe_*).
+    Idempotent per pool object: the executor holds the pool, so the
+    id() key is stable while the entry is alive.
+    """
+    env = getattr(pool, "env", None)
+    if not isinstance(env, dict) or not autoheal_enabled(env):
+        return None
+    if not hasattr(pool, "managed_status") or not hasattr(pool, "probe_call"):
+        return None
+    key = id(pool)
+    with _EXECUTORS_LOCK:
+        existing = _EXECUTORS.get(key)
+        if existing is not None and existing._thread is not None \
+                and existing._thread.is_alive():
+            return existing
+        ticks = TickStore(default_ticks_path(env))
+        store = HealStore(default_heal_path(env))
+        executor = HealExecutor(pool, ticks, store, interval=interval).start()
+        _EXECUTORS[key] = executor
+        return executor
