@@ -58,6 +58,24 @@ A model listing or successful identity request cannot establish missing billing
 conditions. Review findings need a maintainer to inspect the linked public issue
 and official source; repeating refresh does not approve a changed grant or limit.
 
+## Thin tool bench (demand-driven heal)
+
+Tool evidence expires after 7 days; when fewer than 3 chat routes hold fresh
+tool passes, `status` offers `freellmpool verify --heal`, which re-probes up to
+4 verification targets through the exact `verify` path (free-only, allowances
+reserved normally). `status` itself never probes. Bounds: ≤12 probes per run,
+≤3 runs and ≤36 probes per day, 1h cooldown after any run (doubling on
+zero-pass or 429-heavy runs, max 24h, reset when the bench is restored), and a
+`FREELLMPOOL_HEAL_BUDGET_SECONDS` wall-box (default 300, clamped 60–600,
+checked between probes). `verify` without `--heal` only offers; timers and
+`maintenance --refresh` heal only with `FREELLMPOOL_AUTOHEAL=1` (explicit
+`--heal` always runs). Run history lives in `heal.json` next to the other
+state files — never inside conformance evidence, so fresh and healed runs
+stay distinguishable by trigger. For background healing, add
+`Environment=FREELLMPOOL_AUTOHEAL=1` to the installed verify/refresh units
+(`systemctl --user edit freellmpool-verify.service`); the installer never
+enables it unprompted.
+
 ## Public issues and history
 
 Complete catalogs are compared with a bounded baseline from this repository's

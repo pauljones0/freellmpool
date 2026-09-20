@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -25,6 +26,33 @@ _MAINTENANCE_BUSY_LINE = ("freellmpool: another catalog refresh is running; main
                           "skipped (retry later).")
 
 
+def _maybe_heal_after_refresh(env: dict[str, str], report: dict[str, Any]) -> str | None:
+    """Timer-consented heal hook: AUTOHEAL=1 only, private reports only.
+
+    Returns the heal outcome reason (or None when no heal was attempted)
+    so callers can surface io-error as exit 1.
+    """
+    from .heal import HealStore, autoheal_enabled, default_heal_path, run_heal
+    from .managed import ManagedPool
+
+    if not autoheal_enabled(env):
+        return None
+    pool = ManagedPool.from_default_config(env=env)
+    outcome = run_heal(pool, HealStore(default_heal_path(env)), trigger="maintenance")
+    print(f"heal: {outcome['reason']} ({outcome['passes']}/{len(outcome['targets'])} "
+          f"re-verified, {outcome['probes']} probes)", file=sys.stderr)
+    if not outcome["ran"]:
+        return str(outcome["reason"])
+    for finding in report.get("findings", []):
+        if isinstance(finding, dict) and finding.get("code") in {
+                "conformance_expired", "conformance_due"}:
+            summary = finding.get("summary", "")
+            finding["summary"] = (
+                f"{summary} (heal: {outcome['passes']}/{len(outcome['targets'])} "
+                f"re-verified)")
+    return str(outcome["reason"])
+
+
 def _arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--refresh", action="store_true", help="refresh reviewed policy, catalogs and supported observations; no inference")
     parser.add_argument("--public-only", "--public", dest="public_only", action="store_true", help="credentialless public report; never read private state")
@@ -42,6 +70,8 @@ def cmd_maintenance(args: argparse.Namespace) -> int:
         if args.refresh:
             report = run_maintenance(env, public_only=args.public_only, baseline_path=args.baseline,
                                      source_revision=args.source_revision)
+            if not args.public_only and _maybe_heal_after_refresh(env, report) == "io-error":
+                return 1
         elif args.public_only:
             directory = args.baseline.parent if args.baseline else state_directory({}) / "public-maintenance"
             report = validate_public_report(_read(directory / "public-report.json"))

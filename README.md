@@ -61,9 +61,10 @@ freellmpool maintenance
 freellmpool maintenance --refresh
 freellmpool update
 freellmpool verify --limit 4
+freellmpool verify --heal
 ```
 
-`maintenance` shows the next actions; `--refresh` checks supported account observations, catalogs, official sources and reviewed policy updates. `update` refreshes listings. `verify` spends a bounded amount of eligible free quota on synthetic protocol checks.
+`maintenance` shows the next actions; `--refresh` checks supported account observations, catalogs, official sources and reviewed policy updates. `update` refreshes listings. `verify` spends a bounded amount of eligible free quota on synthetic protocol checks. When `status` reports a thin tool bench, `verify --heal` re-probes a bounded set of verification targets (same free-only path, daily/run caps, cooldown); timers and `maintenance --refresh` heal only with `FREELLMPOOL_AUTOHEAL=1`. See [maintenance and recovery](docs/maintenance.md) for budgets and consent.
 
 Daily local maintenance keeps private observations on your machine and reports new actionable problems once. The public GitHub workflow checks public models, prices and sources without provider credentials or inference. It records review proposals and deduplicated issues; changed terms require review before eligibility or allowances expand.
 

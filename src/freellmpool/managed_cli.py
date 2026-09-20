@@ -37,7 +37,21 @@ def tools_bench_warning(status: dict[str, Any]) -> str | None:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    status = ManagedPool.from_default_config().managed_status()
+    from datetime import UTC, datetime
+
+    from .heal import HealStore, default_heal_path, gate_open
+
+    pool = ManagedPool.from_default_config()
+    status = pool.managed_status()
+    # Offer-only: status reads heal state but never probes.
+    view = HealStore(default_heal_path(getattr(pool, "env", None))).view()
+    ready = status.get("tools_ready", 0)
+    thin = isinstance(ready, int) and ready < TOOLS_BENCH_MINIMUM
+    blocked = gate_open(view, datetime.now(UTC))
+    status["heal_available"] = bool(thin and blocked is None)
+    status["heal_cooldown_until"] = view["cooldown_until"]
+    status["last_heal"] = view["last_heal"]
+    status["heal_probes_today"] = view["probes_today"]
     if args.json:
         print(json.dumps(status, indent=2))
     else:
@@ -51,6 +65,18 @@ def cmd_status(args: argparse.Namespace) -> int:
         warning = tools_bench_warning(status)
         if warning:
             print(f"\n{warning}")
+        if thin and blocked is None:
+            print(f"Bench thin: run freellmpool verify --heal "
+                  f"({ready} fresh, need {TOOLS_BENCH_MINIMUM})")
+        elif thin and blocked == "cooldown":
+            print(f"Heal on cooldown until {view['cooldown_until']}")
+        elif thin:
+            print("Heal budget exhausted for today")
+        last = view["last_heal"]
+        if isinstance(last, dict):
+            print(f"Last heal: {last.get('at')} ({last.get('passes', 0)} passes, "
+                  f"{last.get('probes', 0)} probes, via {last.get('trigger')})")
+        print(f"Heal probes today: {view['probes_today']}")
         print("\nInspect enforced budgets and unknown limits: freellmpool status --json")
     return 0
 
@@ -196,6 +222,7 @@ def _verification_timeout(value: str | float) -> float:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     from .conformance import run_target_canaries
+    from .heal import HealStore, autoheal_enabled, default_heal_path, run_heal
     from .maintenance import select_verification_targets
     try:
         features = tuple(_verification_features(args.features).split(","))
@@ -204,6 +231,19 @@ def cmd_verify(args: argparse.Namespace) -> int:
         print(f"freellmpool verify: {exc}", file=sys.stderr)
         return 2
     pool = ManagedPool.from_default_config()
+    ready = pool.managed_status().get("tools_ready", 0)
+    if isinstance(ready, int) and ready < TOOLS_BENCH_MINIMUM:
+        heal_flag = bool(getattr(args, "heal", False))
+        # Review fix 8: consent, budget, and paths all read pool.env
+        # (effective env), never bare os.environ.
+        if heal_flag or autoheal_enabled(pool.env):
+            outcome = run_heal(pool, HealStore(default_heal_path(pool.env)),
+                               trigger="verify", limit=args.limit, timeout=timeout)
+            if outcome["reason"] == "io-error":
+                return 1
+        else:
+            print(f"Bench thin: run freellmpool verify --heal "
+                  f"({ready} fresh, need {TOOLS_BENCH_MINIMUM})", file=sys.stderr)
     # ManagedPool always installs a store, unlike the optional legacy base.
     conformance = cast(ConformanceStore, pool.conformance)
     routes = [r for r in pool.snapshot().routes if r.modality == "chat" and r.automatic
@@ -440,6 +480,8 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     verify.add_argument("--features", type=_verification_features, default="chat,tools,streaming")
     verify.add_argument("--timeout", type=_verification_timeout, default=30)
     verify.add_argument("--json", action="store_true")
+    verify.add_argument("--heal", action="store_true",
+                        help="when the tool bench is thin, re-probe a bounded set first")
     verify.set_defaults(func=cmd_verify)
     status = sub.add_parser("status", help="show free admission and allowance state")
     status.add_argument("--json", action="store_true")

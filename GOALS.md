@@ -1677,6 +1677,53 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G31 — demand-driven tool-bench heal (Status: complete 2026-09-20)
+
+Pain: tool evidence expires after 7d and the fresh bench collapses
+into the G5 429 death spiral; the system only reported it, and
+recovery needed obscure verify incantations.
+
+Bet: heal on demand where the user already looks — `verify --heal`
+re-probes through the exact verify path, `status` offers without
+ever probing, timers heal only under explicit AUTOHEAL opt-in.
+
+Execute: design + 3-reviewer plan gate (v1 FAIL-fixable on
+completeness/scope → rescoped v2: proxy-async deferred to G32;
+v2.1/v2.2 folds confirmed PASS); TDD implement (red-first, fake
+pools/probes offline); adversarial review; gates green; commit/push.
+
+Done when:
+- [x] `verify --heal` heals a thin bench (≤4 targets, ≤12 probes/run,
+  ≤3 runs + ≤36 probes/day, 1h cooldown doubling to 24h on
+  zero-pass/429-heavy runs, reset on restore, wall-box between
+  probes); bare `verify` offers only; `status` never probes.
+- [x] Consent-explicit: AUTOHEAL=1 enables `verify`/`maintenance
+  --refresh`/timer paths only; `=0`/unset disables; explicit `--heal`
+  always runs; installer never injects AUTOHEAL.
+- [x] Correctness: re-admit at probe time, run lease (threading +
+  flock, second runner exits 0), empty selector accounted without
+  cooldown, OSError aborts cleanly (exit 1), ledger-denied counted
+  as skipped without evidence writes, heal.json history with
+  triggers (conformance schema untouched).
+- [x] Surface: status offer/cooldown/last-heal/probes-today lines +
+  stable JSON keys (`heal_available`, `heal_cooldown_until`,
+  `last_heal`, `heal_probes_today`); refresh annotates conformance
+  findings with heal outcomes (private reports only).
+- [x] 28 heal tests green (triggers, lease incl. threads/processes,
+  budget, cooldown, wall-box, selectors, parsing, CLI); full strict
+  suite green (3167 collected/passed, rc0, /tmp/g31_gate_run3.log) +
+  ruff + strict mypy + docs + coverage (lines 87.93% >= 80%,
+  branches 79.43% >= 70%) green; pushed.
+
+Honesty residuals: probes count calls (a tools feature may issue a
+followup); per-run cap can stop the 4th target (boundedness wins —
+3 passes still restore minimum); quota shows heal spend as ordinary
+verify spend; AUTOHEAL timers re-probe on schedule only when thin;
+proxy-async demand healing deferred to G32 with reviewer notes.
+
+Effort: M (plan-gate rescope + lease/state machinery). Fit: high —
+the #1 ranked gap: recovery becomes one obvious command.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:
