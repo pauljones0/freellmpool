@@ -131,7 +131,8 @@ def list_live_models(provider: Provider, env: dict) -> list[str]:
     auth = {"Authorization": f"Bearer {key}"} if key else {}
 
     if provider.adapter == "gemini":
-        data = _http_get_obj(f"{provider.base_url}/models?key={key}", {})
+        headers = {"x-goog-api-key": key} if key else {}
+        data = _http_get_obj(f"{provider.base_url}/models", headers)
         return [m["name"].split("/")[-1] for m in data.get("models", []) if "name" in m]
 
     if provider.adapter == "cloudflare":

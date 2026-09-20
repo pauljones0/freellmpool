@@ -29,7 +29,7 @@ def default_cache_path() -> Path:
 
 def default_max_entries() -> int:
     try:
-        return max(0, int(os.environ.get("FREELLMPOOL_CACHE_MAX_ENTRIES", "10000")))
+        return max(1, int(os.environ.get("FREELLMPOOL_CACHE_MAX_ENTRIES", "10000")))
     except ValueError:
         return 10000
 
@@ -45,7 +45,9 @@ class Cache:
         self.ttl = ttl
         self.path = path or default_cache_path()
         self._clock = clock or time.time
-        self.max_entries = default_max_entries() if max_entries is None else max(0, max_entries)
+        # Floored at 1: max_entries=0 would disable eviction entirely (falsy
+        # guard in put), turning a typo'd/negative cap into unbounded growth.
+        self.max_entries = default_max_entries() if max_entries is None else max(1, max_entries)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # `with sqlite3.connect()` manages the transaction but NOT the connection,
         # so every call must also close() it (via contextlib.closing) or it leaks a

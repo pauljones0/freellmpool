@@ -144,3 +144,77 @@ def test_proxy_relays_notifications_untouched() -> None:
     ])
     assert replies[1] == {"jsonrpc": "2.0", "method": "notifications/echo",
                           "params": {"n": 7}}
+
+
+def test_diet_returns_promptly_when_server_exits_with_stdin_open() -> None:
+    """G23 L1: an early server exit must reap + return, not hang on stdin."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "freellmpool.mcp_diet", "--", "true"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert proc.stdin is not None
+        code = proc.wait(timeout=10)  # stdin deliberately held open
+    finally:
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
+        proc.kill()
+    assert code == 0
+
+
+def test_diet_sigterm_reaps_wrapped_server(tmp_path) -> None:
+    """G23 L2: SIGTERM must terminate+reap the child, never orphan it."""
+    import os
+    import time
+
+    pidfile = tmp_path / "child.pid"
+    script = (
+        "import os, time; open(r'%s', 'w').write(str(os.getpid())); time.sleep(60)"
+        % pidfile
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "freellmpool.mcp_diet", "--",
+         sys.executable, "-c", script],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        for _ in range(200):
+            if pidfile.exists():
+                break
+            time.sleep(0.05)
+        child = int(pidfile.read_text())
+        proc.terminate()
+        proc.wait(timeout=10)
+        time.sleep(0.2)
+        with pytest.raises(ProcessLookupError):
+            os.kill(child, 0)
+    finally:
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
+        proc.kill()
+
+
+def test_diet_no_stall_when_server_leaves_stdout_open() -> None:
+    """G23 L3: a grandchild-held stdout must not stall shutdown the full 15s."""
+    import time
+
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "freellmpool.mcp_diet", "--",
+         "sh", "-c", "sleep 12 &"],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        start = time.monotonic()
+        proc.wait(timeout=20)
+        elapsed = time.monotonic() - start
+    finally:
+        for pipe in (proc.stdout, proc.stderr):
+            if pipe is not None:
+                pipe.close()
+        proc.kill()
+    assert elapsed < 10

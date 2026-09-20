@@ -17,6 +17,7 @@ import copy
 import hashlib
 import ipaddress
 import logging
+import math
 import os
 import re
 import socket
@@ -245,18 +246,27 @@ def _known_aliases_cached(cache_key: tuple[Any, ...]) -> tuple[str, ...]:
     return tuple(sorted(aliases))
 
 
+def xdg_config_home() -> Path:
+    """XDG base dir shared by every freellmpool path (no split state).
+
+    An empty or unset ``XDG_CONFIG_HOME`` falls back to ``~/.config`` (never a
+    cwd-relative path) and a ``~``-prefixed value is expanded.
+    """
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config").expanduser()
+
+
 def _user_catalog_path() -> Path | None:
     override = os.environ.get("FREELLMPOOL_CONFIG")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".config" / "freellmpool" / "providers.toml"
+    return xdg_config_home() / "freellmpool" / "providers.toml"
 
 
 def _config_file_path(env: dict[str, str]) -> Path | None:
     override = env.get("FREELLMPOOL_CONFIG_FILE")
     if override:
         return Path(override).expanduser()
-    default = Path.home() / ".config" / "freellmpool" / "config.toml"
+    default = xdg_config_home() / "freellmpool" / "config.toml"
     return default if default.exists() else None
 
 
@@ -322,7 +332,9 @@ def load_config_file(env: dict[str, str] | None = None) -> dict[str, Any]:
     Recognized tables:
         [keys]      PROVIDER_API_KEY = "..."   (provider key env vars)
         [aliases]   "gpt-4o-mini" = "auto"     (model name -> free target)
-        [settings]  cooldown_seconds = 60, proxy_key = "...", host/port
+        [settings]  cooldown_seconds = 60, cache_ttl = 0, proxy_key = "...",
+                    host = "127.0.0.1", port = 8080, mode = "normal",
+                    routing = "fair"
     """
     env = env if env is not None else dict(os.environ)
     path = _config_file_path(env)
@@ -369,7 +381,81 @@ def config_diagnostics(env: dict[str, str] | None = None) -> list[dict[str, obje
                     "column": None,
                 }
             )
+    configured = data.get("settings")
+    if isinstance(configured, dict):
+        for key in sorted(configured):
+            issue = _setting_issue(key, configured[key])
+            if issue is not None:
+                code, message = issue
+                entry: dict[str, object] = {
+                    "code": code,
+                    "message": message,
+                    "path": signature[0],
+                    "setting": key,
+                    "line": None,
+                    "column": None,
+                }
+                diagnostics.append(entry)
     return diagnostics
+
+
+_KNOWN_SETTINGS = frozenset(
+    {
+        "cooldown_seconds",
+        "cache_ttl",
+        "proxy_key",
+        "host",
+        "port",
+        "mode",
+        "routing",
+    }
+)
+_KNOWN_MODES = frozenset({"wise", "normal"})
+
+
+def _is_finite_number(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _setting_issue(key: str, value: Any) -> tuple[str, str] | None:
+    """Value check for one ``[settings]`` entry; None when acceptable.
+
+    Only values the tolerant loader silently ignores (or that would break a
+    consumer) are flagged, so working configs stay clean. Messages never echo
+    the raw value.
+    """
+    from .routing_modes import ROUTING_MODES
+
+    if key not in _KNOWN_SETTINGS:
+        return ("unknown_setting", f"[settings] {key} is not a recognized setting")
+    if key in ("cooldown_seconds", "cache_ttl"):
+        if not _is_finite_number(value):
+            return ("setting_value", f"[settings] {key} must be a finite number")
+    elif key == "port":
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not 1 <= value <= 65535
+        ):
+            return ("setting_value", "[settings] port must be an integer 1-65535")
+    elif key == "host":
+        if not isinstance(value, str) or not value.strip():
+            return ("setting_value", "[settings] host must be a non-empty string")
+    elif key == "mode":
+        if not isinstance(value, str) or value.strip().lower() not in _KNOWN_MODES:
+            return ("setting_value", "[settings] mode must be 'wise' or 'normal'")
+    elif key == "routing":
+        if (
+            not isinstance(value, str)
+            or value.strip().lower() not in frozenset(ROUTING_MODES) | {"auto"}
+        ):
+            return ("setting_value", "[settings] routing must be a known routing mode")
+    return None
 
 
 def effective_env(env: dict[str, str] | None = None) -> dict[str, str]:
@@ -388,6 +474,25 @@ def settings(env: dict[str, str] | None = None) -> dict[str, Any]:
     """The ``[settings]`` table from config.toml (or {})."""
     value = load_config_file(env).get("settings", {})
     return value if isinstance(value, dict) else {}
+
+
+def finite_float(value: Any, default: float, *, minimum: float | None = None,
+                 maximum: float | None = None) -> float:
+    """Best-effort finite float from user/env/config input; ``default`` when the
+    value is missing, garbage, NaN, or infinite. The result is clamped to
+    ``[minimum, maximum]`` when those are given, so a hostile or typo'd setting
+    can neither crash construction nor arm a never-expiring cache/cooldown."""
+    try:
+        result = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
+    if not math.isfinite(result):
+        return default
+    if minimum is not None:
+        result = max(minimum, result)
+    if maximum is not None:
+        result = min(maximum, result)
+    return result
 
 
 def _maybe_int(value: Any, *, positive: bool = False) -> int | None:

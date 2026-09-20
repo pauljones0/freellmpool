@@ -29,7 +29,7 @@ from typing import Any, Literal, TypedDict, Unpack, cast
 from . import client
 from .allowances import AllowanceDenied, AllowanceLedger, Limit, default_allowance_path
 from .cache import Cache
-from .config import effective_env, load_catalog, settings
+from .config import effective_env, finite_float, load_catalog, settings
 from .conformance import (
     FEATURE_VISION,
     ConformanceStore,
@@ -200,7 +200,8 @@ class ManagedPool(Pool):
     def from_default_config(cls, *, env: dict[str, str] | None = None, quota: QuotaStore | None = None,
                             post: client.PostFn = client.default_post, on_event: EventHook | None = None) -> ManagedPool:
         request_env = effective_env(env)
-        ttl = float(request_env.get("FREELLMPOOL_CACHE_TTL") or settings(request_env).get("cache_ttl", 0) or 0)
+        ttl = finite_float(request_env.get("FREELLMPOOL_CACHE_TTL") or settings(request_env).get("cache_ttl", 0) or 0,
+                           0.0, minimum=0.0)
         return cls(env=env, quota=quota, post=post, on_event=on_event,
                    cache=Cache(ttl) if ttl > 0 else None)
 
@@ -246,7 +247,8 @@ class ManagedPool(Pool):
         now = self._wall_clock()
         routes: list[Route] = []
         statuses: list[JSON] = []
-        max_age = max(60, min(604800, float(request_env.get("FREELLMPOOL_CATALOG_MAX_AGE_SECONDS", "172800"))))
+        max_age = finite_float(request_env.get("FREELLMPOOL_CATALOG_MAX_AGE_SECONDS", "172800"),
+                               172800.0, minimum=60.0, maximum=604800.0)
         for pid, spec in registry.items():
             old = raw_by_id.get(pid)
             key_env = spec.get("credential_env") or (old.key_env if old else None)

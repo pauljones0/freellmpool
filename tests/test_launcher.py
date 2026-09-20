@@ -287,3 +287,35 @@ def test_launch_opencode_config_lives_in_user_data_dir(monkeypatch, tmp_path):
                          lambda prog, args, env: execed.update(prog=prog, args=args, env=env))
     launcher.launch("opencode", ["run", "hi"], port=18091, model="agent")
     assert execed["env"]["OPENCODE_CONFIG"].startswith(str(tmp_path))
+
+
+def test_ensure_proxy_unkillable_child_reaped_in_background(monkeypatch):
+    import subprocess
+    import time as _time
+
+    waits = {"n": 0}
+
+    class FakeProc:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            waits["n"] += 1
+            raise subprocess.TimeoutExpired("p", timeout)
+
+        def kill(self):
+            pass
+
+    monkeypatch.setattr(launcher.subprocess, "Popen", lambda *a, **k: FakeProc())
+    monkeypatch.setattr(launcher.time, "sleep", lambda s: None)
+    with pytest.raises(launcher.LauncherError, match="did not become ready"):
+        launcher.ensure_proxy(port=18091, timeout=0.01)
+    deadline = _time.monotonic() + 5
+    while waits["n"] < 3 and _time.monotonic() < deadline:
+        _time.sleep(0.01)
+    assert waits["n"] >= 3, "a background reaper must keep waiting on the child"

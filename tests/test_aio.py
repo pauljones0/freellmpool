@@ -842,3 +842,9 @@ def test_async_cache_hit_reports_zero_attempts(providers, env, quota, tmp_path):
     assert first.attempts == 1
     assert second.cached is True
     assert second.attempts == 0
+
+
+def test_achat_rejects_negative_max_tokens(providers, env, quota):
+    pool = AsyncPool(Pool(providers, quota=quota, env=env), apost=_async_post({}))
+    with pytest.raises(ValueError, match="invalid output token budget"):
+        asyncio.run(pool.achat([{"role": "user", "content": "hi"}], max_tokens=-1))

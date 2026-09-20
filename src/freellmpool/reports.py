@@ -67,7 +67,9 @@ def render_markdown_report(record: RunRecord) -> str:
             text = item.get("text") or item.get("output")
             if text:
                 lines.extend(["", redact_secrets(str(text))])
-    return "\n".join(lines).rstrip() + "\n"
+    # Same defense as the HTML path: markdown viewers autolink URLs and fire
+    # image beacons, so neutralize external-reference tokens in the document.
+    return _neutralize_external_references("\n".join(lines).rstrip() + "\n")
 
 
 def render_html_report(record: RunRecord) -> str:

@@ -318,3 +318,16 @@ def test_batched_stats_store_does_not_leak_via_atexit(tmp_path):
     gc.collect()
 
     assert reference() is None
+
+
+def test_valid_json_wrong_shape_degrades_to_zero(tmp_path):
+    import json
+
+    p = tmp_path / "s.json"
+    p.write_text(json.dumps({"requests": "abc", "prompt_tokens": [1],
+                             "completion_tokens": 5}), encoding="utf-8")
+    s = StatsStore(p)
+    assert s.snapshot()["requests"] == 0
+    assert s.snapshot()["completion_tokens"] == 5
+    s.add(requests=1)
+    assert s.snapshot()["requests"] == 1

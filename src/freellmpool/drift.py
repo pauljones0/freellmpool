@@ -24,7 +24,9 @@ def default_drift_dir() -> Path:
     override = os.environ.get("FREELLMPOOL_DRIFT_DIR")
     if override:
         return Path(override)
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "freellmpool" / "drift"
+    # Same rule as config.xdg_config_home (kept inline: no sibling imports).
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config").expanduser()
+    return base / "freellmpool" / "drift"
 
 
 def utcnow() -> str:

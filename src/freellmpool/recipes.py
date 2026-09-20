@@ -142,6 +142,25 @@ def render_recipe(recipe: Recipe) -> str:
     )
 
 
+def read_capped_text_file(path: str | Path, *, what: str = "file") -> str:
+    """Read a local text file, refusing payloads over ``MAX_PATH_FILE_BYTES``.
+
+    The size pre-check keeps multi-GB inputs from being slurped into a
+    prompt; a missing/unreadable file still surfaces its ``OSError`` so
+    callers keep their existing not-found behavior.
+    """
+    candidate = Path(path)
+    try:
+        size = candidate.stat().st_size
+    except OSError:
+        size = 0
+    if size > MAX_PATH_FILE_BYTES:
+        raise MissingRecipeInputError(
+            f"{what} too large ({size} > {MAX_PATH_FILE_BYTES} bytes): {path}"
+        )
+    return candidate.read_text(encoding="utf-8")
+
+
 def collect_recipe_input(
     recipe: Recipe,
     *,
@@ -153,8 +172,9 @@ def collect_recipe_input(
 ) -> tuple[str, str | None]:
     """Gather a recipe's `input` text. When `root` is given, a `path` glob is
     treated as untrusted (model-controlled): it must be relative, must not use
-    `..` or `~`, and every match must resolve inside `root`. Omit `root` only
-    for trusted local callers (CLI, jobs)."""
+    `..` or `~`, and every match must resolve inside `root`; an `input_file`
+    must likewise resolve inside `root`. Omit `root` only for trusted local
+    callers (CLI, jobs). `input_file` reads are always size-capped."""
     if recipe.input_mode == "path":
         if not path:
             raise MissingRecipeInputError(
@@ -163,7 +183,20 @@ def collect_recipe_input(
         return _path_payload(path, root=root), path
 
     if input_file:
-        return Path(input_file).read_text(encoding="utf-8"), None
+        candidate = Path(input_file)
+        if root is not None:
+            anchor = Path(root).resolve()
+            try:
+                resolved = candidate.resolve()
+            except OSError as exc:
+                raise MissingRecipeInputError(
+                    f"--input file unreadable: {input_file} ({exc})"
+                ) from exc
+            if resolved != anchor and not resolved.is_relative_to(anchor):
+                raise MissingRecipeInputError(
+                    f"--input file must resolve inside {root}: {input_file}"
+                )
+        return read_capped_text_file(candidate, what="--input file"), None
     if stdin.strip():
         return stdin, None
     if prompt.strip():
@@ -235,10 +268,20 @@ def run_recipe(
     )
 
 
-def write_recipe_record(run: RecipeRun, *, store=None):
+def write_recipe_record(run: RecipeRun, *, store=None, job_id: str | None = None,
+                        attempt: int | None = None):
     from .artifacts import RunRecordStore
 
     store = store or RunRecordStore()
+    metadata = {
+        "recipe_version": run.recipe.version,
+        "input_mode": run.recipe.input_mode,
+        "output_mode": run.recipe.output_mode,
+    }
+    if job_id is not None:
+        metadata["job_id"] = job_id
+    if attempt is not None:
+        metadata["job_attempt"] = attempt
     return store.append_new(
         kind="recipe",
         title=f"freellmpool recipe {run.recipe.name}",
@@ -248,11 +291,7 @@ def write_recipe_record(run: RecipeRun, *, store=None):
         model=run.model,
         recipe=run.recipe.name,
         role=run.recipe.role,
-        metadata={
-            "recipe_version": run.recipe.version,
-            "input_mode": run.recipe.input_mode,
-            "output_mode": run.recipe.output_mode,
-        },
+        metadata=metadata,
     )
 
 

@@ -96,6 +96,8 @@ def select_targets(
 
     Returns ``(picks, n_providers)``. ``max_models`` can only lower the count; the
     automatically eligible set is always capped at :data:`HARD_CAP` (256).
+    Explicit ``0`` (or a negative) selects nothing; ``inf`` means "no limit"
+    and behaves like the default; a bool is a caller type error.
     """
     by_provider: dict[str, list] = {}
     for t in pool.rank_targets(messages, routing=routing):
@@ -104,9 +106,13 @@ def select_targets(
     default_limit = min(len(interleaved), HARD_CAP)
     if max_models is None:
         limit = default_limit
+    elif isinstance(max_models, bool):
+        raise TypeError(f"max_models must be a count, not bool: {max_models!r}")
     else:
         try:
-            limit = max(1, min(HARD_CAP, int(max_models)))
+            limit = max(0, min(HARD_CAP, int(max_models)))
+        except OverflowError:
+            limit = default_limit  # inf: "no limit" == the default cap
         except (TypeError, ValueError):
             limit = default_limit
     picks = interleaved[:limit]
@@ -151,7 +157,10 @@ def fan_out(
         except Exception as exc:  # noqa: BLE001 — one model failing must not abort the swarm
             out = (f"{t.provider.id}/{t.model}", None, f"{type(exc).__name__}: {exc}")
         if checkpoint is not None:
-            checkpoint.record_and_save(out[0], text=out[1], error=out[2], fresh=True)
+            try:
+                checkpoint.record_and_save(out[0], text=out[1], error=out[2], fresh=True)
+            except Exception:  # noqa: BLE001 — a dead checkpoint store must not abort the swarm
+                pass
         if progress is not None:
             with lock:
                 done = next(counter)

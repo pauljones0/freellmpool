@@ -518,7 +518,9 @@ def check_provider(provider_id: str, env: dict[str, str]) -> dict[str, Any]:
 def _atomic_write(path: Path, result: dict[str, Any]) -> None:
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle = os.fdopen(descriptor, "w", encoding="utf-8")
+        descriptor = -1  # the handle owns the fd from here on
+        with handle:
             os.fchmod(handle.fileno(), 0o600)
             json.dump(result, handle, indent=2, sort_keys=True)
             handle.write("\n")
@@ -526,6 +528,8 @@ def _atomic_write(path: Path, result: dict[str, Any]) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
+        if descriptor >= 0:
+            os.close(descriptor)
         if os.path.exists(temporary):
             os.unlink(temporary)
 

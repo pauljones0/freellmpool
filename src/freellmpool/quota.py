@@ -66,6 +66,26 @@ def default_quota_path() -> Path:
     return Path.home() / ".config" / "freellmpool" / "quota.json"
 
 
+def _num(value: Any) -> int:
+    """Counter-shaped int; valid-JSON-wrong-shape values degrade to zero."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _sanitize(data: Any) -> dict[str, Any]:
+    """Coerce a parsed quota file to {day: {key: int}}; garbage degrades."""
+    if not isinstance(data, dict):
+        return {}
+    clean: dict[str, Any] = {}
+    for day, bucket in data.items():
+        if not isinstance(day, str) or not isinstance(bucket, dict):
+            continue
+        clean[day] = {key: _num(value) for key, value in bucket.items()}
+    return clean
+
+
 class QuotaStore:
     """A small JSON-backed counter keyed by (day, provider_id, model)."""
 
@@ -121,7 +141,7 @@ class QuotaStore:
     def _load(self) -> dict[str, Any]:
         try:
             with self.path.open("r", encoding="utf-8") as fh:
-                return cast(dict[str, Any], json.load(fh))
+                return _sanitize(json.load(fh))
         except (FileNotFoundError, json.JSONDecodeError, OSError):
             return {}
 
@@ -131,7 +151,7 @@ class QuotaStore:
             with self.path.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, dict):
-                return data
+                return _sanitize(data)
         except FileNotFoundError:
             return {}
         except (json.JSONDecodeError, OSError, ValueError):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from helpers import make_post
 
 from freellmpool import tokenmax
@@ -73,3 +74,41 @@ def test_rainbow_throb_non_tty_is_plain(capsys):
     err = capsys.readouterr().err
     assert "X" in err
     assert "\033[" not in err  # no ANSI color codes when piped
+
+
+def test_fan_out_checkpoint_store_error_does_not_abort_swarm(providers, env, quota):
+    from freellmpool import tokenmax
+
+    class _DeadCheckpoint:
+        def record_and_save(self, *a, **k):
+            raise OSError("disk on fire")
+
+    pool = _pool(providers, env, quota)
+    picks, _ = tokenmax.select_targets(pool, MSGS)
+    answered, failed = tokenmax.fan_out(
+        pool, MSGS, picks, max_tokens=50, checkpoint=_DeadCheckpoint())
+    assert answered, "a dead checkpoint store must not wipe out answers"
+    assert len(answered) + len(failed) == len(picks)
+
+
+def test_select_targets_max_models_zero_selects_none(providers, env, quota):
+    """G23 #38: explicit max_models=0 means 'run none', not 'run one'."""
+    pool = _pool(providers, env, quota)
+    picks, n_providers = tokenmax.select_targets(pool, MSGS, max_models=0)
+    assert picks == []
+    assert n_providers == 0
+
+
+def test_select_targets_max_models_validated(providers, env, quota):
+    """G23 hardening (extra, no master number): floats truncate, huge/inf cap, bools fail loud."""
+    pool = _pool(providers, env, quota)
+    picks, _ = tokenmax.select_targets(pool, MSGS, max_models=2.9)
+    assert len(picks) == 2
+    picks, _ = tokenmax.select_targets(pool, MSGS, max_models=10**9)
+    assert len(picks) <= tokenmax.HARD_CAP
+    picks, _ = tokenmax.select_targets(pool, MSGS, max_models=float("inf"))
+    assert len(picks) <= tokenmax.HARD_CAP  # inf = "no limit" = default cap
+    picks, _ = tokenmax.select_targets(pool, MSGS, max_models=-3)
+    assert picks == []  # negative lowers the count below zero: nothing runs
+    with pytest.raises(TypeError, match="bool"):
+        tokenmax.select_targets(pool, MSGS, max_models=True)

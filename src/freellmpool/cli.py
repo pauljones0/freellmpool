@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
+import signal
 import sys
 from collections.abc import Callable, Container, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, cast
 
 from . import __version__
@@ -228,6 +229,8 @@ def cmd_ask(args: argparse.Namespace) -> int:
     text = reply.text
     if args.json:
         text = _strip_fences(text)
+    else:
+        text = _strip_terminal_escapes(text)
     print(text)
     if args.verbose:
         saved = format_saved(reply.prompt_tokens, reply.completion_tokens)
@@ -427,6 +430,44 @@ def cmd_tokenmax(args: argparse.Namespace) -> int:
         except Exception as exc:  # noqa: BLE001 — synthesis is a bonus, never fatal
             print(f"(synthesis failed: {type(exc).__name__}: {exc})", file=sys.stderr)
     return 0
+
+
+_TERMINAL_ESCAPE_RE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"  # CSI ... final byte
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC ... BEL or ST
+    r"|\x1b[@-Z\\-_]"  # other ESC-prefixed sequences
+    r"|[\x07\x08]"  # BEL / backspace
+)
+
+
+def _strip_terminal_escapes(text: str) -> str:
+    """Remove terminal escape sequences from upstream model text.
+
+    Model output is untrusted: a CSI clear-screen or an OSC title-set would
+    otherwise execute in the user's terminal. The --json path keeps bytes
+    intact (piped data), so only the human display path is stripped.
+    """
+    cleaned = _TERMINAL_ESCAPE_RE.sub("", text)
+    return cleaned.replace("\x1b", "")
+
+
+def _install_sigterm_handler() -> None:
+    """Make SIGTERM exit via SystemExit so finally/atexit flushers run.
+
+    Default SIGTERM handling terminates immediately, skipping the serve
+    finally blocks (``pool.flush()``) and every atexit flusher — losing
+    batched quota/stats/health deltas on ``kill``/docker-stop. Raising
+    SystemExit instead runs the same graceful path as KeyboardInterrupt.
+    Main thread only; silently keeps default handling elsewhere.
+    """
+
+    def _sigterm(signum: int, _frame: object) -> None:
+        raise SystemExit(128 + signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _sigterm)
+    except (OSError, ValueError):
+        pass
 
 
 def _strip_fences(text: str) -> str:
@@ -1432,12 +1473,17 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     cfg = settings()
     catalog = load_catalog()
     configured = configured_providers(catalog, env)
-    pool = Pool.from_default_config()
-    quota_path = pool.quota.path
+    config_issues = config_diagnostics()
+    try:
+        pool = Pool.from_default_config()
+        pool_error: str | None = None
+    except Exception as exc:  # doctor reports breakage, never tracebacks
+        pool = None
+        pool_error = f"{type(exc).__name__}: {exc}"
+    quota_path = pool.quota.path if pool is not None else None
     cache_path = default_cache_path()
     external_path = default_external_catalog_path()
     external = load_external_catalog(external_path)
-    config_issues = config_diagnostics()
     external_note = "missing"
     if external_path.exists():
         import time
@@ -1452,8 +1498,14 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"python: {sys.version.split()[0]}")
     print(f"config: {default_config_path()}")
     print(f"providers: {len(configured)}/{len(catalog)} configured")
-    print(f"routing: {pool.routing}")
-    print(f"quota: {quota_path} ({'exists' if quota_path.exists() else 'new'})")
+    if pool is None:
+        print(f"pool: FAIL ({pool_error})")
+    else:
+        print(f"routing: {pool.routing}")
+    if quota_path is None:
+        print("quota: unknown (pool unavailable)")
+    else:
+        print(f"quota: {quota_path} ({'exists' if quota_path.exists() else 'new'})")
     cache_ttl = env.get("FREELLMPOOL_CACHE_TTL") or cfg.get("cache_ttl", 0)
     print(f"cache: {cache_path} ttl={cache_ttl} max={default_max_entries()}")
     print(
@@ -1481,7 +1533,25 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             print(f"  ... {len(errors) - 20} more")
         return 1
     print("catalog: ok")
-    return 1 if config_issues else 0
+    return 1 if (config_issues or pool_error) else 0
+
+
+def _resolve_proxy_bind(args: argparse.Namespace) -> tuple[str, int]:
+    """Bind address for `proxy`: explicit flags win, [settings] fills the gaps.
+
+    Raises ValueError with a user-facing message when either source is unusable,
+    so a bad --port or [settings] port fails clean instead of deep in socket.bind.
+    """
+    cfg = settings()
+    host = args.host if args.host is not None else cfg.get("host", "127.0.0.1")
+    if not isinstance(host, str) or not host.strip():
+        raise ValueError("invalid [settings] host: must be a non-empty string")
+    raw_port = args.port if args.port is not None else cfg.get("port", 8080)
+    if isinstance(raw_port, bool) or not isinstance(raw_port, int):
+        raise ValueError("invalid proxy port: must be an integer 1-65535")
+    if not 1 <= raw_port <= 65535:
+        raise ValueError(f"invalid proxy port {raw_port}: must be 1-65535")
+    return host, raw_port
 
 
 def cmd_proxy(args: argparse.Namespace) -> int:
@@ -1496,6 +1566,12 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         safe_base_url,
     )
 
+    try:
+        bind_host, bind_port = _resolve_proxy_bind(args)
+    except ValueError as exc:
+        print(f"freellmpool: {exc}", file=sys.stderr)
+        return 2
+
     # `--tailnet` is a Tailnet-safe alias for `freellmpool tailnet serve`.
     # It runs the same safety logic but keeps the proxy's familiar verb
     # for users who already have `freellmpool proxy` muscle memory.
@@ -1505,7 +1581,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         return 2
     if getattr(args, "tailnet", False):
         return _run_tailnet_serve(
-            port=args.port,
+            port=bind_port,
             api_key=args.api_key,
             allow_lan=getattr(args, "allow_lan", False),
             allow_no_auth=getattr(args, "allow_no_auth", False),
@@ -1525,7 +1601,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     # as a documented escape hatch) or they are refused outright.
     try:
         assert_bind_safe(
-            host=args.host,
+            host=bind_host,
             api_key=proxy_key,
             allow_lan=getattr(args, "allow_lan", False),
             allow_no_auth=getattr(args, "allow_no_auth", False),
@@ -1535,18 +1611,18 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        RequestBoundaryPolicy.for_address(args.host, args.port, allowed_authorities)
+        RequestBoundaryPolicy.for_address(bind_host, bind_port, allowed_authorities)
     except ValueError:
         print("freellmpool: invalid configured HTTP authority; use HOST:PORT.", file=sys.stderr)
         return 2
 
-    loopback = is_loopback_host(args.host)
+    loopback = is_loopback_host(bind_host)
     if not loopback and not proxy_key:
         # Loopback-warn path is now unreachable in practice (assert_bind_safe
         # raises for non-loopback w/o auth unless allow-no-auth is set), but
         # kept as a defensive backstop in case the helper is bypassed.
         print(
-            f"freellmpool: WARNING — binding to {args.host} (not loopback) with NO proxy key "
+            f"freellmpool: WARNING — binding to {bind_host} (not loopback) with NO proxy key "
             "exposes all your configured providers to the network. Set --api-key or "
             "FREELLMPOOL_PROXY_KEY, or bind to 127.0.0.1.",
             file=sys.stderr,
@@ -1571,12 +1647,12 @@ def cmd_proxy(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
 
-    httpd = serve(pool, host=args.host, port=args.port, api_key=proxy_key,
+    httpd = serve(pool, host=bind_host, port=bind_port, api_key=proxy_key,
                   allowed_authorities=allowed_authorities)
     n_models = sum(len(p.models) for p in pool.providers)
     auth_enabled = proxy_key is not None
     auth_note = "  auth: Bearer key required\n" if auth_enabled else ""
-    base_url = safe_base_url(args.host, args.port)
+    base_url = safe_base_url(bind_host, bind_port)
     print(
         f"freellmpool proxy on {base_url}/v1  "
         f"({len(pool.providers)} providers, {n_models} models)\n"
@@ -1587,6 +1663,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         "  press Ctrl-C to stop",
         file=sys.stderr,
     )
+    _install_sigterm_handler()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -1816,6 +1893,7 @@ def _run_tailnet_serve(
         "  press Ctrl-C to stop",
         file=sys.stderr,
     )
+    _install_sigterm_handler()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -2057,6 +2135,7 @@ def cmd_recipe_run(args: argparse.Namespace) -> int:
         RecipeError,
         collect_recipe_input,
         get_recipe,
+        read_capped_text_file,
         run_recipe,
     )
 
@@ -2072,7 +2151,9 @@ def cmd_recipe_run(args: argparse.Namespace) -> int:
         )
         validation_output = args.validation_output
         if args.validation_output_file:
-            validation_output = Path(args.validation_output_file).read_text(encoding="utf-8")
+            validation_output = read_capped_text_file(
+                args.validation_output_file, what="--validation-output-file"
+            )
         checkpoint = None
         resume_id = args.resume or args.run_id
         if resume_id:
@@ -3037,8 +3118,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.set_defaults(func=cmd_doctor)
 
     p_proxy = sub.add_parser("proxy", help="run the OpenAI-compatible proxy server")
-    p_proxy.add_argument("--host", default="127.0.0.1")
-    p_proxy.add_argument("--port", type=int, default=8080)
+    p_proxy.add_argument("--host", default=None,
+                         help="bind address ([settings] host, else 127.0.0.1)")
+    p_proxy.add_argument("--port", type=int, default=None,
+                         help="bind port 1-65535 ([settings] port, else 8080)")
     p_proxy.add_argument(
         "--allowed-authority", action="append", default=[], metavar="HOST:PORT",
         help="allow an exact external HTTP Host/Origin for Docker port mapping (repeatable; direct proxy only)",

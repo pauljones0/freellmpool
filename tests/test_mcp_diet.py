@@ -123,3 +123,21 @@ def test_compact_tools_advertise_full_flag():
                  "free_llm_quota_wise"):
         props = by_name[name]["inputSchema"]["properties"]
         assert props["full"]["type"] == "boolean", name
+
+
+def test_diet_proxy_bounds_unanswered_call_state():
+    from freellmpool.mcp_diet import MAX_CACHED_RESULTS, DietProxy
+
+    proxy = DietProxy(["true"])
+    for i in range(MAX_CACHED_RESULTS * 4):
+        proxy._handle_client_message({"jsonrpc": "2.0", "id": f"never-{i}",
+                                      "method": "tools/call",
+                                      "params": {"name": "big", "arguments": {}}})
+    assert len(proxy._pending) <= MAX_CACHED_RESULTS * 2
+    proxy2 = DietProxy(["true"])
+    for i in range(MAX_CACHED_RESULTS * 4):
+        proxy2._handle_client_message({"jsonrpc": "2.0", "id": f"full-{i}",
+                                       "method": "tools/call",
+                                       "params": {"name": "x_full",
+                                                  "arguments": {"key": "missing"}}})
+    assert len(proxy2._full_passthrough) <= MAX_CACHED_RESULTS * 2

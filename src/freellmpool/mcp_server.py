@@ -543,6 +543,11 @@ def _messages(system, prompt: str) -> list[dict[str, str]]:
 def _clamp_int(value, default: int, lo: int, hi: int) -> int:
     try:
         return max(lo, min(hi, int(value)))
+    except OverflowError:
+        try:
+            return hi if float(value) > 0 else lo
+        except (TypeError, ValueError, OverflowError):
+            return default
     except (TypeError, ValueError):
         return default
 
@@ -800,11 +805,7 @@ def _tool_recipe(pool: Pool, args: dict) -> dict:
         return _text(f"{type(exc).__name__}: {exc}", is_error=True)
 
     opinions = clamp_panel_count(args.get("opinions")) if args.get("opinions") is not None else 3
-    max_tokens_arg = args.get("max_tokens")
-    if isinstance(max_tokens_arg, int) and max_tokens_arg > 0:
-        max_tokens = max_tokens_arg
-    else:
-        max_tokens = 1024
+    max_tokens = _max_tokens(args.get("max_tokens"), 1024)
 
     try:
         run = run_recipe(

@@ -33,6 +33,7 @@ from .config import (
     configured_providers,
     configured_transcribers,
     effective_env,
+    finite_float,
     load_catalog,
     load_embedders,
     load_transcribers,
@@ -680,8 +681,9 @@ class Pool:
         embedders = configured_embedders(load_embedders(), env)
         transcribers = configured_transcribers(load_transcribers(), env)
         cfg = settings(env)
-        cooldown = float(cfg.get("cooldown_seconds", 60.0))
-        ttl = float(env.get("FREELLMPOOL_CACHE_TTL") or cfg.get("cache_ttl", 0) or 0)
+        cooldown = finite_float(cfg.get("cooldown_seconds", 60.0), 60.0, minimum=0.0)
+        ttl = finite_float(env.get("FREELLMPOOL_CACHE_TTL") or cfg.get("cache_ttl", 0) or 0,
+                           0.0, minimum=0.0)
         cache = Cache(ttl) if ttl > 0 else None
         from .mode import default_routing_for_mode
 
@@ -1211,6 +1213,8 @@ class Pool:
 
         ``timeout`` is one overall deadline shared by every failover attempt.
         """
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 0:
+            raise ValueError("invalid output token budget")
         if not self.providers:
             raise NoProvidersConfigured(
                 "no provider has an API key set; see .env.example for the env vars"
@@ -1577,6 +1581,8 @@ class Pool:
         providers are skipped (no OpenAI-shape stream). ``timeout`` is one
         overall deadline shared by every pre-stream failover attempt.
         """
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 0:
+            raise ValueError("invalid output token budget")
         if not self.providers:
             raise NoProvidersConfigured("no provider has an API key set")
         eff = normalize_routing_mode(routing, self.routing)

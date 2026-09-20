@@ -25,6 +25,7 @@ from typing import Any, TextIO
 FULL_ARG = "_full"
 DEFAULT_BUDGET_CHARS = 2000
 MAX_CACHED_RESULTS = 32
+MAX_TRACKED_CALLS = 64  # cap on unanswered tools/call ids (pending + passthrough each)
 
 
 def compact_text(text: str, budget: int, *, label: str = "text",
@@ -89,7 +90,7 @@ class DietProxy:
         self._escape_responses: list[str] = []
         self._client_out: TextIO = sys.stdout
         self._pending: dict[Any, str] = {}  # tools/call id -> cache key
-        self._full_passthrough: set[Any] = set()  # ids that skip compaction
+        self._full_passthrough: dict[Any, None] = {}  # ids that skip compaction
         self._cache: OrderedDict[str, Any] = OrderedDict()
 
     def _remember(self, key: str, content: Any) -> None:
@@ -97,6 +98,14 @@ class DietProxy:
             self._cache[key] = content
             while len(self._cache) > MAX_CACHED_RESULTS:
                 self._cache.popitem(last=False)
+
+    @staticmethod
+    def _bound_tracked(tracked: dict) -> None:
+        # Unanswered tools/call ids must not grow without bound: evict the
+        # oldest first (a late response for an evicted id simply compacts
+        # instead of reusing state — safe degradation, never unbounded memory).
+        while len(tracked) > MAX_TRACKED_CALLS:
+            tracked.pop(next(iter(tracked)))
 
     def _lookup(self, key: str) -> tuple[bool, Any]:
         with self._lock:
@@ -128,12 +137,14 @@ class DietProxy:
                 return []
             with self._lock:
                 if "id" in message:
-                    self._full_passthrough.add(message["id"])
+                    self._full_passthrough[message["id"]] = None
+                    self._bound_tracked(self._full_passthrough)
             message = {**message, "params": {**params, "arguments": stripped}}
             return [json.dumps(message, separators=(",", ":"))]
         with self._lock:
             if "id" in message:
                 self._pending[message["id"]] = key
+                self._bound_tracked(self._pending)
         return [json.dumps(message, separators=(",", ":"))]
 
     def _handle_server_message(self, message: Any) -> str:
@@ -144,7 +155,7 @@ class DietProxy:
         with self._lock:
             passthrough = msg_id in self._full_passthrough
             if passthrough:
-                self._full_passthrough.discard(msg_id)
+                del self._full_passthrough[msg_id]
             key = self._pending.pop(msg_id, None) if msg_id is not None else None
         result = message.get("result")
         if passthrough or not isinstance(result, dict) or "content" not in result:
@@ -167,12 +178,19 @@ class DietProxy:
                 try:
                     message = json.loads(line)
                 except json.JSONDecodeError:
-                    server_in.write(line if line.endswith("\n") else line + "\n")
+                    message = None
+                if message is None:
+                    forwards = [line if line.endswith("\n") else line + "\n"]
+                    suffixed = False
+                else:
+                    forwards = self._handle_client_message(message)
+                    suffixed = True
+                try:
+                    for forward in forwards:
+                        server_in.write(forward + "\n" if suffixed else forward)
                     server_in.flush()
-                    continue
-                for forward in self._handle_client_message(message):
-                    server_in.write(forward + "\n")
-                server_in.flush()
+                except (OSError, ValueError):
+                    break  # server went away (or pipes closing): stop cleanly
                 with self._lock:
                     pending_escapes = self._escape_responses
                     self._escape_responses = []
@@ -204,7 +222,14 @@ class DietProxy:
             pass
 
     def run(self) -> int:
-        """Relay stdio until EOF; returns the wrapped server's exit code."""
+        """Relay stdio until EOF or server exit; returns the server's exit code.
+
+        Either side may finish first: stdin EOF ends the client pump (which
+        closes the server's stdin so it can exit), while an early server
+        exit stops the stdin wait and reaps promptly instead of hanging on
+        ``join()`` with a zombie child. The child is always left reaped and
+        the pipes closed, even on signals/exceptions — never orphaned.
+        """
         proc = subprocess.Popen(
             self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=sys.stderr, text=True, bufsize=1,
@@ -214,16 +239,60 @@ class DietProxy:
                                          args=(sys.stdin, proc.stdin), daemon=True)
         server_thread = threading.Thread(target=self._pump_server_to_client,
                                          args=(proc.stdout, sys.stdout), daemon=True)
-        client_thread.start()
-        server_thread.start()
-        client_thread.join()
-        proc.wait()
-        server_thread.join(timeout=15)
-        return proc.returncode
+        try:
+            client_thread.start()
+            server_thread.start()
+            while client_thread.is_alive() and proc.poll() is None:
+                client_thread.join(timeout=0.1)
+            if proc.poll() is None:
+                # stdin hit EOF first: the server should exit on closed stdin.
+                try:
+                    proc.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    pass
+            else:
+                proc.wait()  # already exited: reap immediately, no zombie window
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            # Join only briefly: an in-flight blocking read (grandchild-held
+            # stdout, caller-held stdin) can't be interrupted, so let those
+            # daemons die with the process instead of stalling shutdown.
+            client_thread.join(timeout=2)
+            server_thread.join(timeout=2)
+            # Close only exited pumps' pipes: closing across a thread that is
+            # blocked in readline() would block on the I/O lock until ITS read
+            # returns. Live daemons' fds die with the process instead.
+            for thread, pipe in ((client_thread, proc.stdin),
+                                 (server_thread, proc.stdout)):
+                if not thread.is_alive():
+                    try:
+                        pipe.close()
+                    except (OSError, ValueError):
+                        pass
+        code = proc.returncode
+        assert code is not None
+        return code
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point: ``mcp_diet [--budget N] [--label L] -- <server...>``."""
+    import signal
+
+    def _sigterm(signum: int, _frame: object) -> None:
+        # Let SIGTERM run the run() finally (terminate+reap the child) instead
+        # of dying instantly and orphaning the wrapped server.
+        raise SystemExit(128 + signum)
+
+    try:
+        signal.signal(signal.SIGTERM, _sigterm)
+    except (OSError, ValueError):
+        pass  # non-main thread or unsupported platform: keep default handling
     parser = argparse.ArgumentParser(
         description="Wrap any stdio MCP server with a labeled output diet.")
     parser.add_argument("--budget", type=int, default=DEFAULT_BUDGET_CHARS)

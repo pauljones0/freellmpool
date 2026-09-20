@@ -1814,3 +1814,96 @@ def test_cli_playground_probe_is_data_free_and_does_not_follow_redirects(
     redirect_handler = captured["handlers"][0]
     assert isinstance(redirect_handler, urllib.request.HTTPRedirectHandler)
     assert redirect_handler.redirect_request(None, None, 302, "", {}, "https://evil.invalid") is None
+
+
+def test_cli_doctor_reports_pool_failure_without_traceback(tmp_path, monkeypatch, capsys):
+    """G23 #10: a Pool build failure is a report line + exit 1, not a traceback."""
+    from freellmpool.cli import main
+
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(tmp_path / "config.toml"))
+    monkeypatch.setenv("FREELLMPOOL_QUOTA_PATH", str(tmp_path / "quota.json"))
+    monkeypatch.setenv("FREELLMPOOL_CACHE_PATH", str(tmp_path / "cache.db"))
+    monkeypatch.setenv("FREELLMPOOL_EXTERNAL_CATALOG_PATH", str(tmp_path / "external.json"))
+
+    def _boom():
+        raise RuntimeError("synthetic pool failure")
+
+    monkeypatch.setattr(
+        "freellmpool.cli.Pool", SimpleNamespace(from_default_config=_boom)
+    )
+    assert main(["doctor"]) == 1
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.out + captured.err
+    assert "pool: FAIL" in captured.out
+
+
+def test_cli_doctor_runs_config_diagnostics_before_pool(tmp_path, monkeypatch, capsys):
+    """G23 #10: config issues are diagnosed even when the Pool cannot be built."""
+    from freellmpool.cli import main
+
+    bad = tmp_path / "config.toml"
+    bad.write_text("[settings]\nport = 99999\n", encoding="utf-8")
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(bad))
+    monkeypatch.setenv("FREELLMPOOL_QUOTA_PATH", str(tmp_path / "quota.json"))
+    monkeypatch.setenv("FREELLMPOOL_CACHE_PATH", str(tmp_path / "cache.db"))
+    monkeypatch.setenv("FREELLMPOOL_EXTERNAL_CATALOG_PATH", str(tmp_path / "external.json"))
+
+    def _boom():
+        raise RuntimeError("synthetic pool failure")
+
+    monkeypatch.setattr(
+        "freellmpool.cli.Pool", SimpleNamespace(from_default_config=_boom)
+    )
+    assert main(["doctor"]) == 1
+    assert "config validation: FAIL" in capsys.readouterr().out
+
+
+def test_cli_proxy_rejects_out_of_range_port(monkeypatch, capsys):
+    """G23 #16: --port 99999 fails clean (exit 2), not a socket traceback."""
+    from freellmpool.cli import main
+
+    _patch_pool(monkeypatch)
+    _patch_serve(monkeypatch)
+    assert main(["proxy", "--port", "99999"]) == 2
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.out + captured.err
+    assert "port" in captured.err.lower()
+
+
+def test_cli_proxy_rejects_negative_port(monkeypatch, capsys):
+    """G23 #16: --port -1 fails clean (exit 2)."""
+    from freellmpool.cli import main
+
+    _patch_pool(monkeypatch)
+    _patch_serve(monkeypatch)
+    assert main(["proxy", "--port", "-1"]) == 2
+    assert "Traceback" not in capsys.readouterr().err
+
+
+def test_cli_proxy_uses_settings_host_port_defaults(tmp_path, monkeypatch):
+    """G23 #11: [settings] host/port are honored when the flags are omitted."""
+    from freellmpool.cli import main
+
+    config = tmp_path / "config.toml"
+    config.write_text('[settings]\nport = 9999\n', encoding="utf-8")
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(config))
+    captured = {}
+    _patch_pool(monkeypatch)
+    _patch_serve(monkeypatch, captured=captured)
+    assert main(["proxy"]) == 0
+    assert captured["port"] == 9999
+    assert captured["host"] == "127.0.0.1"
+
+
+def test_cli_proxy_flag_port_beats_settings(tmp_path, monkeypatch):
+    """G23 #11: an explicit --port wins over [settings] port."""
+    from freellmpool.cli import main
+
+    config = tmp_path / "config.toml"
+    config.write_text('[settings]\nport = 9999\n', encoding="utf-8")
+    monkeypatch.setenv("FREELLMPOOL_CONFIG_FILE", str(config))
+    captured = {}
+    _patch_pool(monkeypatch)
+    _patch_serve(monkeypatch, captured=captured)
+    assert main(["proxy", "--port", "8181"]) == 0
+    assert captured["port"] == 8181

@@ -33,6 +33,7 @@ import weakref
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 try:
     import fcntl  # POSIX advisory file locks
@@ -48,6 +49,25 @@ _FIELDS = ("requests", "prompt_tokens", "completion_tokens", "cache_hits",
 _SCHEMA = 1
 _LIVE_STORES: weakref.WeakSet[StatsStore] = weakref.WeakSet()
 _ATEXIT_REGISTERED = False
+
+
+def _num(value: Any) -> int:
+    """Counter-shaped int; valid-JSON-wrong-shape values degrade to zero."""
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _sanitize(data: Any) -> dict[str, Any]:
+    """Coerce parsed counters to ints; garbage degrades, metadata preserved."""
+    if not isinstance(data, dict):
+        return {}
+    clean = dict(data)
+    for key in _FIELDS:
+        if key in clean:
+            clean[key] = _num(clean[key])
+    return clean
 
 
 def _flush_live_stores() -> None:
@@ -140,8 +160,7 @@ class StatsStore:
         without touching disk)."""
         try:
             with self.path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-            return data if isinstance(data, dict) else {}
+                return _sanitize(json.load(fh))
         except (FileNotFoundError, json.JSONDecodeError, OSError, ValueError):
             return {}
 
@@ -154,7 +173,7 @@ class StatsStore:
             with self.path.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
             if isinstance(data, dict):
-                return data
+                return _sanitize(data)
         except FileNotFoundError:
             return {}
         except (json.JSONDecodeError, OSError, ValueError):

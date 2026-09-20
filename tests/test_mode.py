@@ -399,3 +399,18 @@ def test_wise_tokenmax_noninteractive_expensive_fanout_fails(
 
     assert post.calls == []
     assert "wise mode refuses tokenmax fan-out" in capsys.readouterr().err
+
+
+def test_default_routing_for_mode_ignores_unknown_values():
+    """G23 #15: a typo'd routing falls back to the wise/fair default, not fair-always."""
+    assert (
+        default_routing_for_mode(
+            {"FREELLMPOOL_MODE": "wise", "FREELLMPOOL_ROUTING": "sideways"}, {}
+        )
+        == "spread"
+    )
+    assert default_routing_for_mode({"FREELLMPOOL_ROUTING": "sideways"}, {}) == "fair"
+    assert (
+        default_routing_for_mode({}, {"routing": "sideways", "mode": "wise"}) == "spread"
+    )
+    assert default_routing_for_mode({"FREELLMPOOL_ROUTING": "FAST"}, {}) == "fast"

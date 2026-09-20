@@ -18,6 +18,7 @@ import struct
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 REMOTE_IMAGE_TOKENS = 2000
 UNKNOWN_IMAGE_TOKENS = 2000
+MAX_IMAGE_DIMENSION = 16384  # sanity bound: larger header claims are corrupt/hostile
 _TILE = 512
 
 
@@ -86,7 +87,8 @@ def image_dimensions(url: str) -> tuple[int, int] | None:
     for parser in (_png_dimensions, _gif_dimensions, _jpeg_dimensions):
         dims = parser(raw)
         if dims is not None:
-            return dims
+            width, height = dims
+            return (min(width, MAX_IMAGE_DIMENSION), min(height, MAX_IMAGE_DIMENSION))
     return None
 
 
@@ -104,7 +106,9 @@ def check_image_url(url: str) -> None:
     """Reject oversize or malformed image payloads loudly."""
     if not url.startswith("data:"):
         return
-    _, raw = _decode_data_url(url)  # raises on malformed payloads
+    media_type, raw = _decode_data_url(url)  # raises on malformed payloads
+    if not media_type.startswith("image/"):
+        raise ValueError(f"not an image data URL: {media_type!r}")
     if len(raw) > MAX_IMAGE_BYTES:
         raise ValueError(
             f"image too large: {len(raw)} bytes decoded exceeds the {MAX_IMAGE_BYTES}-byte bound")

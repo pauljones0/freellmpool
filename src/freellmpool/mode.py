@@ -57,14 +57,18 @@ def is_wise_enabled(
 
 
 def default_routing_for_mode(env: Mapping[str, str], settings: Mapping[str, object]) -> str:
-    """Return the pool routing default, preserving explicit config/env choices."""
-    env_routing = env.get("FREELLMPOOL_ROUTING")
-    if env_routing:
-        return str(env_routing).lower()
-    cfg_routing = settings.get("routing")
-    if cfg_routing:
-        return str(cfg_routing).lower()
-    return WISE_DEFAULT_ROUTING if is_wise_enabled(env, settings=settings) else "fair"
+    """Return the pool routing default, preserving explicit config/env choices.
+
+    Unknown env/config values (typos, ``auto``) fall through to the wise/fair
+    default instead of silently degrading a wise pool to ``fair``.
+    """
+    from .routing_modes import routing_override
+
+    return (
+        routing_override(env.get("FREELLMPOOL_ROUTING"))
+        or routing_override(settings.get("routing"))
+        or (WISE_DEFAULT_ROUTING if is_wise_enabled(env, settings=settings) else "fair")
+    )
 
 
 def target_key(target: Any) -> str:

@@ -371,6 +371,11 @@ def _synthesize(
 def _clamp_int(value: object, default: int, lo: int, hi: int) -> int:
     try:
         return max(lo, min(hi, int(value)))
+    except OverflowError:
+        try:
+            return hi if float(value) > 0 else lo
+        except (TypeError, ValueError, OverflowError):
+            return default
     except (TypeError, ValueError):
         return default
 
@@ -378,5 +383,5 @@ def _clamp_int(value: object, default: int, lo: int, hi: int) -> int:
 def _int_or_default(value: object, default: int) -> int:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default

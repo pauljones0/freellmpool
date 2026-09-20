@@ -339,7 +339,7 @@ def import_external_provider_to_user_catalog(query: str) -> str:
     data_path = default_external_catalog_path()
     try:
         raw = json.loads(data_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, OSError, json.JSONDecodeError):
+    except (FileNotFoundError, OSError, json.JSONDecodeError, UnicodeDecodeError):
         raise ValueError(
             "external catalog cache is missing; run freellmpool catalog sync or "
             "freellmpool capacity status first"
@@ -468,7 +468,7 @@ def discover_openai_models(
         if len(raw_bytes) > _MAX_DISCOVER_BYTES:
             raise ValueError(f"model discovery response exceeds {_MAX_DISCOVER_BYTES} bytes")
         data = json.loads(raw_bytes.decode("utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ValueError(f"model discovery failed: {exc}") from None
     rows = data.get("data", []) if isinstance(data, dict) else []
     models = []

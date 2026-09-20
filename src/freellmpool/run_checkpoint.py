@@ -28,7 +28,8 @@ _RUN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 
 def default_runs_dir() -> Path:
     """Owner-only directory for run checkpoints (XDG-aware)."""
-    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    # Same rule as config.xdg_config_home (kept inline: no sibling imports).
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config").expanduser()
     runs = base / "freellmpool" / "runs"
     runs.mkdir(parents=True, exist_ok=True)
     try:
@@ -154,6 +155,14 @@ def merge_answers(replay: list[tuple[str, str]],
         (label, text, True) for label, text in fresh]
 
 
+def _safe_int(value: Any) -> int:
+    """Best-effort int from possibly-corrupt checkpoint data; 0 on failure."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def replay_panel_answer(entry: dict[str, Any]) -> PanelAnswer:
     """Rebuild a PanelAnswer from a checkpoint entry, marked replayed."""
     from .panel import PanelAnswer
@@ -164,7 +173,7 @@ def replay_panel_answer(entry: dict[str, Any]) -> PanelAnswer:
         label=str(entry.get("label", "?")),
         family=entry.get("family"),
         text=entry.get("text"),
-        latency_ms=int(entry.get("latency_ms", 0) or 0),
+        latency_ms=_safe_int(entry.get("latency_ms", 0)),
         error=entry.get("error"),
         cached=bool(entry.get("cached", False)),
         replayed=True,

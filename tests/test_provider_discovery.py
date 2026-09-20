@@ -407,3 +407,22 @@ def test_model_specific_billing_facts_are_machine_readable():
     assert cf["model_costs"]["@cf/zai-org/glm-4.7-flash"]["neurons_per_output_token"] == "0.0364"
     assert registry["zhipu"]["grants"][0]["pricing"] == {"input": "0", "output": "0"}
     assert "gemini-3.8-flash" in registry["gemini"]["grants"][0]["model_selector"]["models"]
+
+
+def test_atomic_write_closes_fd_when_fdopen_fails(tmp_path, monkeypatch) -> None:
+    """G23 L6: a failed fdopen must not leak the mkstemp descriptor."""
+    import os
+
+    if not os.path.exists("/proc/self/fd"):
+        pytest.skip("fd accounting needs /proc")
+    path = tmp_path / "result.json"
+
+    def _boom(*args, **kwargs):
+        raise OSError("synthetic fdopen failure")
+
+    monkeypatch.setattr(os, "fdopen", _boom)
+    before = len(os.listdir("/proc/self/fd"))
+    with pytest.raises(OSError, match="synthetic fdopen failure"):
+        d._atomic_write(path, {"a": 1})
+    after = len(os.listdir("/proc/self/fd"))
+    assert after == before

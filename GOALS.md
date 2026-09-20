@@ -1182,6 +1182,45 @@ security-hardening sprint, G20 free-embedding leaderboard, G21 run
 survivor (resume), G22 agent-loop prefix cache. No further goal:
 the chain is complete.
 
+## G23 — Round-2 adversarial findings verify-and-fix (Status: complete 2026-09-20)
+
+Pain: second adversarial sweep (8 fresh lenses) found 43 issues; 5 HIGH
+(RAG symlink escape → local-file exfil to providers; unguarded
+float(cooldown/cache_ttl/catalog-age) crashes + nonfinite values;
+batch-aborting failure persistence) plus consequential MEDIUMs around
+exactly-once resume, auth/redirect key leakage, secret-safe reports,
+orphaned children, bounded buffers, corrupt state.
+
+Bet: verifying every finding against code/behavior and fixing the real
+ones with regression tests measurably hardens the free-gateway promise.
+
+Execute:
+1. Independently reproduce + fix the 5 HIGHs (TDD, regression tests).
+2. Fix consequential MEDIUMs (resume/auth/secrets/orphans/bounds/corrupt).
+3. Fresh concrete lifecycle audit (round-2 lifecycle lens was unusable).
+4. Full suite + gates green, commit.
+
+Done when:
+- [x] All 5 HIGHs reproduced and fixed with regression tests (evidence pasted).
+- [x] Consequential MEDIUMs fixed or documented with reason.
+- [x] Fresh lifecycle audit complete with concrete findings or clean bill.
+- [x] Full suite + gates pass; commit pushed.
+
+Closeout 2026-09-20: all five HIGHs fixed TDD red-then-green —
+RAG symlink-escape race (fd-pinned single-read traversal, supervisor
+repro now passes: swap_performed=true, outside_fixture_reached_embed=false),
+symlink-to-FIFO hang (O_NONBLOCK opens + fstat, bounded subprocess test),
+eager scandir defeating MAX_SCAN_ENTRIES (bounded consume-before-sort with
+truthful truncation, iterator-consumption test), proxy OverflowError on
+nonfinite sample values (sampling validator), and batch-aborting failure
+persistence. Consequential MEDIUMs/LOWs fixed with regressions in
+tests/test_round2_low.py. Fresh lifecycle audit: 6 concrete findings, all
+fixed with lifecycle tests. Gates observed green on final tree: full pytest
+suite, ruff check, mypy --strict (both CI invocations), scripts/check_docs.py,
+coverage 87.15% line / 78.31% branch (floors 80/70).
+
+Effort: L. Fit: high — reliability/security of the free-tier promise.
+
 ## Killed bets (accepted 2026-09-18)
 
 - **#2 Spend budgets + burn alerts** — killed by the free-only corollary:

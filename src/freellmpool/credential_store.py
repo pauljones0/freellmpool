@@ -73,8 +73,14 @@ def save_key_values(values: dict[str, str], path: Path) -> Path:
     with _write_lock(path):
         try:
             data = tomllib.loads(path.read_text()) if path.exists() else {}
+        except FileNotFoundError:
+            data = {}  # vanished between exists() and read(): treat as empty
         except (ValueError, UnicodeError):
             raise ValueError("existing credential configuration is invalid; it was not changed") from None
+        except OSError as exc:
+            raise ValueError(
+                f"existing credential configuration is unreadable; it was not changed ({exc})"
+            ) from None
         if not isinstance(data.get("keys", {}), dict):
             raise ValueError("existing keys table is invalid; it was not changed")
         data.setdefault("keys", {}).update(validated)

@@ -343,3 +343,60 @@ def test_batched_quota_store_does_not_leak_via_atexit(tmp_path):
     gc.collect()
 
     assert reference() is None
+
+
+def test_valid_json_wrong_shape_degrades_to_zero(tmp_path):
+    import json
+    from datetime import UTC, datetime
+
+    path = tmp_path / "q.json"
+    day = "2026-06-02"
+    path.write_text(json.dumps({
+        day: {"groq::m": "abc", "x::y": [1], "ok::m": 4},
+        "not-a-day": [1, 2],
+    }), encoding="utf-8")
+    clock = lambda: datetime(2026, 6, 2, 12, 0, tzinfo=UTC)  # noqa: E731
+    store = QuotaStore(path=path, clock=clock)
+    assert store.used("groq", "m") == 0
+    assert store.used("ok", "m") == 4
+    assert store.record("groq", "m") == 1
+
+
+def test_sigterm_flushes_batched_quota(tmp_path) -> None:
+    """G23 L5: SIGTERM must run finally/atexit flushers (no lost quota batches)."""
+    import subprocess
+    import sys
+
+    store_path = tmp_path / "quota.json"
+    script = "\n".join([
+        "import signal",
+        "try:",
+        "    from freellmpool.cli import _install_sigterm_handler as _install",
+        "except ImportError:",
+        "    _install = None",
+        "from freellmpool.quota import QuotaStore",
+        "from pathlib import Path",
+        "if _install is not None:",
+        "    _install()",
+        "q = QuotaStore(path=Path(r'%s'), flush_every=100, flush_interval=3600)" % store_path,
+        "q.record('qx', 'm1')",
+        "print('ready', flush=True)",
+        "signal.pause()",
+    ])
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert proc.stdout is not None
+        assert proc.stdout.readline().strip() == "ready"
+        proc.terminate()
+        proc.wait(timeout=10)
+    finally:
+        proc.kill()
+        if proc.stdout is not None:
+            proc.stdout.close()
+        if proc.stderr is not None:
+            proc.stderr.close()
+    assert store_path.exists()
+    assert "qx" in store_path.read_text()

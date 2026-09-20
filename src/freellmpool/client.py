@@ -23,6 +23,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
+from urllib.parse import quote as _url_quote
 
 from ._version import __version__
 from .errors import ProviderHTTPError
@@ -60,12 +61,35 @@ def _strip_think(text: str) -> str:
     return _THINK_RE.sub("", text).strip()
 
 
+def _quote_path_segment(value: object) -> str:
+    """Percent-encode one URL path segment (model names, account ids).
+
+    Provider-controlled display strings flow into request URLs; without
+    encoding, a ``?``/``#``/``/`` in a model id rewrites the request target.
+    """
+    return _url_quote(str(value), safe="")
+
+
+_MAX_USAGE_COUNT = 1_000_000_000
+_MAX_USAGE_KEYS = 100
+
+
 def _usage_counts(value) -> dict[str, int]:
-    """Malformed optional accounting must not discard an otherwise valid reply."""
+    """Malformed optional accounting must not discard an otherwise valid reply.
+
+    Keys and magnitudes are bounded: a hostile usage block can neither
+    inflate stats/savings with absurd counts nor grow memory with thousands
+    of keys.
+    """
     if not isinstance(value, dict):
         return {}
-    return {key: count for key, count in value.items()
-            if isinstance(key, str) and isinstance(count, int) and not isinstance(count, bool) and count >= 0}
+    counts: dict[str, int] = {}
+    for key, count in value.items():
+        if len(counts) >= _MAX_USAGE_KEYS:
+            break
+        if isinstance(key, str) and isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+            counts[key] = min(count, _MAX_USAGE_COUNT)
+    return counts
 
 
 def _content_text(content) -> str:
@@ -446,7 +470,7 @@ def stream_call(
     """
     base_url = provider.base_url
     if provider.adapter == "cloudflare":
-        base_url = base_url.replace("{account_id}", env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+        base_url = base_url.replace("{account_id}", _quote_path_segment(env.get("CLOUDFLARE_ACCOUNT_ID", "")))
         messages = _cloudflare_messages(messages)
     url = f"{base_url}/chat/completions"
     headers = {"Content-Type": "application/json"}
@@ -759,7 +783,7 @@ def _call_openai(
     base_url = provider.base_url
     if provider.adapter == "cloudflare":
         account_id = env.get("CLOUDFLARE_ACCOUNT_ID", "")
-        base_url = base_url.replace("{account_id}", account_id)
+        base_url = base_url.replace("{account_id}", _quote_path_segment(account_id))
         messages = _cloudflare_messages(messages)
 
     url = f"{base_url}/chat/completions"
@@ -819,7 +843,7 @@ def embed(
     """Dispatch an embeddings request (OpenAI ``/embeddings`` shape)."""
     base_url = provider.base_url
     if provider.adapter == "cloudflare" or "{account_id}" in base_url:
-        base_url = base_url.replace("{account_id}", env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+        base_url = base_url.replace("{account_id}", _quote_path_segment(env.get("CLOUDFLARE_ACCOUNT_ID", "")))
     url = f"{base_url}/embeddings"
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -936,7 +960,7 @@ def transcribe(
     """Dispatch an audio-transcription request (OpenAI ``/audio/transcriptions`` shape)."""
     base_url = provider.base_url
     if provider.adapter == "cloudflare" or "{account_id}" in base_url:
-        base_url = base_url.replace("{account_id}", env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+        base_url = base_url.replace("{account_id}", _quote_path_segment(env.get("CLOUDFLARE_ACCOUNT_ID", "")))
     url = f"{base_url}/audio/transcriptions"
     headers = {}  # NOTE: no Content-Type — the transport sets the multipart boundary
     if api_key:
@@ -980,7 +1004,7 @@ def _call_gemini(
     post: PostFn,
 ) -> Reply:
     system_instruction, contents = _to_gemini_contents(messages)
-    url = f"{provider.base_url}/models/{model}:generateContent"
+    url = f"{provider.base_url}/models/{_quote_path_segment(model)}:generateContent"
     headers = {"Content-Type": "application/json"}
     if api_key:  # keyless gemini-shape providers (if any) send no auth header
         headers["x-goog-api-key"] = api_key

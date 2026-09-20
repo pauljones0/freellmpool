@@ -108,7 +108,7 @@ def _fake_recipes_module(behaviour: Callable[[Job], _FakeRecipeRun] | None = Non
                 return behaviour(recipe)
             return _FakeRecipeRun(output=f"ran:{recipe.name}:{input_text}")
 
-        def write_recipe_record(self, run, *, store=None):
+        def write_recipe_record(self, run, *, store=None, **_):
             s = store or RunRecordStore()
             return s.append_new(
                 kind="recipe",
@@ -413,7 +413,7 @@ def test_failed_jobs_preserve_error_and_do_not_block_others(tmp_path):
         return _FakeRecipeRun(output=f"ok:{recipe.name}:{input_text}")
 
     recipes.run_recipe = boom_recipe  # type: ignore[assignment]
-    recipes.write_recipe_record = lambda run, *, store=None: store.append_new(  # type: ignore[assignment]
+    recipes.write_recipe_record = lambda run, *, store=None, **_: store.append_new(  # type: ignore[assignment]
         kind="recipe", title="t", prompt=run.prompt, output=run.output, recipe="pr-review"
     )
 
@@ -537,7 +537,7 @@ def test_max_failures_halts_after_n_consecutive(tmp_path):
 
     recipes = _fake_recipes_module()
     recipes.run_recipe = always_fail  # type: ignore[assignment]
-    recipes.write_recipe_record = lambda run, *, store=None: store.append_new(  # type: ignore[assignment]
+    recipes.write_recipe_record = lambda run, *, store=None, **_: store.append_new(  # type: ignore[assignment]
         kind="recipe", title="t", prompt=run.prompt, output="unused", recipe="pr-review"
     )
 
@@ -587,7 +587,7 @@ def test_max_failures_one_aborts_immediately(tmp_path):
 
     recipes = _fake_recipes_module()
     recipes.run_recipe = always_fail  # type: ignore[assignment]
-    recipes.write_recipe_record = lambda run, *, store=None: store.append_new(  # type: ignore[assignment]
+    recipes.write_recipe_record = lambda run, *, store=None, **_: store.append_new(  # type: ignore[assignment]
         kind="recipe", title="t", prompt=run.prompt, output="unused", recipe="pr-review"
     )
 
@@ -629,7 +629,7 @@ def test_max_failures_resets_after_success(tmp_path):
 
     recipes = _fake_recipes_module()
     recipes.run_recipe = maybe_fail  # type: ignore[assignment]
-    recipes.write_recipe_record = lambda run, *, store=None: store.append_new(  # type: ignore[assignment]
+    recipes.write_recipe_record = lambda run, *, store=None, **_: store.append_new(  # type: ignore[assignment]
         kind="recipe", title="t", prompt=run.prompt, output=run.output, recipe="pr-review"
     )
 
@@ -908,7 +908,7 @@ def test_cli_jobs_run_returns_5_when_halted_by_max_failures(
 
     recipes = _fake_recipes_module()
     recipes.run_recipe = always_fail  # type: ignore[assignment]
-    recipes.write_recipe_record = lambda run, *, store=None: store.append_new(  # type: ignore[assignment]
+    recipes.write_recipe_record = lambda run, *, store=None, **_: store.append_new(  # type: ignore[assignment]
         kind="recipe", title="t", prompt=run.prompt, output="unused", recipe="pr-review"
     )
 
@@ -1665,7 +1665,7 @@ def test_recipe_job_cancelled_during_execution_does_not_complete(tmp_path):
             store.cancel(job.job_id)
             return _FakeRecipeRun(output="ran-after-cancel")
 
-        def write_recipe_record(self, run, *, store=None):
+        def write_recipe_record(self, run, *, store=None, **_):
             s = store or RunRecordStore()
             return s.append_new(
                 kind="recipe",
@@ -1723,7 +1723,7 @@ def test_recipe_job_cancelled_before_exception_does_not_fail(tmp_path):
             store.cancel(job.job_id)
             raise RuntimeError("provider exploded after cancel")
 
-        def write_recipe_record(self, run, *, store=None):
+        def write_recipe_record(self, run, *, store=None, **_):
             s = store or RunRecordStore()
             return s.append_new(
                 kind="recipe",
@@ -2205,3 +2205,74 @@ def test_compact_collapses_terminal_jobs_and_preserves_views(tmp_path):
     assert pending is not None and pending.status == JOB_STATUS_PENDING
     third = store.add(JobSpec(kind=JOB_KIND_ASK, payload={"kind": JOB_KIND_ASK, "prompt": "three"}))
     assert [job.job_id for job in store.jobs()] == [first.job_id, second.job_id, third.job_id]
+
+
+def test_failed_append_store_error_does_not_abort_batch(tmp_path, monkeypatch):
+    """A store error while recording FAILED must not escape _execute_job and
+    abort run_pending_jobs; the batch reports the failure and keeps going."""
+    store = _store(tmp_path)
+    for prompt in ("a", "b"):
+        store.add(JobSpec(kind=JOB_KIND_ASK, payload={"prompt": prompt}))
+
+    real_append = JobStore._append_event_locked
+
+    def flaky_append(self, *, event_type, **kwargs):
+        if event_type == JOB_EVENT_FAILED:
+            raise OSError("disk on fire")
+        return real_append(self, event_type=event_type, **kwargs)
+
+    monkeypatch.setattr(JobStore, "_append_event_locked", flaky_append)
+
+    class _BoomPool:
+        def ask(self, *a, **k):
+            raise RuntimeError("provider exploded")
+
+    outcome = run_pending_jobs(store, pool_factory=lambda: _BoomPool(),
+                               recipes_module=_fake_recipes_module())
+    assert len(outcome.failed) == 2
+    assert outcome.consecutive_failures == 2
+
+
+def test_resume_reuses_prior_attempt_record_without_rerun(tmp_path, monkeypatch):
+    """Crash between record write and COMPLETED must not respend quota or
+    orphan a duplicate record: resume reuses the prior attempt's record."""
+    from types import SimpleNamespace
+
+    from freellmpool.recipes import write_recipe_record as real_write_record
+
+    store = _store(tmp_path)
+    record_store = RunRecordStore(tmp_path / "records.jsonl")
+    job = store.add(JobSpec(kind=JOB_KIND_RECIPE,
+                            payload={"kind": "recipe", "recipe": "good", "prompt": "hi"}))
+    calls: list[str] = []
+
+    def counting_run(pool, recipe, *, input_text, path, **kwargs):
+        calls.append(input_text)
+        stub = SimpleNamespace(name="good", version="1.0", role="critic",
+                               input_mode="text", output_mode="text")
+        return SimpleNamespace(output="RESULT", prompt="hi", provider_id="fake",
+                               model="m", recipe=stub)
+
+    recipes = _fake_recipes_module()
+    recipes.run_recipe = counting_run
+    recipes.write_recipe_record = real_write_record
+
+    real_append = JobStore._append_event_locked
+    armed = {"crash": True}
+
+    def flaky_append(self, *, event_type, **kwargs):
+        if armed["crash"] and event_type in (JOB_EVENT_COMPLETED, JOB_EVENT_FAILED):
+            raise OSError("crash between record and completed")
+        return real_append(self, event_type=event_type, **kwargs)
+
+    monkeypatch.setattr(JobStore, "_append_event_locked", flaky_append)
+    run_pending_jobs(store, pool_factory=_pool_factory(),
+                     recipes_module=recipes, record_store=record_store)
+    assert len(record_store.records()) == 1, "first attempt must persist its record"
+    armed["crash"] = False
+    outcome = run_pending_jobs(store, pool_factory=_pool_factory(),
+                               recipes_module=recipes, record_store=record_store)
+    assert calls == ["hi"], "resume must reuse the record, not re-execute"
+    assert len(record_store.records()) == 1, "no duplicate record on resume"
+    assert store.get(job.job_id).status == JOB_STATUS_COMPLETED
+    assert {j.job_id for j in outcome.completed} == {job.job_id}

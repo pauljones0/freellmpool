@@ -624,3 +624,30 @@ def test_probe_calls_bypass_response_cache(tmp_path):
     pool.probe_call(route.provider, route.model, messages)
     assert len(calls) == 2
 
+
+
+def test_from_default_config_tolerates_garbage_and_infinite_cache_ttl(monkeypatch):
+    from freellmpool.managed import ManagedPool
+
+    seen: dict = {}
+
+    def fake_init(self, *a, **k):
+        seen.update(k)
+
+    monkeypatch.setattr(ManagedPool, "__init__", fake_init)
+    for bad in ("garbage", "inf", "nan"):
+        ManagedPool.from_default_config(env={"FREELLMPOOL_CACHE_TTL": bad})
+        assert seen["cache"] is None
+
+
+def test_snapshot_tolerates_garbage_catalog_max_age(tmp_path):
+    from freellmpool.allowances import AllowanceLedger
+    from freellmpool.managed import ManagedPool
+
+    providers, registry, snapshot = fixture_data(("alpha",), 2)
+    pool = ManagedPool(providers, registry=registry, discovery=snapshot, accounts={},
+                       env={"FREELLMPOOL_WAIT_SECONDS": "0",
+                            "FREELLMPOOL_CATALOG_MAX_AGE_SECONDS": "garbage"},
+                       ledger=AllowanceLedger(tmp_path / "allowances.db"),
+                       post=lambda *args: successful())
+    assert pool.snapshot().routes, "garbage max-age must not break snapshot"

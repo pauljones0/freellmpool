@@ -276,3 +276,18 @@ def test_report_files_are_written_to_deterministic_paths(tmp_path):
     assert html_path == tmp_path / "data" / "reports" / f"{record.run_id}.html"
     assert md_path.read_text(encoding="utf-8").startswith("# job report")
     assert html_path.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_markdown_report_neutralizes_external_references():
+    record = RunRecord(
+        run_id="run-1",
+        kind="ask",
+        created_at="2026-06-19T12:34:56Z",
+        title="Ask report",
+        prompt="see https://evil.example/p and ![b](http://evil.example/x)",
+        output="data //cdn.evil.example/y",
+    )
+    markdown = render_markdown_report(record)
+    assert "https://" not in markdown and "http://" not in markdown
+    assert "hxxps://evil.example/p" in markdown
+    assert "evil.example" in markdown  # still readable, just inert

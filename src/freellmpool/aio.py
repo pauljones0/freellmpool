@@ -360,7 +360,7 @@ class AsyncPool:
     ) -> Reply:
         base_url = provider.base_url
         if provider.adapter == "cloudflare":
-            base_url = base_url.replace("{account_id}", self.env.get("CLOUDFLARE_ACCOUNT_ID", ""))
+            base_url = base_url.replace("{account_id}", _client._quote_path_segment(self.env.get("CLOUDFLARE_ACCOUNT_ID", "")))
             messages = _client._cloudflare_messages(messages)
         url = f"{base_url}/chat/completions"
         headers = {"Content-Type": "application/json"}
@@ -423,7 +423,7 @@ class AsyncPool:
         max_transport_attempts=None,
     ) -> Reply:
         system_instruction, contents = _to_gemini_contents(messages)
-        url = f"{provider.base_url}/models/{model}:generateContent"
+        url = f"{provider.base_url}/models/{_client._quote_path_segment(model)}:generateContent"
         headers = {"Content-Type": "application/json"}
         if api_key:  # keyless gemini-shape providers send no auth header
             headers["x-goog-api-key"] = api_key
@@ -490,6 +490,8 @@ class AsyncPool:
 
         ``timeout`` is one overall deadline shared by every failover attempt.
         """
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 0:
+            raise ValueError("invalid output token budget")
         p = self._pool
         if getattr(p, "managed", False):
             return await p.achat(

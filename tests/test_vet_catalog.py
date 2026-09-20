@@ -107,3 +107,24 @@ def test_non_chat_detection_catches_safety_and_reward_models() -> None:
     assert not vetter._looks_chat("google/diffusiongemma-26b-a4b-it")
     assert not vetter._looks_chat("nvidia/ising-calibration-1-35b-a3b")
     assert not vetter._looks_chat("ppl")
+
+
+def test_gemini_listing_sends_key_in_header_not_url(monkeypatch) -> None:
+    vetter = _load_vetter()
+    seen: dict = {}
+
+    def fake_get(url, headers, timeout=20.0):
+        seen["url"] = url
+        seen["headers"] = headers
+        return {"models": [{"name": "models/gemini-x"}]}
+
+    monkeypatch.setattr(vetter, "_http_get", fake_get)
+    provider = SimpleNamespace(
+        id="gemini",
+        adapter="gemini",
+        base_url="https://example.test/v1beta",
+        api_key=lambda env: "SECRETKEY",
+    )
+    assert vetter.list_live_models(provider, {}) == ["gemini-x"]
+    assert "SECRETKEY" not in seen["url"]
+    assert seen["headers"].get("x-goog-api-key") == "SECRETKEY"

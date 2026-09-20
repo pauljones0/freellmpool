@@ -18,4 +18,8 @@
 [settings]
 # cooldown_seconds = 60     # how long to deprioritize a 429'd provider
 # routing = "fair"          # fair provider balance; fast; quality (match difficulty→capability); legacy/model; model-fast
-# proxy_key = "secret"      # require this Bearer token on the proxy
+# proxy_key = "secret"      # require this Bearer key on the proxy
+# cache_ttl = 0             # response-cache TTL seconds (0 disables the cache)
+# mode = "normal"           # or "wise": conservative quota-wise overlay (spread routing, lower defaults)
+# host = "127.0.0.1"        # `proxy` bind address when --host is omitted
+# port = 8080               # `proxy` bind port when --port is omitted

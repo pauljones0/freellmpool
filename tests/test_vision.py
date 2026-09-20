@@ -115,3 +115,18 @@ def test_estimate_counts_image_tokens():
 
     url = "data:image/png;base64," + base64.b64encode(_png(8, 8)).decode()
     assert estimate_input_tokens(_vision_messages()) >= media.image_input_tokens(url)
+
+
+def test_absurd_png_dimensions_clamped():
+    """G23 #17: a lying IHDR (2**31 x 2**31) must not mint quadrillions of tokens."""
+    raw = (b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR"
+           + struct.pack(">II", 2**31, 2**31))
+    url = "data:image/png;base64," + base64.b64encode(raw).decode()
+    assert media.image_dimensions(url) == (media.MAX_IMAGE_DIMENSION,) * 2
+    assert media.image_input_tokens(url) == 1024 * 170 + 85  # 32x32 tiles + base
+
+
+def test_non_image_data_url_rejected():
+    """G23 hardening (extra, no master number): a text/plain data URL is not an image."""
+    with pytest.raises(ValueError, match="not an image"):
+        media.check_image_url("data:text/plain;base64,aGVsbG8=")

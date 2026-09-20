@@ -168,8 +168,13 @@ def cmd_rag_index(args: argparse.Namespace) -> int:
     except (ValueError, OSError) as exc:
         print(f"freellmpool rag index: {exc}", file=sys.stderr)
         return 2
+    notes = ""
+    if stats.get("truncated"):
+        notes += " [INCOMPLETE: collection capped — re-index a smaller folder]"
+    if stats.get("skipped_oversize"):
+        notes += f" [{stats['skipped_oversize']} oversize file(s) skipped]"
     print(f"Indexed {stats['chunks']} chunks from {stats['files']} file(s) "
-          f"(embeddings: {stats['model']})")
+          f"(embeddings: {stats['model']}){notes}")
     return 0
 
 

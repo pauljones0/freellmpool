@@ -14,10 +14,12 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 from .artifacts import default_data_dir
 
@@ -150,8 +152,25 @@ def ensure_proxy(port: int, timeout: float = READY_TIMEOUT) -> bool:
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            pass
+            _reap_in_background(proc)
     raise LauncherError(f"proxy on port {port} did not become ready within {timeout:.0f}s")
+
+
+def _reap_in_background(proc: Any) -> None:
+    """Keep waiting on an unkillable child in a daemon thread.
+
+    Dropping the Popen handle would strand a zombie (and a ResourceWarning at
+    GC); blocking here would hang teardown. The watcher only reaps.
+    """
+
+    def _watch() -> None:
+        try:
+            proc.wait(timeout=120)
+        except Exception:  # noqa: BLE001 - last-chance reap; nothing left to do
+            pass
+
+    thread = threading.Thread(target=_watch, daemon=True)
+    thread.start()
 
 
 def launch(harness: str, agent_args: list[str], *, port: int, model: str) -> None:

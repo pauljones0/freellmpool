@@ -829,3 +829,24 @@ def test_stream_plain_429_does_not_suppress_sibling_model(quota):
     assert chunks[0] == {"provider": "solo", "model": "m2", "attempts": 2}
     assert "ok" in "".join(c for c in chunks[1:] if isinstance(c, str))
     assert seen == ["m1", "m2"]
+
+
+def test_legacy_from_default_config_tolerates_garbage_cooldown(monkeypatch):
+    import freellmpool.router as router_mod
+    from freellmpool.router import Pool
+
+    monkeypatch.setattr(Pool, "__init__", lambda self, *a, **k: None)
+    monkeypatch.setattr(router_mod, "settings", lambda env: {"cooldown_seconds": "garbage"})
+    pool = Pool.from_default_config(env={"FREELLMPOOL_LEGACY_ROUTER": "1"})
+    assert isinstance(pool, Pool)
+
+
+def test_chat_rejects_negative_or_bool_max_tokens(providers, env, quota):
+    from freellmpool.router import Pool
+
+    pool = Pool(providers, quota=quota, env=env)
+    for bad in (-1, -100, True):
+        with pytest.raises(ValueError, match="invalid output token budget"):
+            pool.chat([{"role": "user", "content": "hi"}], max_tokens=bad)
+        with pytest.raises(ValueError, match="invalid output token budget"):
+            list(pool.stream_chat([{"role": "user", "content": "hi"}], max_tokens=bad))

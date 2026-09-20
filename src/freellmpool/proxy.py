@@ -83,6 +83,31 @@ def _max_tokens_value(req: dict[str, Any], default: int) -> Any:
     return default
 
 
+_SAMPLING_ERROR = (
+    "'max_tokens'/'max_completion_tokens'/'max_output_tokens'/"
+    "'temperature' must be numbers and 'task' must be valid"
+)
+
+
+def _request_sampling(req: dict[str, Any]) -> tuple[int, float]:
+    """Validated ``(max_tokens, temperature)`` for the chat/stream handlers.
+
+    Raises ValueError when either is missing-shaped, non-numeric, infinite
+    (``int(inf)`` would otherwise OverflowError into a 500), ``max_tokens``
+    below 1, or the temperature non-finite — silently passing those
+    downstream churns providers with meaningless requests.
+    """
+    try:
+        max_tokens = int(_max_tokens_value(req, 1024))
+        temp_raw = req.get("temperature")
+        temperature = 0.0 if temp_raw is None else float(temp_raw)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(_SAMPLING_ERROR) from None
+    if max_tokens < 1 or not math.isfinite(temperature):
+        raise ValueError(_SAMPLING_ERROR)
+    return max_tokens, temperature
+
+
 def _model_ids(pool: Pool, ready_model_ids: frozenset[str] | None = None) -> list[str]:
     # "auto" + per-request routing aliases (mapped to a routing mode by the proxy),
     # then every enabled provider/model id.
@@ -853,7 +878,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             msgs.append({"role": "user", "content": prompt})
             try:
                 max_tokens = max(1, min(8192, int(_max_tokens_value(req, 350))))
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 max_tokens = 350
 
             picks, n_providers = _tm.select_targets(pool, msgs, req.get("max_models"))
@@ -1241,19 +1266,12 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             requested = resolve_alias(requested, pool.env)  # gpt-4o-mini → free target
             provider_filter, model_filter = _parse_model(requested, {p.id for p in pool.providers})
             try:
-                max_tokens = int(_max_tokens_value(req, 1024))
-                temp_raw = req.get("temperature")
-                temperature = 0.0 if temp_raw is None else float(temp_raw)
+                max_tokens, temperature = _request_sampling(req)
                 task = task_resolution(
                     messages, _task_hint(self.headers, req)
                 ).task
             except (TypeError, ValueError):
-                self._error(
-                    400,
-                    "'max_tokens'/'max_completion_tokens'/'max_output_tokens'/"
-                    "'temperature' must be numbers and 'task' must be valid",
-                    "invalid_request_error",
-                )
+                self._error(400, _SAMPLING_ERROR, "invalid_request_error")
                 return None
             upstream_timeout = (
                 timeout
@@ -1321,16 +1339,24 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             provider_filter, model_filter = _parse_model(
                 requested, {provider.id for provider in pool.providers}
             )
-            max_tokens_value = (
-                int(_max_tokens_value(req, 1024))
-                if max_tokens is None
-                else int(max_tokens)
-            )
-            if temperature is None:
-                temp_raw = req.get("temperature")
-                temperature_value = 0.0 if temp_raw is None else float(temp_raw)
-            else:
-                temperature_value = float(temperature)
+            try:
+                if max_tokens is None and temperature is None:
+                    max_tokens_value, temperature_value = _request_sampling(req)
+                else:
+                    max_tokens_value = (
+                        int(_max_tokens_value(req, 1024))
+                        if max_tokens is None
+                        else int(max_tokens)
+                    )
+                    if temperature is None:
+                        temp_raw = req.get("temperature")
+                        temperature_value = 0.0 if temp_raw is None else float(temp_raw)
+                    else:
+                        temperature_value = float(temperature)
+                    if max_tokens_value < 1 or not math.isfinite(temperature_value):
+                        raise ValueError(_SAMPLING_ERROR)
+            except (TypeError, ValueError, OverflowError):
+                raise ValueError(_SAMPLING_ERROR) from None
             task = task_resolution(messages, _task_hint(self.headers, req)).task
             upstream_timeout = (
                 timeout
@@ -1447,17 +1473,10 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 resolve_alias(requested, pool.env), {p.id for p in pool.providers}
             )
             try:
-                max_tokens = int(_max_tokens_value(req, 1024))
-                temp_raw = req.get("temperature")
-                temperature = 0.0 if temp_raw is None else float(temp_raw)
+                max_tokens, temperature = _request_sampling(req)
                 task = task_resolution(norm, _task_hint(self.headers, req)).task
             except (TypeError, ValueError):
-                self._error(
-                    400,
-                    "'max_tokens'/'max_completion_tokens'/'max_output_tokens'/"
-                    "'temperature' must be numbers and 'task' must be valid",
-                    "invalid_request_error",
-                )
+                self._error(400, _SAMPLING_ERROR, "invalid_request_error")
                 return
             upstream_timeout = (
                 _AGENT_UPSTREAM_TIMEOUT
@@ -1484,7 +1503,12 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 # input is too long for every model — fail loudly, don't retry buffered.
                 self._error(413, str(exc), "context_length_exceeded")
                 return
-            except (AllProvidersExhausted, StopIteration) as exc:
+            except StopIteration:
+                # An empty stream is a generator-protocol violation, not an
+                # exhaustion: surface it as a 500 instead of silently retrying.
+                self._error(500, "stream ended before any event (StopIteration)", "stream_error")
+                return
+            except AllProvidersExhausted as exc:
                 if isinstance(exc, AllProvidersExhausted):
                     client_status = getattr(exc, "client_status", None)
                     if isinstance(client_status, int) and 400 <= client_status < 500:

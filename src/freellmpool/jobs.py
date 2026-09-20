@@ -738,19 +738,26 @@ def _execute_job(
         return refreshed.status
     try:
         if job.kind == JOB_KIND_RECIPE:
-            result = _execute_recipe_job(
-                job,
-                pool_factory=pool_factory,
-                recipes_module=recipes_module,
-            )
-            # Re-check terminal status after provider/recipe execution before
-            # writing any terminal ``completed`` side effects. If a terminal
-            # event arrived during execution (race with another runner), return
-            # its status immediately without appending a second terminal event.
-            refreshed_after = store.get(job.job_id)
-            if refreshed_after is not None and refreshed_after.is_terminal:
-                return refreshed_after.status
-            record = recipes_module.write_recipe_record(result, store=record_store)
+            reused = _prior_recipe_record(job, record_store) if is_resumed else None
+            if reused is not None:
+                record, output, provider_id, model = (
+                    reused, reused.output, reused.provider_id, reused.model)
+            else:
+                result = _execute_recipe_job(
+                    job,
+                    pool_factory=pool_factory,
+                    recipes_module=recipes_module,
+                )
+                # Re-check terminal status after provider/recipe execution before
+                # writing any terminal ``completed`` side effects. If a terminal
+                # event arrived during execution (race with another runner), return
+                # its status immediately without appending a second terminal event.
+                refreshed_after = store.get(job.job_id)
+                if refreshed_after is not None and refreshed_after.is_terminal:
+                    return refreshed_after.status
+                record = recipes_module.write_recipe_record(
+                    result, store=record_store, job_id=job.job_id, attempt=attempt)
+                output, provider_id, model = result.output, result.provider_id, result.model
             try:
                 write_report(record, "md", store=record_store)
             except Exception:  # noqa: BLE001 - report is best-effort
@@ -763,9 +770,9 @@ def _execute_job(
                 attempt=attempt,
                 attempt_metadata=attempt_metadata,
                 run_id=record.run_id,
-                output=result.output,
-                provider_id=result.provider_id,
-                model=result.model,
+                output=output,
+                provider_id=provider_id,
+                model=model,
             )
             return JOB_STATUS_COMPLETED
         if job.kind == JOB_KIND_ASK:
@@ -789,20 +796,51 @@ def _execute_job(
     except Exception as exc:  # noqa: BLE001 - record failure, keep going
         # Honour terminal status that arrived before the provider raised. Do
         # not append a ``failed`` event for a job that is already terminal.
-        refreshed_after = store.get(job.job_id)
+        # Both the refresh and the append are guarded: a store error here must
+        # not escape and abort the whole batch (the FAILED outcome still feeds
+        # consecutive_failures, so --max-failures halts a dead store cleanly).
+        try:
+            refreshed_after = store.get(job.job_id)
+        except Exception:  # noqa: BLE001 - unreadable store; record blind below
+            refreshed_after = None
         if refreshed_after is not None and refreshed_after.is_terminal:
             return refreshed_after.status
-        store._append_event_locked(
-            job_id=job.job_id,
-            event_type=JOB_EVENT_FAILED,
-            status=JOB_STATUS_FAILED,
-            spec=job.spec,
-            attempt=attempt,
-            attempt_metadata=attempt_metadata,
-            error=_safe_error(exc),
-        )
+        try:
+            store._append_event_locked(
+                job_id=job.job_id,
+                event_type=JOB_EVENT_FAILED,
+                status=JOB_STATUS_FAILED,
+                spec=job.spec,
+                attempt=attempt,
+                attempt_metadata=attempt_metadata,
+                error=_safe_error(exc),
+            )
+        except Exception:  # noqa: BLE001 - unwritable store; status still FAILED
+            pass
         return JOB_STATUS_FAILED
     return None  # pragma: no cover - defensive
+
+
+def _prior_recipe_record(job: Job, record_store: Any) -> Any | None:
+    """Latest record tagged for this job, or None.
+
+    Lets a resumed attempt reuse a result whose COMPLETED event never
+    landed (crash between record write and terminal append) instead of
+    re-spending quota and orphaning a duplicate record. Best-effort:
+    an unreadable store simply disables reuse.
+    """
+    records = getattr(record_store, "records", None)
+    if not callable(records):
+        return None
+    try:
+        candidates = [
+            record for record in records()
+            if isinstance(getattr(record, "metadata", None), Mapping)
+            and record.metadata.get("job_id") == job.job_id
+        ]
+    except Exception:  # noqa: BLE001 - unreadable store disables reuse
+        return None
+    return candidates[-1] if candidates else None
 
 
 def _execute_recipe_job(
@@ -819,8 +857,10 @@ def _execute_recipe_job(
     validation_output = job.spec.get("validation_output")
     validation_output_file = job.spec.get("validation_output_file")
     if validation_output_file:
-        validation_output = Path(validation_output_file).read_text(
-            encoding="utf-8"
+        from .recipes import read_capped_text_file
+
+        validation_output = read_capped_text_file(
+            validation_output_file, what="validation_output_file"
         )
     pool = pool_factory()
     return recipes_module.run_recipe(

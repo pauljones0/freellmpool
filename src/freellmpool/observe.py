@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable, Mapping
 
 logger = logging.getLogger("freellmpool")
@@ -71,8 +72,18 @@ def emit(hook: EventHook | None, event: str, **fields) -> None:
             logger.debug("event hook raised", exc_info=True)
 
 
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
+_MAX_LOGGED_VALUE = 500
+
+
+def _clean(value: object) -> str:
+    """One log-safe line per value: controls become spaces, length bounded."""
+    text = _CONTROL_CHARS_RE.sub(" ", str(value))
+    return text if len(text) <= _MAX_LOGGED_VALUE else text[:_MAX_LOGGED_VALUE] + "…"
+
+
 def _log(event: str, payload: dict) -> None:
-    detail = " ".join(f"{k}={v}" for k, v in payload.items() if k != "event")
+    detail = " ".join(f"{k}={_clean(v)}" for k, v in payload.items() if k != "event")
     if event in ("error", "exhausted"):
         logger.info("%s %s", event, detail)
     elif event == "cooldown":

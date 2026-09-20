@@ -155,3 +155,15 @@ def test_fan_out_normalizes_missing_text_for_merge() -> None:
     assert answered == [("a/m", "")]
     merged = rc.merge_answers([], answered)
     assert merged == [("a/m", "", True)]
+
+
+def test_replay_panel_answer_tolerates_corrupt_latency() -> None:
+    import freellmpool.run_checkpoint as rc
+
+    answered = rc.replay_panel_answer({
+        "provider_id": "p", "model": "m", "label": "p/m",
+        "text": "hi", "latency_ms": "abc",
+    })
+    assert answered.latency_ms == 0
+    assert answered.text == "hi"
+    assert answered.replayed is True

@@ -275,7 +275,13 @@ def run_onboarding(
         check = check_provider
     progress_path = progress_path or _progress_path(env)
     try:
-        state = json.loads(progress_path.read_text()) if progress_path.exists() else {"schema": 1, "providers": {}}
+        raw_text: str | None = progress_path.read_text() if progress_path.exists() else None
+    except FileNotFoundError:
+        raw_text = None  # vanished mid-read: start fresh
+    except OSError as exc:
+        raise ValueError(f"setup progress is unreadable ({exc}); preserve it before resetting setup") from None
+    try:
+        state = json.loads(raw_text) if raw_text is not None else {"schema": 1, "providers": {}}
         if not isinstance(state, dict) or state.get("schema") != 1 or not isinstance(state.get("providers"), dict) or any(not isinstance(value, dict) for value in state["providers"].values()):
             raise ValueError
     except (ValueError, UnicodeError):

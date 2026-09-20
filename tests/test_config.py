@@ -287,3 +287,92 @@ def test_catalog_cache_invalidates_on_local_opt_in_and_same_size_replace(
     path.write_text(second)
     os.utime(path, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
     assert load_catalog(path)[0].models[0].name == "model-b"
+
+
+def test_finite_float_accepts_valid_and_clamps():
+    from freellmpool.config import finite_float
+
+    assert finite_float("60", 1.0) == 60.0
+    assert finite_float(2.5, 1.0) == 2.5
+    assert finite_float("999", 1.0, maximum=10.0) == 10.0
+    assert finite_float("-5", 1.0, minimum=0.0) == 0.0
+
+
+def test_finite_float_rejects_garbage_and_nonfinite():
+    from freellmpool.config import finite_float
+
+    for bad in ("garbage", "", None, "inf", "-inf", "nan", float("inf"), float("nan")):
+        assert finite_float(bad, 7.0) == 7.0
+        assert finite_float(bad, 7.0, minimum=0.0, maximum=10.0) == 7.0
+
+
+def test_finite_float_never_raises_on_overflowing_numbers():
+    from freellmpool.config import finite_float
+
+    assert finite_float(10**400, 60.0, minimum=0.0) == 60.0
+    assert finite_float("1" + "0" * 400, 60.0) == 60.0
+    assert finite_float("1e999", 60.0) == 60.0
+
+
+def test_config_diagnostics_flags_bad_setting_values(tmp_path):
+    """G23 #9: diagnostics must flag bad VALUES (silently ignored today), secret-safe."""
+    from freellmpool import config as config_mod
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[settings]\n"
+        'cooldown_seconds = "soon"\n'
+        'cache_ttl = "forever"\n'
+        'port = "abc"\n'
+        "host = 123\n"
+        'mode = "turbo"\n'
+        'routing = "sideways"\n'
+        "bogus_setting = 1\n",
+        encoding="utf-8",
+    )
+    diags = config_mod.config_diagnostics({"FREELLMPOOL_CONFIG_FILE": str(cfg)})
+    flagged = {(d["code"], d.get("setting")) for d in diags}
+    for name in ("cooldown_seconds", "cache_ttl", "port", "host", "mode", "routing"):
+        assert ("setting_value", name) in flagged, name
+    assert ("unknown_setting", "bogus_setting") in flagged
+    blob = repr(diags)
+    for secret in ("soon", "forever", "abc", "turbo", "sideways"):
+        assert secret not in blob  # never echo raw values
+
+
+def test_config_diagnostics_accepts_valid_settings(tmp_path):
+    """G23 #9: a sane config stays clean (no false doctor failures)."""
+    from freellmpool import config as config_mod
+
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        "[settings]\ncooldown_seconds = 60\ncache_ttl = 17\nport = 9999\n"
+        'host = "127.0.0.1"\nmode = "wise"\nrouting = "spread"\nproxy_key = "s3cret"\n'
+        '[keys]\nGROQ_API_KEY = "gsk-x"\n[aliases]\n"m" = "auto"\n',
+        encoding="utf-8",
+    )
+    assert config_mod.config_diagnostics({"FREELLMPOOL_CONFIG_FILE": str(cfg)}) == []
+
+
+def test_config_file_path_honors_xdg_config_home(tmp_path, monkeypatch):
+    """G23 #13: the main config path must follow XDG_CONFIG_HOME (no split state)."""
+    from freellmpool import config as config_mod
+
+    xdg = tmp_path / "xdg"
+    (xdg / "freellmpool").mkdir(parents=True)
+    (xdg / "freellmpool" / "config.toml").write_text(
+        "[settings]\nport = 9999\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    data = config_mod.load_config_file({})
+    assert data["settings"]["port"] == 9999
+
+
+def test_user_catalog_path_honors_xdg_config_home(tmp_path, monkeypatch):
+    """G23 #13: providers.toml lookup follows XDG_CONFIG_HOME too."""
+    from freellmpool import config as config_mod
+
+    xdg = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))
+    monkeypatch.delenv("FREELLMPOOL_CONFIG")  # conftest sets an override; drop it
+    assert config_mod._user_catalog_path() == xdg / "freellmpool" / "providers.toml"

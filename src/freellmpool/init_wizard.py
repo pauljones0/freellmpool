@@ -9,7 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import configured_providers, effective_env, load_catalog, settings
+from .config import (
+    configured_providers,
+    effective_env,
+    load_catalog,
+    settings,
+    xdg_config_home,
+)
 from .profiles import get_profile, profile_names
 from .tailnet import (
     STATE_USABLE,
@@ -388,14 +394,14 @@ def _config_path(env: dict[str, str]) -> Path:
     override = env.get("FREELLMPOOL_CONFIG_FILE")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".config" / "freellmpool" / "config.toml"
+    return xdg_config_home() / "freellmpool" / "config.toml"
 
 
 def _provider_catalog_path(env: dict[str, str]) -> Path:
     override = env.get("FREELLMPOOL_CONFIG")
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".config" / "freellmpool" / "providers.toml"
+    return xdg_config_home() / "freellmpool" / "providers.toml"
 
 
 def _int_setting(value: object, default: int) -> int:
