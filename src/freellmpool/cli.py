@@ -43,6 +43,7 @@ from .conformance import (
 )
 from .errors import AllProvidersExhausted, NoProvidersConfigured
 from .heal import maybe_start_heal_executor
+from .managed_cli import _resolve_cli_filter
 from .mode import (
     WISE_DEFAULT_MAX_TOKENS,
     WISE_DEFAULT_ROUTING,
@@ -130,7 +131,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
     model_filter = resolve_alias(args.model) if args.model else None
     if model_filter == "auto":
         model_filter = None
-    provider_filter = args.providers.split(",") if args.providers else None
+    provider_filter = args.providers.split(",") if args.providers is not None else None
     if model_filter and "/" in model_filter:
         # Only treat the prefix as a provider when it's a real provider id; otherwise keep the
         # full slash-containing model name (e.g. Qwen IDs or OpenRouter :free IDs).
@@ -146,6 +147,22 @@ def cmd_ask(args: argparse.Namespace) -> int:
         system = f"{system}\n{json_rule}" if system else json_rule
 
     pool = Pool.from_default_config()
+    if provider_filter is not None:
+        # G37: validate the effective post-slash filter (a slash-overwritten
+        # -p is ignored, never validated — drift precedent). Pool-anchored:
+        # pool load is offline reads; validation precedes all pool use. The
+        # universe includes handler-visible configured ids (slash matches
+        # against configured_providers(), a catalog+env read; production-subset
+        # of the catalog, binding only when mocked to non-catalog ids — same
+        # as conf; programmatic-pool customs ride the pool term).
+        try:
+            ask_configured = {p.id for p in configured_providers()}
+        except Exception:  # noqa: BLE001 — validation never tracebacks
+            ask_configured = set()
+        provider_filter, rejected = _resolve_cli_filter(
+            provider_filter, pool, ask_configured)
+        if rejected:
+            return 2
     pool_env = dict(getattr(pool, "env", os.environ))
     mode_settings = settings(pool_env)
     has_routing_config = bool(pool_env.get("FREELLMPOOL_ROUTING") or mode_settings.get("routing"))
@@ -530,7 +547,12 @@ def cmd_providers_health(args: argparse.Namespace) -> int:
     from .healthcheck import render_health_table, run_healthcheck
 
     pool = Pool.from_default_config()
-    provider_filter = args.providers.split(",") if args.providers else None
+    provider_filter = args.providers.split(",") if args.providers is not None else None
+    if provider_filter is not None:
+        # G37: pool-load-then-validate; unknown literals exit 2 with no probes.
+        provider_filter, rejected = _resolve_cli_filter(provider_filter, pool)
+        if rejected:
+            return 2
     rows = run_healthcheck(
         pool,
         model=args.model,
@@ -545,6 +567,13 @@ def cmd_models(args: argparse.Namespace) -> int:
     import json
 
     pool = Pool.from_default_config()
+    if args.providers is not None:
+        # G37: single validation point covering both `only` splits below;
+        # canonical comma-joined feeds both branches unchanged.
+        canonical, rejected = _resolve_cli_filter(args.providers.split(","), pool)
+        if rejected:
+            return 2
+        args.providers = ",".join(canonical)
     if getattr(pool, "managed", False):
         only = set(args.providers.split(",")) if args.providers else None
         rows = []
@@ -633,6 +662,13 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     from .benchmark import benchmark, render_table
 
     pool = Pool.from_default_config()
+    if args.providers is not None:
+        # G37: a typo beats the empty-pool gate (usage error outranks state)
+        # and precedes the unfiltered-count banner.
+        canonical, rejected = _resolve_cli_filter(args.providers.split(","), pool)
+        if rejected:
+            return 2
+        args.providers = ",".join(canonical)
     if not pool.providers:
         print(
             "freellmpool: no providers configured; set at least one API key "
@@ -732,6 +768,8 @@ def cmd_status_publish(args: argparse.Namespace) -> int:
     from .status_page import collect_live_rows, publish_status
 
     if args.rows_file:
+        # G37: rows-file mode is a documented-ignore for -p (see its help):
+        # file rows need no filter, so the flag is neither validated nor applied.
         with open(args.rows_file, encoding="utf-8") as fh:
             raw = json.load(fh)
         rows = [HealthRow(str(r.get("target", "?")), str(r.get("status", "?")),
@@ -739,7 +777,13 @@ def cmd_status_publish(args: argparse.Namespace) -> int:
                 for r in raw]
     else:
         pool = Pool.from_default_config()
-        provider_filter = args.providers.split(",") if args.providers else None
+        provider_filter = args.providers.split(",") if args.providers is not None else None
+        if provider_filter is not None:
+            # G37: pool-load-then-validate; unknown literals exit 2 before
+            # any probe or publish_status write.
+            provider_filter, rejected = _resolve_cli_filter(provider_filter, pool)
+            if rejected:
+                return 2
         rows = collect_live_rows(pool, model=args.model, providers=provider_filter,
                                  timeout=args.timeout)
     page, history = publish_status(args.docs_dir, rows, generated_at=utcnow(),
@@ -1647,7 +1691,15 @@ def cmd_conformance_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 2
-        only = {part.strip() for part in args.providers.split(",")} if args.providers else None
+        only = {part.strip() for part in args.providers.split(",")} if args.providers is not None else None
+        if only is not None:
+            # G37: validate in the enabled branch (`configured` known, probes
+            # ahead); universe includes configured ids; overwrite with canonical.
+            canonical, rejected = _resolve_cli_filter(
+                sorted(only), pool, {p.id for p in configured})
+            if rejected:
+                return 2
+            only = set(canonical)
         for provider in configured:
             if only is not None and provider.id not in only:
                 continue
@@ -3202,7 +3254,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_status_publish.add_argument("--docs-dir", default="docs",
                                   help="docs directory to write into (default: docs)")
     p_status_publish.add_argument("-m", "--model", help="pin one model name to probe")
-    p_status_publish.add_argument("-p", "--providers", help="comma-separated provider ids")
+    p_status_publish.add_argument("-p", "--providers", help="comma-separated provider ids, ignored with --rows-file")
     p_status_publish.add_argument("--timeout", type=float, default=20.0,
                                   help="per-call timeout seconds")
     p_status_publish.add_argument("--rows-file",

@@ -74,6 +74,91 @@ def _verify_extra_ids() -> dict[str, str]:
     return extra
 
 
+def _cli_extra_ids() -> dict[str, str]:
+    """User-catalog + external + plugin ids the CLI filters accept (G37).
+
+    Like `_verify_extra_ids` (which stays frozen for verify) plus plugin
+    ids. TOTAL: three separate per-source try blocks (partial union on
+    single-source failure, never propagate) and lazy imports (live
+    attributes, so catalog/plugin mocks stay visible).
+    """
+    extra: dict[str, str] = {}
+    try:
+        from .config import load_catalog as _load_catalog
+        for entry in _load_catalog():
+            extra.setdefault(entry.id.lower(), entry.id)
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        pass
+    try:
+        from .catalog import load_external_catalog as _load_external
+        for item in _load_external():
+            extra.setdefault(item.slug.lower(), item.slug)
+            extra.setdefault(item.name.lower(), item.slug)
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        pass
+    try:
+        from .plugins import registered_providers as _registered
+        for provider in _registered():
+            extra.setdefault(provider.id.lower(), provider.id)
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        pass
+    return extra
+
+
+def _pool_known_ids(pool: Any) -> set[str]:
+    """Provider ids a pool can serve, defensively extracted (G37).
+
+    TOTAL: outer try/except returns ∅ on anything exotic. Empty ids never
+    enter the universe (G36 N8 uniformity). List-only; tuples/mappings
+    read as absent.
+    """
+    try:
+        providers = getattr(pool, "providers", None)
+        if not isinstance(providers, list):
+            return set()
+        ids: set[str] = set()
+        for member in providers:
+            if isinstance(member, str):
+                if member:
+                    ids.add(member)
+                continue
+            ident = getattr(member, "id", None)
+            if isinstance(ident, str) and ident:
+                ids.add(ident)
+        return ids
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        return set()
+
+
+def _resolve_cli_filter(literals: list[str], pool: Any,
+                        extra_ids: set[str] | None = None,
+                        ) -> tuple[list[str], bool]:
+    """Validate a provider filter: (effective list, rejected).
+
+    Universe = registry ∪ user-catalog ∪ external ∪ plugins ∪ pool ids ∪
+    extra_ids (accept-if-known-anywhere). rejected True means the usage
+    error was already printed and the caller must return 2. A dead registry
+    SKIPS validation (passthrough; old flow judges) — verify A19 precedent.
+    TOTAL: never raises.
+    """
+    try:
+        registry = load_registry(effective_env())
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        return list(literals), False
+    extra = _cli_extra_ids()
+    known = _pool_known_ids(pool)
+    if extra_ids:
+        known |= {pid for pid in extra_ids
+                  if isinstance(pid, str) and pid}
+    for pid in known:
+        extra.setdefault(pid.lower(), pid)
+    canonical, unknown = resolve_provider_ids(literals, registry, extra)
+    if unknown:
+        _unknown_provider_error(unknown, registry)
+        return [], True
+    return canonical, False
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     from datetime import UTC, datetime
 
@@ -420,7 +505,13 @@ def cmd_rag_leaderboard(args: argparse.Namespace) -> int:
     from .managed import ManagedPool
 
     pool = ManagedPool.from_default_config()
-    providers = args.providers.split(",") if args.providers else None
+    providers = args.providers.split(",") if args.providers is not None else None
+    if providers is not None:
+        # G37: pool-load-then-validate (full union; custom ids keep today's
+        # exit-0 message). Canonical feeds the leaderboard.
+        providers, rejected = _resolve_cli_filter(providers, pool)
+        if rejected:
+            return 2
     scores = board_mod.run_leaderboard(pool, providers=providers, k=args.k)
     print(board_mod.render_table(scores, args.k))
     return 0
@@ -429,6 +520,21 @@ def cmd_rag_leaderboard(args: argparse.Namespace) -> int:
 def cmd_rag_ask(args: argparse.Namespace) -> int:
     from . import rag as rag_mod
 
+    if args.provider:
+        # G37: STRICT registry validation before pool load (downstream chat
+        # is snapshot-registry-keyed; extra ids 403-traceback today, so
+        # strict converts traceback→exit 2). Skips pool load, store read,
+        # and the wasted embed. Residual: programmatic pools with custom
+        # ids exit 2 (from_default_config pools are registry-keyed).
+        try:
+            registry = load_registry(effective_env())
+        except Exception:  # noqa: BLE001 — validation never tracebacks
+            print("freellmpool: provider registry is unavailable", file=sys.stderr)
+            return 2
+        canonical, unknown = resolve_provider_ids(args.provider, registry)
+        if unknown:
+            return _unknown_provider_error(unknown, registry)
+        args.provider = canonical
     pool = ManagedPool.from_default_config()
     try:
         result = rag_mod.ask_question(pool, args.store or rag_mod.default_rag_path(), args.question,

@@ -2132,6 +2132,21 @@ def main(argv: list[str] | None = None) -> int:
         from .config import effective_env
 
         env = effective_env()
+    if args.providers:
+        # G37: strict registry validation (mirrors cmd_update incl. the
+        # public_only-aware load). One check covers refresh, --check-sources,
+        # and --renew-evidence; skips the pre-check mkdir and all writes.
+        from .managed_cli import _unknown_provider_error
+        from .provider_registry import resolve_provider_ids
+        try:
+            registry = load_registry() if args.public_only else load_registry(env)
+        except Exception:  # noqa: BLE001 — validation never tracebacks
+            print("freellmpool: provider registry is unavailable", file=sys.stderr)
+            return 2
+        canonical, unknown = resolve_provider_ids(args.providers, registry)
+        if unknown:
+            return _unknown_provider_error(unknown, registry)
+        args.providers = canonical
     start = time.monotonic()
     try:
         result = refresh_catalog(env, args.providers, public_only=args.public_only, path=args.output,

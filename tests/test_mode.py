@@ -110,7 +110,7 @@ def test_config_mode_enables_wise_defaults(monkeypatch):
         (["ask", "hello", "--max-tokens", "2048"], "max_tokens", 2048),
         (["ask", "hello", "--routing", "fast"], "routing", "fast"),
         (["ask", "hello", "--model", "beta-1"], "model", "beta-1"),
-        (["ask", "hello", "--providers", "beta,alpha"], "providers", ["beta", "alpha"]),
+        (["ask", "hello", "--providers", "groq,gemini"], "providers", ["groq", "gemini"]),
     ],
 )
 def test_wise_ask_explicit_flags_win(monkeypatch, argv, key, expected):

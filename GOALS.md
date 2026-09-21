@@ -1677,6 +1677,49 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G37 — validate-first literals on the remaining 9 filter surfaces (Status: complete 2026-09-21)
+
+Pain (G36 non-goals): typos exited 0 with misleading inventory text
+(models/health/publish/bench/rag-board), exit 3/4 indistinguishable from
+unconfigured (ask/conf), or tracebacked exit 1 (rag-ask after a wasted
+embed; discovery.main) — publish even wrote docs files for a typo.
+
+Bet: pool-anchored accept-if-known-anywhere (pool ∪ registry ∪ user-catalog
+∪ external ∪ plugins; conf/ask add handler-visible configured ids) for the
+7 pool surfaces, strict registry for rag-ask + discovery.main. Exit 2 +
+keys-check shape, stdout untouched, validation before network/probes/writes/
+embed. One shared `_resolve_cli_filter` (deviates v1.4 Q2 namespaces — the
+dead-registry seam is `managed_cli.load_registry`); P46 pins the true legacy
+empty-pool message (no-key gate precedes filter-mismatch — spec O5 mispredicted);
+models/bench validate once + rewrite canonical (superior to per-split guards:
+preserves dead-registry skip parity for `-p ""`).
+
+Execute: surface survey (subagent) → plan v1 3xFAIL (zero-churn falsified;
+10M+14m; move+plugins+ordering/scope) → v1.1 feas/scope PASS + completeness
+FAIL (24 → minors) → v1.2 feas/scope PASS + completeness FAIL (pin precision
+O1-O16) → v1.3 + v1.4 micro-deltas → completeness PASS → TDD (42 red + 10
+preservation-green) → implement → plan-bug fix (ask configured-widening for
+a missed slash test, conf-precedented) → gate → push.
+
+Done when:
+- [x] `_cli_extra_ids` + `_pool_known_ids` + `_resolve_cli_filter`; 9 call
+  sites with specified ordering/winner rules; 52 pins + 1 intent-preserving
+  fixture (`test_mode.py:113` real ids); publish help note; FREE_SETUP line.
+- [x] Full strict suite green (3430 collected, rc0) + ruff + strict mypy +
+  docs + coverage (lines 88.50%, branches 80.32%) green; adversarial
+  review 2xSHIP (correctness direct; contract via BLOCK→fix→clearance);
+  pushed.
+
+Honesty residuals: first-run bootstrap network is pre-dispatch (ask-only of
+the 9); corrupt-config masks typo (pool-anchored reversal, disclosed);
+programmatic non-registry pools exit 2 on strict surfaces (update/discovery/
+setup/rag-ask); MCP provider params + slash-model + canary + keys + frozen
+onboarding.main stay as dispositioned; benchmark known-filter banner still
+counts unfiltered (pre-existing).
+
+Effort: L (9 surfaces + 52 tests). Fit: high — the typo contract is now
+consumer-wide; no filter lies, burns budget, or writes files on a typo.
+
 ## G36 — provider-literal honesty + setup --stdin (Status: complete 2026-09-21)
 
 Pain (G35 residuals): `update --provider NOSUCH` tracebacked (exit 1);

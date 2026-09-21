@@ -71,7 +71,11 @@ printf '%s' "$GROQ_API_KEY" | fp setup --provider groq --stdin
 
 Unknown `--provider` values exit 2 naming the literal (`setup`, `update`,
 and `verify` all validate before doing anything else — a typo never burns a
-heal run or a catalog refresh). Provider matching is case-insensitive.
+heal run or a catalog refresh). Provider matching is case-insensitive. Every
+other provider filter (`ask`, `models`, `providers health`, `status-page
+publish`, `benchmark`, `conformance run`, `rag ask`, `rag leaderboard`,
+`python -m freellmpool.discovery`) validates identically: typos exit 2 before
+any probe, refresh, embed, or file write.
 
 ## 4. Connect one coding agent (opencode)
 
