@@ -45,6 +45,7 @@ from typing import Any, cast
 
 from .battle import render_battle_markdown, run_battle
 from .config import resolve_alias, split_provider_model
+from .managed_cli import validate_mcp_provider
 from .mode import current_mode, render_quota_wise_status
 from .panel import (
     MAX_PANEL_COUNT,
@@ -115,7 +116,7 @@ TOOLS = [
                 },
                 "provider": {
                     "type": "string",
-                    "description": "Optional free provider id to restrict to (e.g. groq).",
+                    "description": "Optional free provider id to restrict to (e.g. groq; unknown or unverifiable ids return an error).",
                 },
                 "routing": {
                     "type": "string",
@@ -446,7 +447,7 @@ for _tool_def in TOOLS:
     if _tool_def["name"] == "free_llm_models":
         cast(dict[str, Any], _tool_def["inputSchema"])["properties"]["provider"] = {
             "type": "string",
-            "description": "Only list routes for this provider id (keeps the compact surface fully usable).",
+            "description": "Only list routes for this provider id (keeps the compact surface fully usable; unknown or unverifiable ids return an error).",
         }
 
 
@@ -609,9 +610,16 @@ def _tool_models(pool: Pool, snapshot: Any, args: dict[str, Any]) -> dict[str, A
     else:
         ids = [f"{p.id}/{m.name}" for p in pool.providers for m in p.models if m.enabled]
     only = args.get("provider")
+    validated: str | None = None
     if isinstance(only, str) and only.strip():
-        ids = [i for i in ids if i.split("/", 1)[0] == only.strip()]
+        verdict, payload = validate_mcp_provider(pool, [only])
+        if verdict == "error":
+            return _text(cast(str, payload), is_error=True)
+        validated = cast(list[str], payload)[0]
+        ids = [i for i in ids if i.split("/", 1)[0] == validated]
     if not ids:
+        if validated is not None:
+            return _text(f"no chat routes for provider '{validated}'")
         return _text("no providers configured")
     if args.get("full"):
         return _text("\n".join(ids))
@@ -673,10 +681,21 @@ def _tool_ask(pool: Pool, args: dict) -> dict:
     if not isinstance(prompt, str) or not prompt.strip():
         return _text("'prompt' is required", is_error=True)
     provider = args.get("provider")
-    providers = [provider] if provider else None
     p_filter, model = _resolve_model(args.get("model"), pool.env, {p.id for p in pool.providers})
     if p_filter is not None:
-        providers = p_filter
+        providers: list[str] | None = p_filter
+    elif isinstance(provider, str):
+        if not provider.strip():
+            providers = None
+        else:
+            verdict, payload = validate_mcp_provider(pool, [provider])
+            if verdict == "error":
+                return _text(cast(str, payload), is_error=True)
+            providers = cast(list[str], payload)
+    elif provider:
+        return _text("'provider' must be a string", is_error=True)
+    else:
+        providers = None
     routing = _routing_arg(args.get("routing"))
     started = time.monotonic()
     try:

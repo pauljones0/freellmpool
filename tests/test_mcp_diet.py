@@ -52,7 +52,8 @@ def test_battle_renderer_budgets_cells():
 
 def test_models_lists_compact_with_counts_and_full_escape():
     routes = [SimpleNamespace(name=f"p{i % 5}/m{i}", modality="chat") for i in range(100)]
-    pool = SimpleNamespace(managed=True, snapshot=lambda: SimpleNamespace(routes=routes))
+    pool = SimpleNamespace(managed=True, snapshot=lambda: SimpleNamespace(routes=routes),
+                           providers=["p0", "p1", "p2", "p3", "p4"])
     diet = _text_of(_call_tool(pool, {"name": "free_llm_models", "arguments": {}}))
     assert len(diet.splitlines()) < 100
     assert "100" in diet and '"full": true' in diet and "p0" in diet

@@ -159,6 +159,101 @@ def _resolve_cli_filter(literals: list[str], pool: Any,
     return canonical, False
 
 
+def validate_mcp_provider(pool: Any, literals: list[str]) -> tuple[str, list[str] | str]:
+    """Validate MCP provider filter literals, returning a verdict pair (G38).
+
+    ``("pass", canonical)`` when every literal is known anywhere (configured
+    pool, user catalog, external catalog, plugins, or registry).  Configured
+    pool ids win so the returned spelling is directly routable.  An unreadable
+    registry fails closed only for literals the locally available universe
+    cannot establish. ``("error", text)`` also covers ambiguous configured
+    ids that differ only by case. TOTAL on the ``list[str]`` domain.
+    """
+    pool_ids: dict[str, str] = {}
+    try:
+        members = getattr(pool, "providers", None)
+        if isinstance(members, list):
+            for member in members:
+                ident = member if isinstance(member, str) else getattr(member, "id", None)
+                if not isinstance(ident, str) or not ident:
+                    continue
+                key = ident.lower()
+                prior = pool_ids.get(key)
+                if prior is not None and prior != ident:
+                    return ("error", "ambiguous configured provider ids differ only by case: "
+                            + ", ".join(sorted({prior, ident})))
+                pool_ids[key] = ident
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        pool_ids = {}
+    extra: dict[str, str] = {}
+    extra_conflict: set[str] = set()
+
+    def add_extra(key: Any, canonical: Any) -> None:
+        if not isinstance(key, str) or not key or not isinstance(canonical, str) or not canonical:
+            return
+        normalized = key.lower()
+        prior = extra.get(normalized)
+        if prior is not None and prior != canonical:
+            extra_conflict.update((prior, canonical))
+        else:
+            extra[normalized] = canonical
+
+    try:
+        from .config import load_catalog as _load_catalog
+        for entry in _load_catalog():
+            add_extra(entry.id, entry.id)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .catalog import load_external_catalog as _load_external
+        for item in _load_external():
+            add_extra(item.slug, item.slug)
+            add_extra(item.name, item.slug)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from .plugins import registered_providers as _registered
+        for provider in _registered():
+            add_extra(provider.id, provider.id)
+    except Exception:  # noqa: BLE001
+        pass
+    if extra_conflict:
+        return ("error", "ambiguous provider ids differ only by case or alias: "
+                + ", ".join(sorted(extra_conflict)))
+    # The configured spelling is the executable identity; catalog aliases
+    # remain useful only when no configured provider owns the same key.
+    known = dict(extra)
+    known.update(pool_ids)
+    try:
+        registry = load_registry(effective_env())
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        canonical, unavailable = [], []
+        for literal in literals:
+            match = known.get(literal.strip().lower())
+            if match is None:
+                unavailable.append(literal)
+            else:
+                canonical.append(match)
+        if unavailable:
+            return ("error", "provider registry unavailable; cannot validate provider '"
+                    + ", ".join(unavailable) + "'")
+        return ("pass", canonical)
+    table = {pid.lower(): pid for pid in registry}
+    canonical, unknown = [], []
+    for literal in literals:
+        key = literal.strip().lower()
+        match = known.get(key, table.get(key))
+        if match is None:
+            unknown.append(literal)
+        else:
+            canonical.append(match)
+    if unknown:
+        known = ", ".join(sorted(registry))
+        return ("error", "unknown provider '" + ", ".join(unknown)
+                + "'. Known registry ids: " + known)
+    return ("pass", canonical)
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     from datetime import UTC, datetime
 
