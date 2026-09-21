@@ -49,7 +49,7 @@
 schedule.</strong> Each snapshot below is a real tiny request sent to every configured
 provider — not a guess from docs or dashboards.</p>
 
-<div class="note" id="stale">Snapshot taken <code>2026-09-21T05:03:53Z</code>
+<div class="note" id="stale">Snapshot taken <code>2026-09-21T12:56:54Z</code>
 <span id="age"></span> — treat snapshots older than 12 hours as stale. Snapshots refresh
 on a 6-hour schedule; intraday outages between snapshots will not appear here.</div>
 
@@ -66,6 +66,7 @@ on a 6-hour schedule; intraday outages between snapshots will not appear here.</
 <h2>History</h2>
 <table>
 <tr><th>Snapshot (UTC)</th><th>Ok/total</th></tr>
+<tr><td>2026-09-21T12:56:54Z</td><td class="num">0/4</td></tr>
 <tr><td>2026-09-21T05:03:53Z</td><td class="num">0/4</td></tr>
 <tr><td>2026-09-20T20:53:37Z</td><td class="num">0/4</td></tr>
 <tr><td>2026-09-20T16:12:50Z</td><td class="num">0/4</td></tr>
@@ -86,7 +87,7 @@ source). Observed by this project's own health probes; your keys and quotas may 
 <script>
 (function() {
   var el = document.getElementById("age");
-  var taken = Date.parse("2026-09-21T05:03:53Z");
+  var taken = Date.parse("2026-09-21T12:56:54Z");
   if (!el || isNaN(taken)) return;
   var mins = Math.max(0, Math.round((Date.now() - taken) / 60000));
   var label = mins < 90 ? mins + " min ago" : Math.round(mins / 60) + " h ago";
