@@ -79,7 +79,7 @@ any probe, refresh, embed, or file write.
 
 ## 4. Connect one coding agent (opencode)
 
-Install opencode, then check it:
+Before this step, finish steps 1–3 above and install opencode with the install block; the command below verifies tool routes, starts the proxy if needed, and replaces itself with opencode.
 
 ```sh
 curl -fsSL https://opencode.ai/install | bash
@@ -87,65 +87,66 @@ export PATH="$HOME/.opencode/bin:$PATH"
 opencode --version
 ```
 
-See what freellmpool recommends for opencode (print-only recipe, changes
-nothing):
+Preview the config the launcher will write (print-only — the launcher writes it for you):
 
 ```sh
 fp code opencode
 ```
 
-Save the project config it describes (loopback proxy, no key needed on
-`127.0.0.1`):
+Run one command — it verifies tool routes (bounded: at most 20 probes,
+45s each), starts the loopback proxy if needed, and becomes opencode:
 
 ```sh
-cat > opencode.json <<'EOF'
-{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "freellmpool/agent",
-  "provider": {
-    "freellmpool": {
-      "name": "freellmpool (free pool)",
-      "npm": "@ai-sdk/openai-compatible",
-      "options": {
-        "baseURL": "http://localhost:8080/v1"
-      },
-      "models": { "agent": {}, "spread": {}, "auto": {}, "fast": {}, "quality": {}, "fair": {} }
-    }
-  }
-}
-EOF
+fp agent-start --port 8080 opencode -- run -m freellmpool/agent "Reply with exactly: AGENT_OK"
 ```
 
-Agents need tool-capable routes. Record fresh capability evidence (bounded:
-at most 20 probes, 45s each):
+On success it prints a seven-line `freellmpool: ...` receipt (endpoint, harness, model, auth, tools_ready, proxy, config) and becomes opencode; the proxy keeps running after opencode exits.
 
-```sh
-fp verify --limit 20 --timeout 45
-```
+Only `freellmpool/<alias>` model names route through the proxy; other `a/b` entries in the generated config are menu entries only.
 
-Look for at least one line ending in `tools=pass`. If none pass, wait a few
-minutes and re-run — evening out free capacity is normal.
-
-Terminal 1 — keep the proxy running (loopback only, port 8080):
-
-```sh
-fp proxy --port 8080
-```
-
-Terminal 2 — your first agent reply:
-
-```sh
-opencode run -m freellmpool/agent "Reply with exactly: AGENT_OK"
-```
-
-Done: a coding agent just answered through free models, and you spent $0.
+Done: one command verified tool routes, started the proxy, and got a
+coding agent answering through free models — you spent $0.
 For the managed multi-client setup (persistent proxy key, editor profiles,
 rollback): [integrations/setup/README.md](../integrations/setup/README.md).
 For all agent profiles and routing aliases: [docs/INTEGRATIONS.md](INTEGRATIONS.md).
+Every profile `fp code` prints points at this same loopback proxy, so installed clients and the launcher stay in sync.
+
+The command writes the proxy config for you (keyless, or protected when a
+proxy key resolves); the managed setup
+([integrations/setup/README.md](../integrations/setup/README.md)) adds
+persistent keys and long timeouts, as shown by `fp code`.
+
+If something fails, match the line below (exit 2 is usage, exit 3 is
+operational):
+
+| You see | Meaning |
+|---|---|
+| `freellmpool: agent launch requires POSIX (Linux or macOS); Windows is not supported` | exit 2: agent launch needs Linux or macOS |
+| `freellmpool: opencode not found on PATH — install it first (https://opencode.ai/install)` | exit 2: install the harness binary first |
+| `freellmpool: invalid --port 99999: must be 1-65535` | exit 2: pick a valid port |
+| `freellmpool: unknown provider 'typo'. Known registry ids: ... (model must be an alias [auto, agent, spread, fast, quality, fair], provider/model, or a bare name)` | exit 2: fix `--model` |
+| `freellmpool: invalid local restrictions; repair providers.toml` | exit 3: fix the local catalog, then re-run |
+| `freellmpool: no eligible routes — run freellmpool status, then freellmpool update or freellmpool setup as directed` | exit 3: cold pool, follow the named command |
+| `freellmpool: all allowances exhausted — wait for reset (see freellmpool quota)` | exit 3: quotas spent, wait for reset |
+| `freellmpool: agent-start requires the managed router (unset FREELLMPOOL_LEGACY_ROUTER)` | exit 3: unset the legacy flag |
+| `freellmpool: provider registry unreadable — cannot judge routes (reinstall or clear the policy bundle)` | exit 3: registry broken, reinstall or clear the bundle |
+| `freellmpool: verification found no tool-capable route (see verify output above); run the named command, or wait and re-run` | exit 3: no tool route verified |
+| `freellmpool: auth mismatch on port 8080: the flag key was rejected (401); fix the key and re-run` | exit 3: wrong proxy key |
+| `freellmpool: proxy on port 8080 requires a key (protected); pass --api-key or set FREELLMPOOL_PROXY_KEY` | exit 3: the live proxy needs its key |
+| `freellmpool: port 8080 serves a non-freellmpool service (foreign); free the port or pick another with --port` | exit 3: something else owns the port |
+| `freellmpool: proxy on port 8080 has no ready routes (see freellmpool status); gave up after 60s` | exit 3: live proxy, zero ready routes |
+| `freellmpool: proxy on port 8080 did not become ready within 60s` | exit 3: the proxy never became ready — free the port or pick another |
+
+If verify exits 3 naming `update`, `setup`, or `status`, run that command; if it exits 3 after probing, wait a few minutes and re-run.
+
+If exit 3 persists across re-runs, `fp verify --heal --features tools --limit 20` forces a fresh probe round.
+
+agent-side 429s mean stale evidence — re-run the agent-start command.
 
 ## Conservative defaults used here
 
 Every knob this guide exposes is pinned low: `--max-tokens 32`,
-`--timeout 60` (45 for verify probes), `verify --limit 20`, one `-p`
-provider pin, loopback-only proxy, and the `agent` routing alias instead of
-wide fan-out. Raise them once you know your free allowances.
+`--timeout 60`, orchestration flags (`--verify-limit 20`,
+`--verify-timeout 45`), one `-p` provider pin, loopback-only proxy, and
+the `agent` routing alias instead of wide fan-out. Raise them once you
+know your free allowances.

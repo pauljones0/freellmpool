@@ -28,6 +28,15 @@ DoctorStatus = Literal["ok", "warn", "fail"]
 _DEFAULT_PROXY = "http://localhost:8080"
 
 
+def _opencode_json_snippet() -> str:
+    """Render the opencode recipe from the launcher builder (single-sourced)."""
+    from .launcher import opencode_config
+
+    return json.dumps(
+        opencode_config(8080, "agent", authenticated=True, host="localhost"), indent=2
+    )
+
+
 @dataclass(frozen=True)
 class DoctorCheck:
     """One sanity check a profile doctor can report (dry-run) or perform.
@@ -108,34 +117,7 @@ _PROFILES: tuple[Profile, ...] = (
             "fast": "lowest-latency free model for quick iterations",
         },
         config_snippets={
-            "opencode.json": json.dumps(
-                {
-                    "$schema": "https://opencode.ai/config.json",
-                    "model": "freellmpool/agent",
-                    "provider": {
-                        "freellmpool": {
-                            "name": "freellmpool (free pool)",
-                            "npm": "@ai-sdk/openai-compatible",
-                            "options": {
-                                "baseURL": f"{_DEFAULT_PROXY}/v1",
-                                "apiKey": "{env:FREELLMPOOL_PROXY_KEY}",
-                                "headerTimeout": 600_000,
-                                "timeout": 600_000,
-                                "chunkTimeout": 120_000,
-                            },
-                            "models": {
-                                "agent": {"name": "Agent — strongest healthy tier"},
-                                "spread": {"name": "Spread — maximum pool breadth"},
-                                "auto": {"name": "Auto — proxy default routing"},
-                                "fast": {"name": "Fast — lowest latency"},
-                                "quality": {"name": "Quality — capability matched"},
-                                "fair": {"name": "Fair — provider quota spread"},
-                            },
-                        }
-                    },
-                },
-                indent=2,
-            ),
+            "opencode.json": _opencode_json_snippet(),
             "env exports": (
                 f"export OPENAI_BASE_URL={_DEFAULT_PROXY}/v1\n"
                 "export OPENAI_API_KEY=anything   # ignored by freellmpool"

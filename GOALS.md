@@ -1677,6 +1677,42 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G39 — one-command agent start via agent-start (Status: implemented 2026-09-21, uncommitted; full gate + push pending on heavy lock)
+
+Pain: G8's `fp claude` launched on unready proxies, never validated the
+model/registry/quota admission, and left proxy lifecycle (status/stop/
+pidfile attribution) to folklore.
+
+Bet: `agent-start` stages S0–S7 (POSIX/binary/port/registry/model
+validation, read-only managed admission, real tool-verify evidence,
+key resolution, probe-then-reuse-or-spawn with child-side pidfiles,
+opencode config, seven-line receipt, exec) with rollback on every
+spawned-child failure; `proxy --status/--stop` manage the loopback
+proxy via pidfile + cmdline verification; the opencode recipe is
+single-sourced from the launcher builder.
+
+Execute: plan v3.4 3xPASS (scope/feasibility/completeness, 0 MUSTs) →
+TDD 61 pins + 4-case hermetic acceptance green (89 focused +
+4 hermetic, incl. gate warning flags) + ruff + mypy-strict clean on
+touched modules; existing suites (launcher/cli/bootstrap/profiles/
+opencode-packages) green unedited.
+
+Done when:
+- [x] S0–S7 + probe/readiness/status/stop/pidfile + builder-backed
+  snippet + test-registry seam + guide rewrite + wheel script.
+- [x] Focused 89/89 + hermetic 4/4 green (incl. `-W error` warning
+  flags); ruff + mypy-strict clean on touched modules.
+- [ ] Full gate rc0 + wheel job + live audit + push (waiting on heavy
+  lock — NOT done; changes uncommitted in worktree).
+
+Honesty residuals: conflict quota rows read as exhausted (fail-closed);
+foreign 503-empty retries to the deadline; union `a/b` config entries
+are menu-only (proxy routes aliases); stop's kill-0 reads zombies alive
+until reaped; SIGTERM-may-orphan untested (rerun reuses, stop cleans).
+
+Effort: L (61 pins + hermetic + wheel + audit). Fit: high — one
+validated command replaces the G8 multi-terminal ritual.
+
 ## G38 — MCP provider-filter honesty: validate-first + fail-closed (Status: ported+reviewed 2026-09-21; full gate + push pending on heavy lock)
 
 Pain: MCP `provider` typos silently listed nothing (`models`) or

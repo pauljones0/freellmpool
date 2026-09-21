@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
+import os
 import re
 import time
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 REGISTRY_PATH = Path(__file__).with_name("provider_registry.json")
 
@@ -116,12 +119,43 @@ def _apply_renewals(registry: dict[str, dict[str, Any]], env: Mapping[str, str])
         return
 
 
+def _require_loopback_test_bases(result: dict[str, dict[str, Any]]) -> None:
+    """Fail closed unless every test-registry api_base_url is loopback-only."""
+    for provider_id, provider in result.items():
+        base = provider.get("api_base_url")
+        if not base:
+            continue
+        if not isinstance(base, str):
+            raise ValueError(f"test registry provider {provider_id!r} has an invalid api_base_url")
+        host = urlsplit(base).hostname or ""
+        if host.casefold().rstrip(".") == "localhost":
+            continue
+        try:
+            loopback = ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            loopback = False
+        if not loopback:
+            raise ValueError(f"test registry provider {provider_id!r} is not loopback-only")
+
+
 def load_registry(env: Mapping[str, str] | None = None, *, renew_evidence: bool = True) -> dict[str, dict[str, Any]]:
-    """Read reviewed rules; private callers can use a validated policy bundle."""
-    document = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    if env is not None:
-        from .policy_updates import load_policy_document
-        document = load_policy_document(env, document)
+    """Read reviewed rules; private callers can use a validated policy bundle.
+
+    TEST-ONLY SEAM (G39 hermetic acceptance): when FREELLMPOOL_TEST_REGISTRY_PATH
+    is set, the JSON document there replaces the packaged registry (policy
+    overlay skipped) after the same schema validation plus a loopback check.
+    Never set this in production; no shipped code path sets it.
+    """
+    test_path = env.get("FREELLMPOOL_TEST_REGISTRY_PATH") if env is not None else None
+    if not test_path:
+        test_path = os.environ.get("FREELLMPOOL_TEST_REGISTRY_PATH")
+    if test_path:
+        document = json.loads(Path(test_path).expanduser().read_text(encoding="utf-8"))
+    else:
+        document = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        if env is not None:
+            from .policy_updates import load_policy_document
+            document = load_policy_document(env, document)
     if not isinstance(document, dict) or document.get("schema") != 1 or not isinstance(document.get("providers"), list):
         raise ValueError("Unsupported provider registry schema")
     result: dict[str, dict[str, Any]] = {}
@@ -137,6 +171,8 @@ def load_registry(env: Mapping[str, str] | None = None, *, renew_evidence: bool 
         if "inference_auth" in provider and provider["inference_auth"] not in ("none", "bearer"):
             raise ValueError("Unsupported provider inference authentication policy")
         result[provider_id] = provider
+    if test_path:
+        _require_loopback_test_bases(result)
     if env is not None and renew_evidence:
         _apply_renewals(result, env)
     return result

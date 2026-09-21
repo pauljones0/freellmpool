@@ -1901,6 +1901,187 @@ def _resolve_proxy_bind(args: argparse.Namespace) -> tuple[str, int]:
     return host, raw_port
 
 
+def _write_managed_pidfile(port: int) -> None:
+    """Record a bound proxy child for status/stop (child-side, marker-gated).
+
+    Only a proxy that actually bound writes, and only when the spawner passed
+    FREELLMPOOL_MANAGED_PIDFILE — the bind is the lock, so a bind-loser can
+    never clobber the winner's record. Unwritable: warn and keep serving.
+    """
+    import json
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    marker = os.environ.get("FREELLMPOOL_MANAGED_PIDFILE")
+    if not marker:
+        return
+    path = Path(marker)
+    payload = {
+        "pid": os.getpid(),
+        "port": port,
+        "started": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+    data = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+    tmp = path.parent / f".proxy-{port}.pid.{os.getpid()}.tmp"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except OSError:
+        import contextlib
+
+        with contextlib.suppress(OSError):
+            tmp.unlink()
+        print(
+            f"freellmpool: warning: cannot write proxy record for port {port}; "
+            "stop/status degraded",
+            file=sys.stderr,
+        )
+
+
+def _wait_pid_exit(pid: int, timeout: float = 5.0) -> bool:
+    """Poll kill(pid, 0) until the process dies or the window ends."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        except PermissionError:
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.1)
+
+
+def _proxy_status(port: int, cli_key: str | None) -> int:
+    import contextlib
+
+    from .artifacts import default_data_dir
+    from .launcher import probe_gateway, proxy_tools_ready_count, resolve_proxy_auth
+
+    key, _ = resolve_proxy_auth(cli_key)
+    _, reason = probe_gateway(port, key)
+    pidfile = default_data_dir() / f"proxy-{port}.pid"
+    if reason in ("ready", "no-routes"):
+        from .launcher import _verified_pidfile_pid
+
+        pid = _verified_pidfile_pid(str(pidfile))
+        if pid is None and pidfile.exists():
+            with contextlib.suppress(OSError):
+                pidfile.unlink()
+        tools = proxy_tools_ready_count(port, key)
+        print(
+            f"freellmpool: proxy on port {port} is live "
+            f"(pid {pid if pid is not None else 'unknown'}, {tools} tools-ready routes)"
+        )
+        return 0
+    if reason == "auth-mismatch":
+        print(
+            f"freellmpool: proxy on port {port} is live but protected "
+            "(provide the key to inspect)"
+        )
+        return 0
+    if reason == "unreachable":
+        with contextlib.suppress(OSError):
+            pidfile.unlink(missing_ok=True)
+        print(f"freellmpool: no proxy on port {port} (nothing listening)")
+        return 1
+    print(f"freellmpool: port {port} serves a non-freellmpool service (foreign)")
+    return 1
+
+
+def _proxy_stop(port: int) -> int:
+    import contextlib
+    import json
+
+    from .artifacts import default_data_dir
+    from .launcher import verify_proxy_process
+
+    pidfile = default_data_dir() / f"proxy-{port}.pid"
+    try:
+        payload = json.loads(pidfile.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload = None
+    raw_pid = payload.get("pid") if isinstance(payload, dict) else None
+    pid: int | None
+    try:
+        pid = None if raw_pid is None else int(raw_pid)
+    except (TypeError, ValueError):
+        pid = None
+    if payload is None and not pidfile.exists():
+        print(f"freellmpool: no managed proxy record for port {port}; nothing to stop")
+        return 0
+    if pid is None or pid < 1:
+        with contextlib.suppress(OSError):
+            pidfile.unlink(missing_ok=True)
+        print(
+            f"freellmpool: removed stale proxy record for port {port} "
+            "(pid unknown is not a freellmpool proxy)"
+        )
+        return 0
+    verdict = verify_proxy_process(pid)
+    if verdict is None:
+        print(
+            f"freellmpool: cannot verify pid {pid} (no ps or /proc); refusing to signal",
+            file=sys.stderr,
+        )
+        return 3
+    if verdict is False:
+        with contextlib.suppress(OSError):
+            pidfile.unlink(missing_ok=True)
+        print(
+            f"freellmpool: removed stale proxy record for port {port} "
+            f"(pid {pid} is not a freellmpool proxy)"
+        )
+        return 0
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        dead = True
+    except PermissionError:
+        dead = False
+    else:
+        dead = _wait_pid_exit(pid, 5.0)
+    if not dead:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            dead = True
+        except PermissionError:
+            dead = False
+        else:
+            dead = _wait_pid_exit(pid, 5.0)
+    if dead:
+        with contextlib.suppress(OSError):
+            pidfile.unlink(missing_ok=True)
+        print(f"freellmpool: stopped proxy on port {port} (pid {pid})")
+        return 0
+    print(
+        f"freellmpool: proxy on port {port} (pid {pid}) did not exit; record kept",
+        file=sys.stderr,
+    )
+    return 3
+
+
+def _proxy_status_stop(args: argparse.Namespace) -> int:
+    from .launcher import LauncherError, _require_posix
+
+    try:
+        _require_posix()
+    except LauncherError as exc:
+        print(f"freellmpool: {exc}", file=sys.stderr)
+        return 2
+    try:
+        _, port = _resolve_proxy_bind(args)
+    except ValueError as exc:
+        print(f"freellmpool: {exc}", file=sys.stderr)
+        return 2
+    if getattr(args, "stop", False):
+        return _proxy_stop(port)
+    return _proxy_status(port, getattr(args, "api_key", None))
+
+
 def cmd_proxy(args: argparse.Namespace) -> int:
     from .proxy import serve  # lazy: avoids http.server import on other paths
     from .request_security import RequestBoundaryPolicy
@@ -1912,6 +2093,9 @@ def cmd_proxy(args: argparse.Namespace) -> int:
         is_loopback_host,
         safe_base_url,
     )
+
+    if getattr(args, "status", False) or getattr(args, "stop", False):
+        return _proxy_status_stop(args)
 
     try:
         bind_host, bind_port = _resolve_proxy_bind(args)
@@ -2002,6 +2186,7 @@ def cmd_proxy(args: argparse.Namespace) -> int:
     tick_store = heal_executor.ticks if heal_executor is not None else None
     httpd = serve(pool, host=bind_host, port=bind_port, api_key=proxy_key,
                   allowed_authorities=allowed_authorities, tick_store=tick_store)
+    _write_managed_pidfile(bind_port)
     n_models = sum(len(p.models) for p in pool.providers)
     auth_enabled = proxy_key is not None
     auth_note = "  auth: Bearer key required\n" if auth_enabled else ""
@@ -2871,6 +3056,12 @@ def cmd_claude(args: argparse.Namespace) -> int:
     return 0  # unreachable: launch exec-replaces on success
 
 
+def cmd_agent_start(args: argparse.Namespace) -> int:
+    from .launcher import agent_start
+
+    return agent_start(args)
+
+
 def cmd_code(args: argparse.Namespace) -> int:
     from .agents import list_agents, render
 
@@ -3540,6 +3731,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="explicit escape hatch: serve on a non-loopback bind with NO proxy key",
     )
+    p_proxy.add_argument(
+        "--status",
+        action="store_true",
+        default=False,
+        help="report whether the loopback proxy on --port is live (no serving)",
+    )
+    p_proxy.add_argument(
+        "--stop",
+        action="store_true",
+        default=False,
+        help="stop the managed proxy recorded for --port (no serving)",
+    )
     p_proxy.set_defaults(func=cmd_proxy)
 
     p_tailnet = sub.add_parser(
@@ -3673,16 +3876,51 @@ def build_parser() -> argparse.ArgumentParser:
     p_claude.add_argument("agent_args", nargs=argparse.REMAINDER, help="args after -- go to the agent")
     p_claude.set_defaults(func=cmd_claude)
 
+    from .managed_cli import _verification_timeout
+
+    p_agent_start = sub.add_parser(
+        "agent-start",
+        help="verify tool routes, start the loopback proxy if needed, and exec into the agent",
+        description=(
+            "Verify tool-capable routes, start the loopback proxy if needed, and replace "
+            "this process with the coding agent. Prerequisites: finish freellmpool setup "
+            "(steps 1-3 of docs/FREE_SETUP.md) and install the harness binary first. "
+            "POSIX-only (Linux/macOS); Windows is not supported."
+        ),
+        epilog=(
+            "Options must precede the harness: `agent-start --port 9000 opencode -- run`. "
+            "Everything after the harness goes to the agent. Conflict rows (remaining 0.0 "
+            "with changed definitions) read as exhausted (fail-closed)."
+        ),
+    )
+    p_agent_start.add_argument("--port", type=int, default=8080,
+                               help="loopback gateway port 1-65535 (default 8080)")
+    p_agent_start.add_argument("--model", default=None,
+                               help="model/alias (default: agent for opencode, claude-3-5-sonnet for claude)")
+    p_agent_start.add_argument("--api-key", default=None,
+                               help="proxy key (or set FREELLMPOOL_PROXY_KEY)")
+    p_agent_start.add_argument("--verify-limit", type=int, choices=range(1, 33), default=20,
+                               help="max verify targets 1-32 (default 20)")
+    p_agent_start.add_argument("--verify-timeout", type=_verification_timeout, default=45,
+                               help="per-probe timeout in seconds (default 45)")
+    p_agent_start.add_argument("harness", choices=("claude", "opencode"),
+                               help="agent harness to exec into")
+    p_agent_start.add_argument("agent_args", nargs=argparse.REMAINDER,
+                               help="args after the harness go to the agent")
+    p_agent_start.set_defaults(func=cmd_agent_start)
+
     return parser
 
 
-_BOOTSTRAP_COMMANDS = frozenset({"ask", "battle", "tokenmax", "proxy", "mcp"})
+_BOOTSTRAP_COMMANDS = frozenset({"ask", "battle", "tokenmax", "proxy", "mcp", "agent-start"})
 _BOOTSTRAP_SUBCOMMANDS = frozenset({("jobs", "jobs_command", "run"), ("recipe", "recipe_command", "run")})
 
 
 def _needs_bootstrap(args: argparse.Namespace) -> bool:
     """Route-needing commands refresh missing discovery state on first run."""
     command = getattr(args, "command", None)
+    if command == "proxy" and (getattr(args, "status", False) or getattr(args, "stop", False)):
+        return False
     if command in _BOOTSTRAP_COMMANDS:
         return True
     return any(
