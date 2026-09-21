@@ -189,14 +189,20 @@ def run_heal(pool: Any, store: HealStore, *, trigger: str, limit: int = HEAL_MAX
              budget_seconds: float | None = None) -> dict[str, Any]:
     """Run one bounded heal; see design v2 (/tmp/g31_autoheal_design_v2.md).
 
-    Returns {"ran", "reason", "targets", "passes", "probes", "skipped"}.
-    Probes count dispatched calls; skipped counts allowance-denied calls
-    plus stale-target features. Never raises for heal-domain failures;
+    Returns {"ran", "reason", "targets", "passes", "probes", "skipped",
+    "attempted"}. Probes count dispatched (returned) calls; attempted
+    counts spy entries past the wallbox check (returns + throws);
+    skipped counts allowance-denied calls plus stale-target
+    features. Reasons: healthy/busy/cooldown/budget/empty/ok/
+    capped/wall-box/no-contact/io-error; no-contact means zero
+    upstream contact (attempted 0: budget/cooldown untouched, run
+    still recorded). Never raises for heal-domain failures;
     OSError during state/evidence writes becomes reason "io-error".
     """
 
     emit = out or (lambda message: print(message, file=sys.stderr))
-    zero = {"targets": [], "passes": 0, "probes": 0, "skipped": 0}
+    zero = {"targets": [], "passes": 0, "probes": 0, "skipped": 0,
+            "attempted": 0}
     ready = pool.managed_status().get("tools_ready", 0)
     if not isinstance(ready, int) or ready >= minimum:
         return {"ran": False, "reason": "healthy", **zero}
@@ -229,13 +235,33 @@ def _worst_case_calls(features: tuple[str, ...]) -> int:
     return len(features) + (1 if "tools" in features else 0)
 
 
+def _dominant_cause(classes: list[str], denied: int, wallboxed: bool) -> str:
+    """Best-effort cause phrase for a zero-pass run (G35, display-only).
+
+    Plurality over recorded non-"verified" classes, alphabetical
+    tie-break, rendered with a `likely` qualifier (classifications
+    are inconclusive by design). Empty-set fallbacks are bare
+    run-mechanic facts. "unknown" is defensive (believed
+    unreachable: every counted entry records or wallbox-discards).
+    """
+    votes = sorted(c for c in classes if c != "verified")
+    if votes:
+        return f"likely {max(sorted(set(votes)), key=votes.count)}"
+    if denied > 0:
+        return "denied"
+    if wallboxed:
+        return "interrupted"
+    return "unknown"
+
+
 def _save_best_effort(store: HealStore, state: dict[str, Any], now: datetime,
                        trigger: str, probed: list[str], passes: int,
-                       dispatched: int, skipped: int) -> None:
+                       dispatched: int, skipped: int, attempted: int) -> None:
     """Record a partial history entry; callers already committed to io-error."""
     entry: dict[str, Any] = {"at": now.isoformat(), "trigger": trigger,
                              "targets": probed, "passes": passes,
-                             "probes": dispatched, "skipped": skipped}
+                             "probes": dispatched, "skipped": skipped,
+                             "attempted": attempted}
     state["day"] = _utc_day(now)
     state["last_heal"] = entry
     state["history"] = [entry, *state["history"]][:HEAL_HISTORY_KEPT]
@@ -253,11 +279,19 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
     from .maintenance import select_verification_targets
     from .router import Target
 
-    zero = {"targets": [], "passes": 0, "probes": 0, "skipped": 0}
+    zero = {"targets": [], "passes": 0, "probes": 0, "skipped": 0,
+            "attempted": 0}
     now = store._clock()
     state = store.view()
     blocked = gate_open(state, now)
     if blocked is not None:
+        # TOCTOU note: callers pre-check the gate unlocked, so a lost
+        # race may emit once from the daemon. Accurate when fired
+        # (the locked re-check really blocked); untested (race).
+        if blocked == "cooldown":
+            emit(f"heal skipped: on cooldown until {state['cooldown_until']}")
+        else:
+            emit("heal skipped: daily heal budget exhausted (runs/probes)")
         return {"ran": False, "reason": blocked, **zero}
     budget = budget_seconds if budget_seconds is not None else heal_budget_seconds(pool.env)
     # Review fix 1: clamp the selector input — a caller --limit must never
@@ -269,9 +303,11 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
     targets = [Target(r.provider, r.model, 0, r.metadata.get("context")) for r in routes]
     selected = select_verification_targets(targets, pool.conformance, clamped)
     if not selected:
-        emit("heal: no verification targets; run freellmpool update")
+        emit("heal: no verification targets; run freellmpool update, "
+             "or freellmpool setup to connect access")
         entry: dict[str, Any] = {"at": now.isoformat(), "trigger": trigger, "targets": [],
-                                 "passes": 0, "probes": 0, "skipped": 0}
+                                 "passes": 0, "probes": 0, "skipped": 0,
+                                 "attempted": 0}
         state["day"] = _utc_day(now)
         state["last_heal"] = entry
         state["history"] = [entry, *state["history"]][:HEAL_HISTORY_KEPT]
@@ -292,7 +328,7 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
              if r.modality == "chat" and r.automatic}
     call_impl = call_fn or pool.probe_call
     stream_impl = stream_fn or pool.probe_stream
-    dispatched = skipped = 0
+    dispatched = skipped = attempted = denied = 0
     deadline = store._monotonic() + budget
 
     def _check_wallbox() -> None:
@@ -302,23 +338,27 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
             raise _WallBoxStop
 
     def spy_call(provider: Any, model: str, messages: Any, **kwargs: Any) -> Any:
-        nonlocal dispatched, skipped
+        nonlocal dispatched, skipped, attempted, denied
         _check_wallbox()
+        attempted += 1  # G35: entries past the check count, return or throw
         try:
             reply = call_impl(provider, model, messages, **kwargs)
         except AllowanceDenied:
             skipped += 1
+            denied += 1
             raise
         dispatched += 1
         return reply
 
     def spy_stream(provider: Any, model: str, messages: Any, **kwargs: Any) -> Any:
-        nonlocal dispatched, skipped
+        nonlocal dispatched, skipped, attempted, denied
         _check_wallbox()
+        attempted += 1  # G35: entries past the check count, return or throw
         try:
             chunks = list(stream_impl(provider, model, messages, **kwargs))
         except AllowanceDenied:
             skipped += 1
+            denied += 1
             raise
         dispatched += 1
         return chunks
@@ -329,6 +369,7 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
     passes = 0
     rate_limited = 0
     recorded = 0
+    classes: list[str] = []  # G35: recorded classes feed the cause phrase
     wallboxed = False
     capped = False
     try:
@@ -369,6 +410,7 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
                                         status=result["status"],
                                         classification=result["classification"])
                 recorded += 1
+                classes.append(result["classification"])
                 if result["classification"] == "rate_limit":
                     rate_limited += 1
             probed.append(target.name)
@@ -377,22 +419,32 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
     except OSError as exc:
         emit(f"heal aborted: evidence unwritable ({exc.__class__.__name__})")
         _save_best_effort(store, state, now, trigger, probed, passes, dispatched,
-                           skipped)
+                           skipped, attempted)
         return {"ran": True, "reason": "io-error", "targets": probed,
-                "passes": passes, "probes": dispatched, "skipped": skipped}
+                "passes": passes, "probes": dispatched, "skipped": skipped,
+                "attempted": attempted}
     restored = pool.managed_status().get("tools_ready", 0) >= minimum
     rate = (rate_limited / recorded) if recorded else 0.0
     low_yield = passes == 0 or (rate >= 0.5 and passes < minimum)
     consecutive = 0 if restored else (
         state["consecutive_low_yield"] + 1 if low_yield else state["consecutive_low_yield"])
     wait = min(HEAL_COOLDOWN_BASE_SECONDS * (2 ** consecutive), HEAL_COOLDOWN_MAX_SECONDS)
+    # G35 no-contact: zero upstream contact learns nothing and inflicts
+    # nothing — record the run but skip the three budget mutations
+    # (runs/consecutive/cooldown keep previous values). attempted>0
+    # keeps FULL pacing: all-throw storms still burn + double.
+    # `and not probed` closes the degenerate features=() hole (a
+    # vacuous pass-all run must not read as no-contact).
+    no_contact = attempted == 0 and not probed
     entry = {"at": now.isoformat(), "trigger": trigger, "targets": probed,
-             "passes": passes, "probes": dispatched, "skipped": skipped}
+             "passes": passes, "probes": dispatched, "skipped": skipped,
+             "attempted": attempted}
     state["day"] = _utc_day(now)
-    state["runs_today"] += 1
-    state["probes_today"] += dispatched
-    state["consecutive_low_yield"] = consecutive
-    state["cooldown_until"] = (now + timedelta(seconds=wait)).isoformat()
+    if not no_contact:
+        state["runs_today"] += 1
+        state["consecutive_low_yield"] = consecutive
+        state["cooldown_until"] = (now + timedelta(seconds=wait)).isoformat()
+    state["probes_today"] += dispatched  # 0-adding on no-contact
     state["last_heal"] = entry
     state["history"] = [entry, *state["history"]][:HEAL_HISTORY_KEPT]
     try:
@@ -400,7 +452,8 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
     except OSError as exc:
         emit(f"heal aborted: state unwritable ({exc.__class__.__name__})")
         return {"ran": True, "reason": "io-error", "targets": probed,
-                "passes": passes, "probes": dispatched, "skipped": skipped}
+                "passes": passes, "probes": dispatched, "skipped": skipped,
+                "attempted": attempted}
     try:
         pool.flush()
     except OSError as exc:
@@ -408,13 +461,25 @@ def _run_locked(pool: Any, store: HealStore, *, trigger: str, limit: int,
         # still surfaced loudly (review fix 6).
         emit(f"heal aborted: flush failed ({exc.__class__.__name__})")
         return {"ran": True, "reason": "io-error", "targets": probed,
-                "passes": passes, "probes": dispatched, "skipped": skipped}
+                "passes": passes, "probes": dispatched, "skipped": skipped,
+                "attempted": attempted}
     suffix = f", {skipped} skipped" if skipped else ""
-    emit(f"heal: {passes}/{len(probed)} re-verified, {dispatched} probes{suffix}")
-    reason = "wall-box" if wallboxed else ("capped" if capped else "ok")
+    cause = ""
+    if no_contact:
+        cause = " (no upstream contact; run not counted)"
+    elif passes == 0 and attempted > 0:
+        cause = f" (attempted {attempted}, {_dominant_cause(classes, denied, wallboxed)})"
+    emit(f"heal: {passes}/{len(probed)} re-verified, {dispatched} probes{suffix}{cause}")
+    if no_contact:
+        # Capped-no-contact keeps reason "capped" (frozen budget state:
+        # the daemon consumes instead of re-running a futile no-op
+        # every 60s); wallbox/stale no-contact retains for fast retry.
+        reason = "capped" if capped else "no-contact"
+    else:
+        reason = "wall-box" if wallboxed else ("capped" if capped else "ok")
     return {"ran": True, "reason": reason,
             "targets": probed, "passes": passes, "probes": dispatched,
-            "skipped": skipped}
+            "skipped": skipped, "attempted": attempted}
 
 
 # --- G33 proxy demand-driven heal (spike v2) ---
@@ -746,10 +811,12 @@ class HealExecutor:
             self._ticks.consume(now=now)  # gate persists; fresh ticks re-arm
             return {"acted": False, "reason": blocked}
         result = self._run()
-        if result.get("reason") != "busy" and not self._stop_event.is_set():
-            # Consume on every evaluated outcome except contention: heals,
-            # failures, and errors all re-arm via fresh ticks; only busy
-            # (transient, probe-free) retries on kept demand (spike v2 §2).
+        if result.get("reason") not in ("busy", "no-contact") and not self._stop_event.is_set():
+            # Consume on every evaluated outcome except transient
+            # probe-free ones: heals, failures, and errors all re-arm
+            # via fresh ticks; only busy (peer contention) and
+            # no-contact (nothing attempted upstream) retry on kept
+            # demand (spike v2 §2, extended G35).
             # Fresh time, not the pass-start stamp: a run that crossed a
             # window boundary must not rewrite the file backward (021#1).
             # Skipped entirely once stopped: the shutdown flush owns the

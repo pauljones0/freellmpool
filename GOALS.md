@@ -1677,6 +1677,50 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G35 — heal honesty: no silent 0-probe lockouts (Status: complete 2026-09-21)
+
+Pain (fresh-consumer audit + parent repro): `verify --heal` printed
+"0/4 re-verified, 0 probes" with flat rows and no reason, burned a
+daily run, armed a 2h cooldown, and silently skipped heal on retry;
+cold `status` prescribed `--heal`, which exits 3 with "run update".
+
+Bet: thrown probes count as attempted with a likely-cause
+parenthetical; zero-contact runs are recorded but exempt from
+budget/cooldown; every skipped gate announces itself; cold
+prescriptions name update/setup; exit 3 documented.
+
+Execute: plan v1 3xFAIL (blanket exemption defeated G31 pacing;
+filtered-zero contradiction; matrix/test gaps) → v2 2xFAIL →
+v3 2PASS/1FAIL (pin enumeration) → v4 3xPASS → TDD implement →
+adversarial review → gate → push.
+
+Done when:
+- [x] Attempt accounting + likely-cause parenthetical; no-contact
+  exemption (attempted==0 only); attempted>0 keeps full pacing
+  (regression-pinned); gate skips announce; executor retains on
+  no-contact; `chat_routes` key; cold prescriptions; exit legend.
+- [x] Full strict suite green (3337 collected, rc0) + ruff +
+  strict mypy + docs + coverage (lines 88.23%, branches 79.87%)
+  green; adversarial review SHIP; pushed.
+
+Honesty residuals: cause is best-effort over recorded classes
+(`likely` qualifier; bare mechanic fallbacks); wallbox/stale
+no-contact retries at daemon cadence (transient, zero upstream
+cost; capped-no-contact consumes instead — review caught the
+frozen-budget loop); TOCTOU single-emit possible (accurate,
+untested); features=() direct-API runs read vacuous-ok (guarded
+from no-contact, CLI can't construct); `--provider PROVIDER`
+literal + setup `--stdin` parked for G36.
+
+Review: first verdict BLOCK (missing verify-path composition
+pins — added; capped retain loop — split to capped-consumes;
+features=() hole — probed guard; exempt-save pin rewritten to
+the shared tail) + 2 acknowledged notes (mixed-run attribution
+as designed; lease-acquisition shape already covered).
+
+Effort: M (accounting + emits + prescriptions + 37 tests). Fit:
+high — the tool's own recovery stops lying and locking out.
+
 ## G34 — warning-while-serving for preserved rows (Status: complete 2026-09-21)
 
 Pain: a provider whose listing comes back adverse keeps serving

@@ -133,6 +133,28 @@ routes still serve — and it clears on the next successful update.
 `models` stays a pure route catalog and readiness stays a live
 routability axis; neither carries the warning by design.
 
+## Heal honesty (attempts, causes, skips)
+
+A heal summary counts three things: `probes` (calls that returned —
+spend), `attempted` (spy entries past the wall-box check, throws
+included), and `skipped` (allowance denials plus stale-admission
+features). When nothing passes but something was attempted, the
+summary names the dominant recorded classification — `heal: 0/4
+re-verified, 0 probes (attempted 12, likely rate_limit)` — so a
+0-probe run always says why. Runs with zero upstream contact
+(all-stale, capped-before-first, wall-boxed-early) are recorded
+but don't consume daily runs, cooldown, or the low-yield streak
+(reason `no-contact`, or `capped` when the cap tripped so the
+daemon consumes instead of re-running a futile no-op); runs that
+attempted anything keep full budget pacing even when nothing
+returned. Skipped gates announce
+themselves (`heal skipped: on cooldown until …` /
+`daily heal budget exhausted`); a cold bench with no healable
+routes is told to `update` (or `setup`), never to `--heal`.
+`verify` exits 0 when a target fully verifies, 1 on heal
+state/evidence I/O failure, 2 on usage errors, and 3 when nothing
+verified (no targets or no full pass).
+
 ## Public issues and history
 
 Complete catalogs are compared with a bounded baseline from this repository's

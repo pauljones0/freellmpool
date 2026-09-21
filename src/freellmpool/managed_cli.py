@@ -66,7 +66,15 @@ def cmd_status(args: argparse.Namespace) -> int:
         warning = tools_bench_warning(status)
         if warning:
             print(f"\n{warning}")
-        if thin and blocked is None:
+        if thin and status.get("chat_routes") == 0:
+            # G35: no healable routes at all — prescribing --heal would
+            # dead-end (exit 3 "run update"). Name both tools; the
+            # per-row reasons above disambiguate. Takes precedence
+            # over the gate lines: update/setup aren't heal-gated.
+            print(f"Bench thin with no healable routes "
+                  f"({ready} fresh, need {TOOLS_BENCH_MINIMUM}); run "
+                  f"freellmpool update, or freellmpool setup to connect access")
+        elif thin and blocked is None:
             print(f"Bench thin: run freellmpool verify --heal "
                   f"({ready} fresh, need {TOOLS_BENCH_MINIMUM})")
         elif thin and blocked == "cooldown":
@@ -233,26 +241,39 @@ def cmd_verify(args: argparse.Namespace) -> int:
         return 2
     pool = ManagedPool.from_default_config()
     ready = pool.managed_status().get("tools_ready", 0)
-    if isinstance(ready, int) and ready < TOOLS_BENCH_MINIMUM:
-        heal_flag = bool(getattr(args, "heal", False))
-        # Review fix 8: consent, budget, and paths all read pool.env
-        # (effective env), never bare os.environ.
-        if heal_flag or autoheal_enabled(pool.env):
-            outcome = run_heal(pool, HealStore(default_heal_path(pool.env)),
-                               trigger="verify", limit=args.limit, timeout=timeout)
-            if outcome["reason"] == "io-error":
-                return 1
-        else:
-            print(f"Bench thin: run freellmpool verify --heal "
-                  f"({ready} fresh, need {TOOLS_BENCH_MINIMUM})", file=sys.stderr)
+    thin = isinstance(ready, int) and ready < TOOLS_BENCH_MINIMUM
+    heal_flag = bool(getattr(args, "heal", False))
+    # Review fix 8: consent, budget, and paths all read pool.env
+    # (effective env), never bare os.environ.
+    healing = thin and (heal_flag or autoheal_enabled(pool.env))
+    healed_empty = False
+    if healing:
+        outcome = run_heal(pool, HealStore(default_heal_path(pool.env)),
+                           trigger="verify", limit=args.limit, timeout=timeout)
+        if outcome["reason"] == "io-error":
+            return 1
+        healed_empty = outcome["reason"] == "empty"
     # ManagedPool always installs a store, unlike the optional legacy base.
     conformance = cast(ConformanceStore, pool.conformance)
-    routes = [r for r in pool.snapshot().routes if r.modality == "chat" and r.automatic
+    snapshot = pool.snapshot()
+    # G35: heal ignores --provider, so the offer matches the action it
+    # advertises iff UNFILTERED chat+automatic routes exist. The offer
+    # moved below routes (selection still post-heal: evidence flow
+    # intact); with no healable routes the line-255 message carries it.
+    healable = any(r.modality == "chat" and r.automatic for r in snapshot.routes)
+    if thin and not healing and healable:
+        print(f"Bench thin: run freellmpool verify --heal "
+              f"({ready} fresh, need {TOOLS_BENCH_MINIMUM})", file=sys.stderr)
+    routes = [r for r in snapshot.routes if r.modality == "chat" and r.automatic
               and (not args.provider or r.provider.id in args.provider)]
     targets = [Target(r.provider, r.model, 0, r.metadata.get("context")) for r in routes]
     selected = select_verification_targets(targets, conformance, max_targets=args.limit)
     if not selected:
-        print("No current free route is ready to verify. Run freellmpool status or setup.")
+        if not healable and not healed_empty:
+            print("No verifiable routes: run freellmpool update, or "
+                  "freellmpool setup to connect access.")
+        elif healable:
+            print("No current free route is ready to verify. Run freellmpool status or setup.")
         return 3
     rows: list[dict[str, Any]] = []
     for target in selected:
@@ -489,7 +510,11 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     update.add_argument("--public-only", action="store_true")
     update.add_argument("--renew-evidence", action="store_true", help="also recheck unchanged reviewed policy sources")
     update.set_defaults(func=cmd_update)
-    verify = sub.add_parser("verify", help="bounded free-only chat/tool/stream checks")
+    verify = sub.add_parser("verify", help="bounded free-only chat/tool/stream checks",
+                            epilog="exit 0: at least one target fully verified; "
+                                   "exit 1: heal state/evidence I/O failure; "
+                                   "exit 2: usage error; "
+                                   "exit 3: nothing verified (no targets or no full pass)")
     verify.add_argument("--provider", action="append")
     verify.add_argument("--limit", type=int, choices=range(1, 33), default=4)
     verify.add_argument("--features", type=_verification_features, default="chat,tools,streaming")

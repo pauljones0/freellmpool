@@ -124,7 +124,7 @@ def test_lease_second_runner_no_ops(tmp_path):
         out = h.run_heal(pool, store, trigger="verify", call_fn=counting,
                          stream_fn=passing_stream)
     assert out == {"ran": False, "reason": "busy", "targets": [], "passes": 0,
-                   "probes": 0, "skipped": 0}
+                   "probes": 0, "skipped": 0, "attempted": 0}
     assert probed == []
 
 
@@ -268,7 +268,7 @@ def test_heal_restores_bench_and_records(tmp_path):
     assert saved["runs_today"] == 1 and len(saved["history"]) == 1
     assert saved["history"][0]["trigger"] == "verify"
     assert set(saved["history"][0]) == {"at", "trigger", "targets", "passes",
-                                        "probes", "skipped"}
+                                        "probes", "skipped", "attempted"}
 
 
 def test_cooldown_blocks_then_expires(tmp_path):

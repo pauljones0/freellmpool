@@ -1160,9 +1160,11 @@ class ManagedPool(Pool):
         for r in snapshot.routes:
             if r.provider.key_env and r.provider.id not in key_depth:
                 key_depth[r.provider.id] = len(r.provider.api_keys(r.env))
+        chat_routes = [r for r in snapshot.routes
+                       if r.modality == "chat" and r.automatic]
         return {"schema": 1, "generation": snapshot.generation, "strict_free": True,
                 "eligible_routes": len(snapshot.routes), "providers": list(snapshot.providers),
-                "tools_ready": len(tool_routes),
+                "tools_ready": len(tool_routes), "chat_routes": len(chat_routes),
                 "tools_providers": len({r.provider.id for r in tool_routes}),
                 "key_depth": key_depth,
                 "allowances": self.ledger.status(limits.values()),
