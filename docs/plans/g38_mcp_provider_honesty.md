@@ -24,7 +24,7 @@ extra and lets the empty pool judge; M11 expects configured groq rows even with
 a dead registry. New focused pins cover configured case spelling in models/ask,
 case-collision refusal, dead-registry whitespace consistency, and zero
 chat/transport calls. All other v4.1 precedence, alias, model-overwrite,
-managed-snapshot, schema text, and rendering contracts remain unchanged.
+managed-snapshot, remaining schema text, and rendering contracts remain unchanged.
 
 # G38 plan v4.1 — archived full pin-precision spec (superseded above)
 

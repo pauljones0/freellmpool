@@ -167,7 +167,8 @@ def validate_mcp_provider(pool: Any, literals: list[str]) -> tuple[str, list[str
     pool ids win so the returned spelling is directly routable.  An unreadable
     registry fails closed only for literals the locally available universe
     cannot establish. ``("error", text)`` also covers ambiguous configured
-    ids that differ only by case. TOTAL on the ``list[str]`` domain.
+    ids, and ambiguous extra ids/aliases, that differ only by case. TOTAL
+    on the ``list[str]`` domain.
     """
     pool_ids: dict[str, str] = {}
     try:
@@ -248,9 +249,9 @@ def validate_mcp_provider(pool: Any, literals: list[str]) -> tuple[str, list[str
         else:
             canonical.append(match)
     if unknown:
-        known = ", ".join(sorted(registry))
+        known_ids = ", ".join(sorted(registry))
         return ("error", "unknown provider '" + ", ".join(unknown)
-                + "'. Known registry ids: " + known)
+                + "'. Known registry ids: " + known_ids)
     return ("pass", canonical)
 
 

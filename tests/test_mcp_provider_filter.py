@@ -1,4 +1,4 @@
-"""G38: MCP provider-filter honesty (validate-first, verbatim echo, dead-skip)."""
+"""G38: MCP provider-filter honesty (validate-first, verbatim echo, dead-fail-closed)."""
 
 from __future__ import annotations
 
@@ -342,8 +342,10 @@ def test_a14_provider_beats_garbage(providers, env, quota):
     chat.assert_not_called()
 
 
-def test_a15_dead_verbatim_forward_raw(providers, env, quota, monkeypatch):
+def test_a15_dead_extra_hit_forwards_canonical(providers, env, quota, monkeypatch):
     _dead_registry(monkeypatch)
+    monkeypatch.setattr("freellmpool.config.load_catalog",
+                        lambda: [SimpleNamespace(id="groq")])
     pool = _pool([], env, quota)
     with mock.patch.object(pool, "chat", wraps=pool.chat) as chat:
         resp = _call(pool, "free_llm_ask", {"prompt": "hi", "provider": "GROQ"})

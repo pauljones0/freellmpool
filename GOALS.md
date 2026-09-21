@@ -1677,6 +1677,47 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G38 — MCP provider-filter honesty: validate-first + fail-closed (Status: ported+reviewed 2026-09-21; full gate + push pending on heavy lock)
+
+Pain: MCP `provider` typos silently listed nothing (`models`) or
+no-candidate errors (`ask`); no typo contract on the agent surface.
+
+Bet: `validate_mcp_provider` verdict pairs (`pass`/`error`) at both MCP
+call sites. Precedence POOL > EXTRAS > REG canonicalizing to the actual
+executable id; case collisions refused as ambiguous; dead registry fails
+closed (`provider registry unavailable; cannot validate provider 'X'`)
+for unestablished ids while configured ids still pass; live unknowns
+keep the verbatim unknown-template. Help promises "unknown or
+unverifiable ids return an error" on both tools.
+
+Execute: plan v1 3xFAIL → v2 3xFAIL → v3 0/3 (F1 test-serving) → v4 F1
+dropped by proof (snapshot prefixes ⊆ pool.providers) + verdict-pair
+shape → v4.1 3xPASS → TDD 41 pins green + full gate rc0 (pre-fix
+evidence: lines 88.57%, branches 80.46%) → independent review BLOCKED
+(B1 dead-skip vs help, B2 registry case-erasure, B3 dead whitespace) →
+ported repair candidate 00a384d (5 files, hashes verified) + 2 minimal
+port fixes (A15 explicit user-catalog seam instead of packaged-content
+dependence; `known_ids` mypy-strict rename) + 2 doc nits → 73 focused
+pins green (incl. empty-HOME determinism proof) + port ship review
+2xSHIP (correctness + contract).
+
+Done when:
+- [x] Helper + 2 call sites (skip arms deleted) + 2 schema strings +
+  diet 1-line completion + checked-in plan + 73 pins (M15/M15b/A15b/A15c/
+  H3 new; M5/M11/A5/A15/H1 restated fail-closed).
+- [x] Focused 73/73 (normal + empty-HOME) + ruff + mypy-strict
+  (managed_cli) + diff-check + docs-check green; adversarial port
+  review 2xSHIP; zero chat/transport calls pinned on cannot-validate.
+- [ ] Full gate rc0 + push (waiting on heavy lock — NOT done).
+
+Honesty residuals: ambiguity is global (any-key collision fails every
+literal — deliberate strictness); extras-collision ask-side covered by
+construction (same helper branch + error path); CLI keeps dead-skip
+passthrough (MCP-only fail-closed divergence, specified).
+
+Effort: L (4 plan rounds + BLOCK + port). Fit: high — the agent surface
+no longer lies about typos, case variants, or registry outages.
+
 ## G37 — validate-first literals on the remaining 9 filter surfaces (Status: complete 2026-09-21)
 
 Pain (G36 non-goals): typos exited 0 with misleading inventory text
