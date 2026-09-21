@@ -6,7 +6,7 @@ From this reviewed checkout, run:
 sh integrations/setup/bootstrap.sh
 ```
 
-The wizard shows one provider's signup link and exact account/key instructions, accepts a hidden key or clipboard input, and checks the provider without paid inference. Press `o` to open its exact key page, `s` to skip, or `q` to stop. After a failed check, `r` retries and `k` replaces the key without starting over. Resume with:
+The wizard shows one provider's signup link and exact account/key instructions, accepts a hidden key or clipboard input, and checks the provider without paid inference. To save one piped key without the wizard: `freellmpool setup --provider PROVIDER --stdin` (never echoes the value; failures exit 2). Press `o` to open its exact key page, `s` to skip, or `q` to stop. After a failed check, `r` retries and `k` replaces the key without starting over. Resume with:
 
 ```sh
 freellmpool setup --resume

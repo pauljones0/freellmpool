@@ -242,11 +242,12 @@ def test_update_footer_both_branches(monkeypatch, capsys):
 def test_update_subset_footer_counts_requested(monkeypatch, capsys):
     from freellmpool import managed_cli
 
+    # G36: subset ids must be registry-known (unknown literals exit 2).
     monkeypatch.setattr("freellmpool.discovery.refresh_catalog",
-                        lambda *a, **k: {"providers": {"a": _row("ok"), "b": _row("error", "y")}})
-    assert managed_cli.cmd_update(argparse.Namespace(public_only=False, provider=["a"])) == 0
+                        lambda *a, **k: {"providers": {"groq": _row("ok"), "gemini": _row("error", "y")}})
+    assert managed_cli.cmd_update(argparse.Namespace(public_only=False, provider=["groq"])) == 0
     out = capsys.readouterr().out
-    assert "a " in out and "b " not in out.splitlines()[0]
+    assert "groq " in out and "gemini " not in out.splitlines()[0]
     assert "Discovery updated. Pricing" in out
 
 

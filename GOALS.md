@@ -1677,6 +1677,44 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G36 — provider-literal honesty + setup --stdin (Status: complete 2026-09-21)
+
+Pain (G35 residuals): `update --provider NOSUCH` tracebacked (exit 1);
+`verify --provider NOSUCH` misdirected to exit 3 and burned heal runs on thin
+benches; `setup --provider NOSUCH` never named the literal; `setup --stdin`
+didn't exist while `_hidden_input` prescribed it — dead guidance for piped keys.
+
+Bet: validate-first unknown-literal exit 2 (keys-check shape) in
+setup/verify/update; verify universe = registry ∪ user-catalog ∪ external
+(acceptance parity, no behavior change for custom ids); `setup --stdin` saves
+one piped key privately with TTY refusal (read() echoes) and sanitized errors.
+
+Execute: plan v1 3xFAIL (2 pinned-test contradictions; 25 completeness gaps;
+refactor/TTY scope) → v2 scope PASS + feasibility FAIL (A7) + completeness
+FAIL (N1-N20) → v3 feas/scope PASS + completeness FAIL (M1-M3, m4-m12) → v3.1
+feas/scope PASS + completeness minor-FAIL (n1-n4) → v3.2 3xPASS → TDD
+implement (37 red + 3 preservation-green) → gate → push.
+
+Done when:
+- [x] `resolve_provider_ids` + `_unknown_provider_error`; validate-first in
+  update (canonical feeds refresh/evidence/display), verify (pre-pool-load,
+  pre-heal, registry-skip on dead load), run_onboarding (post-registry-load,
+  stdout channel); `_cmd_setup_stdin` 7-step short-circuit; drift documented-
+  ignore; 36 pins + 2 intent-preserving fixture updates; FREE_SETUP.md +
+  setup README lines.
+- [x] Full strict suite green (3377 collected, rc0) + ruff + strict mypy +
+  docs + coverage (lines 88.29%, branches 80.02%) green; adversarial
+  review 2xSHIP (correctness+secrecy, contract); pushed.
+
+Honesty residuals: verbatim literal echo (keys-check parity);
+`onboarding.main` frozen (TTY blocking-read echo + conflated message stay,
+incl. the clipboard-wrapper path); N12 boundary 2 lines stricter than frozen
+(unobservable <16KB); registry-only setup/update universes (documented);
+`rag`/`ask`/`bench`/`models`/`conf` provider flags parked.
+
+Effort: M (3-site validation + stdin path + 40 tests). Fit: high — typos stop
+tracebacking, misdirecting, and burning recovery budget.
+
 ## G35 — heal honesty: no silent 0-probe lockouts (Status: complete 2026-09-21)
 
 Pain (fresh-consumer audit + parent repro): `verify --heal` printed

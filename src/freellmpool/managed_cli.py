@@ -13,9 +13,13 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from .config import effective_env
+from .catalog import load_external_catalog
+from .config import effective_env, load_catalog
 from .conformance import FEATURES, ConformanceStore
+from .credential_store import _secret
 from .managed import ManagedPool
+from .onboarding import save_key_values
+from .provider_registry import load_registry, resolve_provider_ids
 from .router import Target
 
 TOOLS_BENCH_MINIMUM = 3
@@ -34,6 +38,40 @@ def tools_bench_warning(status: dict[str, Any]) -> str | None:
     return (f"WARNING: only {ready} tool-capable route(s) with fresh evidence "
             f"(need {TOOLS_BENCH_MINIMUM}); agent tool calls may 429 — "
             f"run: freellmpool verify --features tools")
+
+
+def _unknown_provider_error(unknown: list[str], registry: dict[str, Any]) -> int:
+    """Exit-2 usage error for --provider literals nothing knows (G36).
+
+    Single-id bytes match keys-check exactly; the multi-id join is this
+    module's own shape. Literals echoed verbatim (keys-check parity).
+    """
+    known = ", ".join(sorted(registry))
+    print(f"freellmpool: unknown provider '{', '.join(unknown)}'. "
+          f"Known registry ids: {known}", file=sys.stderr)
+    return 2
+
+
+def _verify_extra_ids() -> dict[str, str]:
+    """User-catalog + external ids verify accepts (keys-check parity, G36).
+
+    Never raises: every load is wrapped so validation never tracebacks;
+    the snapshot judges config downstream. User-first on intra-extra
+    collisions (unobservable: extra-only ids never match routes).
+    """
+    extra: dict[str, str] = {}
+    try:
+        for entry in load_catalog():
+            extra.setdefault(entry.id.lower(), entry.id)
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        pass
+    try:
+        for item in load_external_catalog():
+            extra.setdefault(item.slug.lower(), item.slug)
+            extra.setdefault(item.name.lower(), item.slug)
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        pass
+    return extra
 
 
 def cmd_status(args: argparse.Namespace) -> int:
@@ -144,6 +182,16 @@ def cmd_update(args: argparse.Namespace) -> int:
         stderr_progress_printer,
     )
     env = {} if args.public_only else effective_env()
+    if args.provider:
+        # G36: validate FIRST — an unknown literal exits 2 instead of
+        # dying in _prepare_refresh. Registry mirrors refresh's
+        # own load (overlay-included); canonical ids feed refresh,
+        # evidence renewal, and the display filter below.
+        registry = load_registry() if args.public_only else load_registry(env)
+        canonical, unknown = resolve_provider_ids(args.provider, registry)
+        if unknown:
+            return _unknown_provider_error(unknown, registry)
+        args.provider = canonical
     path = default_discovery_path(env).with_name("public-discovery.json") if args.public_only else None
     start = time.monotonic()
     try:
@@ -239,6 +287,22 @@ def cmd_verify(args: argparse.Namespace) -> int:
     except argparse.ArgumentTypeError as exc:
         print(f"freellmpool verify: {exc}", file=sys.stderr)
         return 2
+    if args.provider:
+        # G36: validate before pool load and heal — a bad literal exits 2
+        # instead of burning a heal run or misdirecting to exit 3. Universe
+        # is registry ∪ user-catalog ∪ external (keys-check acceptance
+        # parity); extra-only ids pass through and exit 3 as today. A dead
+        # registry skips validation; the tolerant downstream judges.
+        try:
+            registry = load_registry(effective_env())
+        except Exception:  # noqa: BLE001 — validation never tracebacks
+            registry = None
+        if registry is not None:
+            canonical, unknown = resolve_provider_ids(
+                args.provider, registry, _verify_extra_ids())
+            if unknown:
+                return _unknown_provider_error(unknown, registry)
+            args.provider = canonical
     pool = ManagedPool.from_default_config()
     ready = pool.managed_status().get("tools_ready", 0)
     thin = isinstance(ready, int) and ready < TOOLS_BENCH_MINIMUM
@@ -304,6 +368,9 @@ def cmd_drift(args: argparse.Namespace) -> int:
         rc = cmd_verify(probe_args)
         if rc not in (0, 3):
             return rc
+    # G36: without --probe, --provider is a documented-ignore (see its help
+    # text): a snapshot diff has no probes to filter, so the flag is neither
+    # validated nor applied.
     pool = ManagedPool.from_default_config()
     conformance = cast(ConformanceStore, pool.conformance)
     snapshot = drift_mod.take_snapshot(conformance.snapshot(), freellmpool_version=__version__)
@@ -458,6 +525,69 @@ def cmd_setup_clients(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _cmd_setup_stdin(args: argparse.Namespace) -> int:
+    """Save one piped key without the interactive wizard (G36).
+
+    Mirrors onboarding.main's --stdin semantics on the real CLI: provider
+    required, literal validated, TTY refused (read() would echo the key),
+    failures exit 2 without echoing the value, success prints the next
+    step and returns 0 without running setup-clients. Never raises.
+    """
+    if args.provider is None:
+        print("freellmpool: key input requires --provider", file=sys.stderr)
+        return 2
+    try:
+        registry = load_registry(effective_env())
+    except Exception:  # noqa: BLE001 — validation never tracebacks
+        print("freellmpool: provider registry is unavailable", file=sys.stderr)
+        return 2
+    canonical, unknown = resolve_provider_ids([args.provider], registry)
+    if unknown:
+        return _unknown_provider_error(unknown, registry)
+    record = registry[canonical[0]]
+    if not record.get("credential_env"):
+        print("freellmpool: this provider has no supported credential field",
+              file=sys.stderr)
+        return 2
+    try:
+        tty = sys.stdin.isatty()
+    except (OSError, ValueError):
+        print("freellmpool: could not read key from standard input", file=sys.stderr)
+        return 2
+    if tty:
+        print("freellmpool: --stdin reads a piped key; from a terminal use "
+              "interactive setup instead", file=sys.stderr)
+        return 2
+    try:
+        raw = sys.stdin.read(16385)
+    except UnicodeDecodeError:
+        print("freellmpool: could not decode key from standard input "
+              "(expected UTF-8 text)", file=sys.stderr)
+        return 2
+    except (OSError, ValueError):
+        print("freellmpool: could not read key from standard input", file=sys.stderr)
+        return 2
+    if len(raw) > 16384:
+        # _secret strips before capping, which would accept a padded 16385-char
+        # transmission; exactness here diverges 2 lines from the frozen entry.
+        print("freellmpool: enter one non-empty credential line without "
+              "control characters", file=sys.stderr)
+        return 2
+    try:
+        value = _secret(raw)
+    except ValueError as exc:
+        print(f"freellmpool: {exc}", file=sys.stderr)
+        return 2
+    try:
+        save_key_values({record["credential_env"]: value})
+    except (ValueError, OSError) as exc:
+        print(f"freellmpool: {exc}", file=sys.stderr)
+        return 2
+    print("Credential saved privately. Verify account and permissions with: "
+          f"freellmpool setup --provider {canonical[0]}")
+    return 0
+
+
 def cmd_setup(args: argparse.Namespace) -> int:
     from .discovery import (
         DiscoveryBusy,
@@ -467,6 +597,8 @@ def cmd_setup(args: argparse.Namespace) -> int:
         stderr_progress_printer,
     )
     from .onboarding import run_onboarding
+    if getattr(args, "stdin", False):
+        return _cmd_setup_stdin(args)
     def check(pid: str, env: dict[str, str]) -> dict[str, Any]:
         # CTO-2: setup is interactive (user-paced), so each check arms its own
         # full budget. A shared wall deadline would expire while the user reads.
@@ -498,6 +630,9 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     add_maintenance(sub)
     setup = sub.add_parser("setup", help="guided, private, resumable free-access setup")
     setup.add_argument("--provider")
+    setup.add_argument("--stdin", action="store_true",
+                       help="read one key privately from standard input "
+                            "(requires --provider; other setup flags are ignored)")
     setup.add_argument("--resume", action="store_true", default=True,
                        help="resume saved setup progress (default): pass over already-checked and skipped providers")
     setup.add_argument("--no-resume", action="store_false", dest="resume",
@@ -535,7 +670,8 @@ def add_commands(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     drift = sub.add_parser("drift", help="diff verify evidence vs previous snapshot")
     drift.add_argument("--probe", action="store_true",
                        help="run bounded verify probes before diffing")
-    drift.add_argument("--provider", action="append")
+    drift.add_argument("--provider", action="append",
+                       help="limit probes to provider(s); only used with --probe")
     drift.add_argument("--limit", type=int, choices=range(1, 33), default=8)
     drift.add_argument("--features", type=_verification_features, default="chat,tools,streaming")
     drift.add_argument("--timeout", type=_verification_timeout, default=30)

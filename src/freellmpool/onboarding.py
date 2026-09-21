@@ -299,6 +299,17 @@ def run_onboarding(
     if registry is None:
         from .provider_registry import load_registry
         registry = load_registry(credentials)
+    if provider is not None:
+        # G36: name unknown literals (before the progress read, so corrupt
+        # progress never masks a bad literal). Canonicalized for selection;
+        # trial/paid-only ids still fall through to the generic skip below.
+        table = {pid.lower(): pid for pid in registry}
+        hit = table.get(provider.strip().lower()) if provider.strip() else None
+        if hit is None:
+            known = ", ".join(sorted(registry))
+            output(f"Unknown provider '{provider}'. Known registry ids: {known}")
+            return 2
+        provider = hit
     if check is None:
         from .discovery import check_provider
         check = check_provider

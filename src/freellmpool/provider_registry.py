@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -20,6 +20,38 @@ def reviewed_limit_capacity(rule: Mapping[str, Any], model_id: str) -> int | flo
     if capacity is None:
         capacity = rule.get("maximum_documented")
     return cast(int | float | None, capacity)
+
+
+def resolve_provider_ids(ids: Iterable[str], registry: Mapping[str, Any],
+                         extra: Mapping[str, str] | None = None
+                         ) -> tuple[list[str], list[str]]:
+    """Split --provider literals into (canonical, unknown).
+
+    Strip + lower match (keys-check parity); empty-after-strip is UNKNOWN in
+    every entry (uniform; keys-check's falsy→all rule is not mirrored for
+    list forms). Unknowns dedupe on the normalized key echoing the FIRST
+    verbatim occurrence; canonicals dedupe order-stable. `extra` maps
+    normalized keys to canonical values and is consulted after the registry.
+    """
+    canonical: list[str] = []
+    unknown: list[str] = []
+    seen_canonical: set[str] = set()
+    seen_unknown: set[str] = set()
+    table = {pid.lower(): pid for pid in registry}
+    if extra:
+        for key, value in extra.items():
+            table.setdefault(key, value)
+    for literal in ids:
+        key = literal.strip().lower()
+        hit = table.get(key) if key else None
+        if hit is None:
+            if key not in seen_unknown:
+                seen_unknown.add(key)
+                unknown.append(literal)
+        elif hit not in seen_canonical:
+            seen_canonical.add(hit)
+            canonical.append(hit)
+    return canonical, unknown
 
 
 def evidence_path(env: Mapping[str, str]) -> Path:

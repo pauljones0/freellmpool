@@ -494,7 +494,9 @@ def test_verify_filtered_zero_keeps_offer(tmp_path, monkeypatch, capsys):
     pool = _pool(tmp_path)
     monkeypatch.setattr(ManagedPool, "from_default_config",
                         classmethod(lambda cls, **kwargs: pool))
-    assert managed_cli.cmd_verify(_verify_args(provider=["nope"])) == 3
+    # G36: "nope" is now unknown (rc 2); a KNOWN id with no fixture routes
+    # keeps the filtered-zero exit-3 shape.
+    assert managed_cli.cmd_verify(_verify_args(provider=["groq"])) == 3
     captured = capsys.readouterr()
     assert "Bench thin: run freellmpool verify --heal" in captured.err
     assert captured.out == ("No current free route is ready to verify. "

@@ -61,6 +61,18 @@ account confirmations) or want to add Groq/Cerebras/etc. next? Run
 `fp setup --provider groq` and see
 [integrations/setup/README.md](../integrations/setup/README.md).
 
+Scripting a key into the private store without the wizard? Pipe it —
+`--stdin` requires `--provider`, never echoes the value, and every failure
+exits 2 leaving the stored config untouched:
+
+```sh
+printf '%s' "$GROQ_API_KEY" | fp setup --provider groq --stdin
+```
+
+Unknown `--provider` values exit 2 naming the literal (`setup`, `update`,
+and `verify` all validate before doing anything else — a typo never burns a
+heal run or a catalog refresh). Provider matching is case-insensitive.
+
 ## 4. Connect one coding agent (opencode)
 
 Install opencode, then check it:
