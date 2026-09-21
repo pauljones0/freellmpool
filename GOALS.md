@@ -1677,6 +1677,51 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G34 — warning-while-serving for preserved rows (Status: complete 2026-09-21)
+
+Pain: a provider whose listing comes back adverse keeps serving
+last-good routes while fresh — correct — but `status`/`providers`
+render it as plain `ready` with no hint. G29 deferred the warning
+channel; G30/G32/G33 took the siblings, this is the last one.
+
+Bet: serving + adverse verdict ⇒ managed row carries a one-line
+warning (verdict + preserved count + fix command); admission
+untouched; `status`/`providers`/`quota` render it, `--json` and
+proxy `/status` carry it machine-readably.
+
+Execute: grounding + plan v1 (completeness FAIL: undecided
+consumers, matrix holes) → v2 folds quota/MCP surfacing, /status
+flow-through pin, models/readiness lock-ins, full matrix → plan
+gate 3xPASS → TDD implement → adversarial review → gate → push.
+
+Done when:
+- [x] Matrix: every servable adverse verdict warns (denied,
+  auth_failed, auth_missing, unsupported, error, partial,
+  rate_limited, deferred+previous-complete, unknown-future);
+  ok/excluded rows silent with `warning` present-but-"".
+- [x] Renders: status/providers/quota text goldens, `status --json`
+  key, proxy `/status` flow-through; models + readiness lock-ins;
+  admission identity (route sets byte-identical).
+- [x] Full strict suite green (3300 collected, rc0) + ruff +
+  strict mypy + docs + coverage (lines 88.16% ≥ 80%, branches
+  79.75% ≥ 70%) green; adversarial review SHIP (5 NITs closed +
+  G33 tick race fixed); pushed.
+
+Honesty residuals: warning is last-verdict based (clears on next
+successful update; status never probes); wording claims preserved/
+last-listing, never dead; generation values rotate once on upgrade
+(intra-run identity only); models/readiness deliberately unwarned
+(catalog vs health split, locked by tests); sanitized pid in the fix
+command can mismatch on non-slug ids (real ids are safe).
+
+Also closed: G33 handler tick race found by the G34 review drift
+check — `_exhausted` recorded after `send`, so a fast client could
+flush before the tick landed (messages-429 test flaked 1/4). Ticks
+now record before the response: an observed 429 implies counted.
+
+Effort: S (one row key + three renders + matrix tests). Fit: high —
+silent scope cuts become visible where operators already look.
+
 ## G33 — proxy demand-driven heal (Status: complete 2026-09-21)
 
 Pain: agent sessions 429-spiral against the proxy while the tool bench

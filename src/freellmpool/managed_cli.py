@@ -57,7 +57,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     else:
         print(f"Strict free access: {status['eligible_routes']} eligible routes")
         for row in status["providers"]:
-            print(f"  {row['id']:<14} {row['eligible']:>3} routes  {row['reason']}")
+            warned = f"; WARNING: {row['warning']}" if row.get("warning") else ""
+            print(f"  {row['id']:<14} {row['eligible']:>3} routes  {row['reason']}{warned}")
         depth = status.get("key_depth") or {}
         multi = sorted(pid for pid, n in depth.items() if isinstance(n, int) and n > 1)
         if multi:

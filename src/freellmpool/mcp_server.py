@@ -1033,6 +1033,8 @@ def _quota_summary(pool: Pool, *, full: bool = False) -> str:
         for provider in status["providers"]:
             if not provider["eligible"]:
                 lines.append(f"{provider['id']}: {provider['reason']}")
+            elif provider.get("warning"):
+                lines.append(f"{provider['id']}: WARNING: {provider['warning']}")
         return "\n".join(lines)
 
     snap = pool.quota.snapshot()  # {provider::model: count} for today (UTC)

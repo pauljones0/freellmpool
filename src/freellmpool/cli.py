@@ -506,7 +506,8 @@ def cmd_providers(args: argparse.Namespace) -> int:
         managed_status = cast("ManagedPool", pool).managed_status()
         print(f"Strict free gateway: {len(managed_status['providers'])} providers, {managed_status['eligible_routes']} eligible routes\n")
         for row in managed_status["providers"]:
-            print(f"  {row['id']:<14} {row['eligible']:>4} routes  {row['reason']}")
+            warned = f"; WARNING: {row['warning']}" if row.get("warning") else ""
+            print(f"  {row['id']:<14} {row['eligible']:>4} routes  {row['reason']}{warned}")
         print("\nRun `freellmpool setup` to connect free access, or `freellmpool update` to refresh models.")
         return 0
     catalog = _runtime_catalog()

@@ -115,6 +115,24 @@ spend to a decaying trickle instead. These interleavings are pinned by
 `tests/test_proxy_heal.py` (`test_020_*`, ported from independent
 frozen-source probes).
 
+## Serving preserved routes (warning-while-serving)
+
+A listing that comes back adverse — denied scope cut, failed or
+missing auth, unsupported listing, error, partial, rate limit, or
+another deferred pass — does not stop the provider's last-good
+routes: while the previous evidence is fresh
+they keep serving, because a listing-only refusal must not assert
+inference death. `status`, `providers`, and `quota` say so on the row
+itself: `ready; WARNING: serving N preserved routes; last listing
+<verdict>: <guidance>; run freellmpool update --provider PID to
+re-check`. The same text rides the `warning` key of each provider row
+in `status --json` and the proxy `/status` eligibility payload, so
+scripts and MCP agents (`free_llm_quota` shows it too) see what the
+terminal shows. Admission is unchanged — the warning observes, the
+routes still serve — and it clears on the next successful update.
+`models` stays a pure route catalog and readiness stays a live
+routability axis; neither carries the warning by design.
+
 ## Public issues and history
 
 Complete catalogs are compared with a bounded baseline from this repository's

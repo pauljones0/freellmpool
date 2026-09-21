@@ -153,6 +153,35 @@ class _AccountingError(ValueError):
     """Locally authored, credential-free diagnostics safe for the client."""
 
 
+# G34: verdict → guidance for warning-while-serving. Unknown statuses
+# fall back to the generic entry (fail loud, never silent).
+_WARNING_GUIDANCE: dict[str, str] = {
+    "denied": "verify credential scope or account verification with the provider",
+    "auth_failed": "check the credential",
+    "auth_missing": "check the credential",
+    "unsupported": "listing unsupported for this provider",
+    "rate_limited": "transient, retry later",
+    "deferred": "time budget, retry on next update",
+}
+_WARNING_GENERIC_GUIDANCE = "re-check"
+_WARNING_SAFE = re.compile(r"[^A-Za-z0-9_]+")
+
+
+def _warning_text(provider_id: str, eligible: int, status: str) -> str:
+    """One-line warning for preserved adverse-verdict rows (G34).
+
+    All interpolated parts are sanitized to an allowlist charset;
+    the discovery note is never embedded (secret-safe by
+    construction). Bounded: fixed template + ≤32-char fields.
+    """
+    safe_status = _WARNING_SAFE.sub("_", status)[:32] or "unknown"
+    safe_pid = _WARNING_SAFE.sub("_", provider_id)[:32] or "provider"
+    guidance = _WARNING_GUIDANCE.get(status, _WARNING_GENERIC_GUIDANCE)
+    return (f"serving {eligible} preserved routes; last listing "
+            f"{safe_status}: {guidance}; run freellmpool update "
+            f"--provider {safe_pid} to re-check")
+
+
 def _automatic_tool_conflict(provider_id: str, model: str, grant: JSON) -> str:
     # Compound enables server-side tools by default. Its documented allowlist
     # does not establish empty-list semantics, so we cannot promise no tools.
@@ -249,7 +278,7 @@ class ManagedPool(Pool):
             raw_by_id = {p.id: p for p in raw}
             operator = self._operator_rows(request_env)
         except (OSError, ValueError, TypeError, RuntimeError):
-            result = Snapshot("invalid-config", (), ({"id": "configuration", "reason": "invalid local restrictions; repair providers.toml", "eligible": 0},))
+            result = Snapshot("invalid-config", (), ({"id": "configuration", "reason": "invalid local restrictions; repair providers.toml", "eligible": 0, "warning": ""},))
             with self._snapshot_lock:
                 self.providers = []
                 self.embedders = []
@@ -352,10 +381,19 @@ class ManagedPool(Pool):
                                   modality, restriction.auto if restriction else True, limits, request_env)
                     provider_routes.append(route)
             routes.extend(provider_routes)
+            # G34 warning-while-serving: serving + adverse verdict means
+            # preserved last-good routes. Admission is untouched (the
+            # routes above still serve); the warning is a new channel
+            # alongside the exclusion-only reason.
+            warning = ""
+            if provider_routes and row.get("status", "not_checked") != "ok":
+                warning = _warning_text(pid, len(provider_routes),
+                                        str(row.get("status", "not_checked")))
             statuses.append({"id": pid, "eligible": len(provider_routes), "configured": provider.is_configured(request_env),
                              "checked_at": row.get("checked_at"), "last_attempt_at": row.get("last_attempt_at"),
                              "discovery_status": row.get("status", "not_checked"),
                              "reason": reason or ("ready" if provider_routes else next(iter(exclusions), "no eligible models")),
+                             "warning": warning,
                              "exclusions": dict(exclusions), "account_tier": account.get("tier", "unknown")})
         generation = hashlib.sha256(json.dumps([discovery.get("generation"), statuses, [
             {"route": r.name, "modality": r.modality, "metadata": r.metadata,

@@ -592,12 +592,15 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
             if isinstance(delay, (int, float)) and not isinstance(delay, bool) and math.isfinite(delay) and delay >= 0:
                 headers["Retry-After"] = str(math.ceil(delay))
             code = "rate_limit_error" if status == 429 else "invalid_request_error" if status < 500 else "all_providers_exhausted"
-            send = self._anthropic_error if anthropic else self._error
-            send(status, exc.client_message or str(exc), code, headers=headers)
             # G33 demand tick: memory-only increment when the store is
             # threaded, AUTOHEAL is on, and this was a terminal tools-429.
+            # Recorded BEFORE the response goes out, so an observed 429
+            # implies its tick is already counted (no client-visible race
+            # between the response and a subsequent flush/demand read).
             # Observes only — routing and responses are already decided.
             maybe_record_tick(tick_store, pool.env, had_tools, exc)
+            send = self._anthropic_error if anthropic else self._error
+            send(status, exc.client_message or str(exc), code, headers=headers)
 
         def _authorized(self) -> bool:
             """If a proxy key is configured, require a matching Bearer token
