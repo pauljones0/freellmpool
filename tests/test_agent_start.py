@@ -2012,3 +2012,63 @@ def test_test_registry_seam_rejects_non_loopback(tmp_path, monkeypatch):
     path.write_text(json.dumps(document))
     registry = provider_registry.load_registry({"FREELLMPOOL_TEST_REGISTRY_PATH": str(path)})
     assert set(registry) == {"evil"}
+
+
+# ------------------------------------------------------------------ G40 T1..T2 S1 conflict honesty
+def test_g40_all_conflict_refuses_with_conflict_literal(monkeypatch, capsys):
+    _s0_ok(monkeypatch)
+    _popen_boom(monkeypatch)
+    conflicted = _status(allowances=[
+        {"remaining": 0.0, "definition_status": "changed", "reason": "r", "retry_after": 5},
+    ])
+    _patch_pools(monkeypatch, [_FakePool(conflicted)])
+    assert launcher.agent_start(_ns()) == 3
+    assert capsys.readouterr().err == (
+        "freellmpool: allowance definitions changed — affected routes fail closed "
+        "until reset (see freellmpool quota)\n"
+    )
+
+
+def test_g40_mixed_conflict_exhausted_prefers_conflict_literal(monkeypatch, capsys):
+    _s0_ok(monkeypatch)
+    _popen_boom(monkeypatch)
+    mixed = _status(allowances=[
+        {"remaining": 0},
+        {"remaining": 0.0, "definition_status": "changed", "reason": "r", "retry_after": 5},
+    ])
+    _patch_pools(monkeypatch, [_FakePool(mixed)])
+    assert launcher.agent_start(_ns()) == 3
+    assert capsys.readouterr().err == (
+        "freellmpool: allowance definitions changed — affected routes fail closed "
+        "until reset (see freellmpool quota)\n"
+    )
+
+
+def test_g40_partial_conflict_warns_and_proceeds(monkeypatch, capsys, gateway_factory):
+    status = _status(allowances=[
+        {"remaining": 0},
+        {"remaining": 0.0, "definition_status": "changed", "reason": "r", "retry_after": 5},
+        {"remaining": None},
+    ])
+    _flow_ok(monkeypatch, status)
+    gateway = gateway_factory(
+        lambda *a: (200, {"object": "list", "data": _marker_rows()})
+    )
+    _popen_boom(monkeypatch)
+    with pytest.raises(_ExecCapture):
+        launcher.agent_start(_ns(port=gateway.port, harness="claude"))
+    assert (
+        "freellmpool: WARNING: 1 changed allowance definition(s) fail closed "
+        "until reset (see freellmpool quota)"
+    ) in capsys.readouterr().err
+
+
+def test_g40_all_exhausted_keeps_exhausted_literal(monkeypatch, capsys):
+    _s0_ok(monkeypatch)
+    _popen_boom(monkeypatch)
+    exhausted = _status(allowances=[{"remaining": 0}, {"remaining": 0}])
+    _patch_pools(monkeypatch, [_FakePool(exhausted)])
+    assert launcher.agent_start(_ns()) == 3
+    assert capsys.readouterr().err == (
+        "freellmpool: all allowances exhausted — wait for reset (see freellmpool quota)\n"
+    )

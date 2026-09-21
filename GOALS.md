@@ -1677,7 +1677,22 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
-## G39 — one-command agent start via agent-start (Status: implemented 2026-09-21, uncommitted; full gate + push pending on heavy lock)
+## G40 — conflict-quota honesty on launcher+quota surfaces + bench banner count (Status: complete 2026-09-21, pushed; full gate rc0 3678 passed)
+
+Pain: `AllowanceLedger.status()` fail-closed definition-changed rows to
+`remaining=0.0` with `definition_status`/`reason`/`retry_after` keys that zero
+consumers read — agent-start S1 refused with wrong "wait for reset" guidance
+and quota rendered fake `remaining=0`. Separately, `bench -p` announced the
+pre-filter provider count.
+
+Bet: S1 names the conflict cause (refusal + partial-conflict WARNING); the
+shared quota renderer prints `remaining=CONFLICT` with cause/retry in place;
+the bench banner counts the stripped post-filter set.
+
+Execute: plan v2 3xPASS (0 MUSTs) → TDD T1-T6 in the 4 existing test files,
+per-surface assertions, byte-identical genuine-exhaustion paths.
+
+## G39 — one-command agent start via agent-start (Status: complete 2026-09-21, pushed d6629a9)
 
 Pain: G8's `fp claude` launched on unready proxies, never validated the
 model/registry/quota admission, and left proxy lifecycle (status/stop/
@@ -1713,7 +1728,7 @@ until reaped; SIGTERM-may-orphan untested (rerun reuses, stop cleans).
 Effort: L (61 pins + hermetic + wheel + audit). Fit: high — one
 validated command replaces the G8 multi-terminal ritual.
 
-## G38 — MCP provider-filter honesty: validate-first + fail-closed (Status: ported+reviewed 2026-09-21; full gate + push pending on heavy lock)
+## G38 — MCP provider-filter honesty: validate-first + fail-closed (Status: complete 2026-09-21, pushed; full gate rc0 3492 passed)
 
 Pain: MCP `provider` typos silently listed nothing (`models`) or
 no-candidate errors (`ask`); no typo contract on the agent surface.

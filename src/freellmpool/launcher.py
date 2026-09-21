@@ -599,12 +599,28 @@ def agent_start(args: argparse.Namespace) -> int:
         )
         return 3
     allowances = status.get("allowances") or []
-    if allowances and all(row.get("remaining") == 0 for row in allowances):
+    conflicted = [r for r in allowances if r.get("definition_status") == "changed"]
+    usable = [r for r in allowances
+              if r.get("definition_status") != "changed" and r.get("remaining") != 0]
+    if allowances and not usable:
+        if conflicted:
+            print(
+                "freellmpool: allowance definitions changed — affected routes fail closed "
+                "until reset (see freellmpool quota)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "freellmpool: all allowances exhausted — wait for reset (see freellmpool quota)",
+                file=sys.stderr,
+            )
+        return 3
+    if conflicted and usable:
         print(
-            "freellmpool: all allowances exhausted — wait for reset (see freellmpool quota)",
+            f"freellmpool: WARNING: {len(conflicted)} changed allowance definition(s) "
+            "fail closed until reset (see freellmpool quota)",
             file=sys.stderr,
         )
-        return 3
     # S2 evidence: skip when tool routes exist, else run real verify in-process.
     tools_n = status.get("tools_ready", 0)
     if tools_n > 0:

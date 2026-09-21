@@ -1045,9 +1045,18 @@ def _quota_summary(pool: Pool, *, full: bool = False) -> str:
             lines.append(f"showing {_DIET_QUOTA_ROWS} of {len(rows)} allowance rows "
                          f'(re-run with "full": true for all):')
         for row in rows if full else rows[:_DIET_QUOTA_ROWS]:
+            capacity = "unknown" if row["capacity"] is None else f"{row['capacity']:g}"
+            if row.get("definition_status") == "changed":
+                reason = row.get("reason") or "unknown"
+                retry = "unknown" if row.get("retry_after") is None else f"{row['retry_after']:g}s"
+                lines.append(
+                    f"{row['key']}: remaining=CONFLICT {row['unit']}; "
+                    f"capacity={capacity}; {row['algorithm']}; "
+                    f"definition changed: {reason}; retry_after={retry}"
+                )
+                continue
             remaining = row["remaining"]
             value = "unknown" if remaining is None else f"{remaining:g}"
-            capacity = "unknown" if row["capacity"] is None else f"{row['capacity']:g}"
             lines.append(f"{row['key']}: remaining={value} {row['unit']}; capacity={capacity}; {row['algorithm']}")
         for provider in status["providers"]:
             if not provider["eligible"]:

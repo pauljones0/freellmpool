@@ -142,3 +142,73 @@ def test_diet_proxy_bounds_unanswered_call_state():
                                        "params": {"name": "x_full",
                                                   "arguments": {"key": "missing"}}})
     assert len(proxy2._full_passthrough) <= MAX_CACHED_RESULTS * 2
+
+
+# --- G40 T3..T4 conflict render (shared fixture: two conflict rows + genuine 0) ---
+def _g40_conflict_pool():
+    rows = [
+        {"key": "alpha/day", "remaining": 0.0, "unit": "requests", "capacity": 10.0,
+         "algorithm": "rolling", "definition_status": "changed",
+         "reason": "limit redefined", "retry_after": 90},
+        {"key": "beta/day", "remaining": 0.0, "unit": "requests", "capacity": 5.0,
+         "algorithm": "rolling", "definition_status": "changed",
+         "reason": "window shrunk", "retry_after": None},
+        {"key": "gamma/day", "remaining": 0.0, "unit": "requests", "capacity": 3.0,
+         "algorithm": "rolling"},
+    ]
+    status = {"eligible_routes": 3, "note": "n", "allowances": rows, "providers": []}
+    return SimpleNamespace(managed=True, managed_status=lambda: status,
+                           snapshot=lambda: SimpleNamespace(routes=[]))
+
+
+def test_g40_mcp_quota_surfaces_render_conflict_in_place():
+    pool = _g40_conflict_pool()
+    for tool in ("free_llm_quota", "free_llm_quota_wise"):
+        text = _text_of(_call_tool(pool, {"name": tool, "arguments": {}}))
+        assert "remaining=CONFLICT" in text, tool
+        assert "definition changed: limit redefined" in text, tool
+        assert "retry_after=90s" in text, tool
+        assert "retry_after=unknown" in text, tool
+        assert "gamma/day: remaining=0 requests" in text, tool
+
+
+def test_g40_cli_quota_surfaces_render_conflict(monkeypatch, capsys):
+    from freellmpool import cli as cli_mod
+    from freellmpool.router import Pool
+
+    pool = _g40_conflict_pool()
+    monkeypatch.setattr(Pool, "from_default_config", lambda **kwargs: pool)
+    assert cli_mod.cmd_quota(SimpleNamespace()) == 0
+    assert "remaining=CONFLICT" in capsys.readouterr().out
+    assert cli_mod.cmd_quota_wise_status(SimpleNamespace()) == 0
+    assert "remaining=CONFLICT" in capsys.readouterr().out
+
+
+def _g40_rows_with_conflict_at(index):
+    rows = [{"key": f"k{i}", "remaining": 1.0, "unit": "requests", "capacity": 10.0,
+             "algorithm": "rolling"} for i in range(100)]
+    rows.insert(index, {"key": "conflict-key", "remaining": 0.0, "unit": "requests",
+                        "capacity": 10.0, "algorithm": "rolling",
+                        "definition_status": "changed", "reason": "limit redefined",
+                        "retry_after": 7})
+    return rows
+
+
+def _g40_diet_pool(rows):
+    status = {"eligible_routes": 50, "note": "n", "allowances": rows, "providers": []}
+    return SimpleNamespace(managed=True, managed_status=lambda: status,
+                           snapshot=lambda: SimpleNamespace(routes=[]))
+
+
+def test_g40_diet_keeps_conflict_in_place_without_reorder():
+    visible = _text_of(_call_tool(_g40_diet_pool(_g40_rows_with_conflict_at(5)),
+                                  {"name": "free_llm_quota", "arguments": {}}))
+    assert "conflict-key: remaining=CONFLICT" in visible
+    hidden = _text_of(_call_tool(_g40_diet_pool(_g40_rows_with_conflict_at(99)),
+                                 {"name": "free_llm_quota", "arguments": {}}))
+    assert "remaining=CONFLICT" not in hidden
+    assert "showing 30 of 101" in hidden
+    everything = _text_of(_call_tool(_g40_diet_pool(_g40_rows_with_conflict_at(99)),
+                                     {"name": "free_llm_quota", "arguments": {"full": True}}))
+    assert "conflict-key: remaining=CONFLICT" in everything
+    assert "k99" in everything

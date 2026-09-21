@@ -677,8 +677,10 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         )
         return 3
     provider_filter = args.providers.split(",") if args.providers else None
+    include = {p.strip() for p in provider_filter} if provider_filter else None
+    shown = [p for p in pool.providers if include is None or p.id in include]
     print(
-        f"Benchmarking {len(pool.providers)} providers "
+        f"Benchmarking {len(shown)} providers "
         f"(one model each{', pinned' if args.model else ''})...",
         file=sys.stderr,
     )
@@ -3889,8 +3891,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Options must precede the harness: `agent-start --port 9000 opencode -- run`. "
-            "Everything after the harness goes to the agent. Conflict rows (remaining 0.0 "
-            "with changed definitions) read as exhausted (fail-closed)."
+            "Everything after the harness goes to the agent. Conflict rows (changed "
+            "definitions) refuse with their own message and render as remaining=CONFLICT "
+            "in quota (fail-closed)."
         ),
     )
     p_agent_start.add_argument("--port", type=int, default=8080,

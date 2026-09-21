@@ -128,6 +128,7 @@ operational):
 | `freellmpool: invalid local restrictions; repair providers.toml` | exit 3: fix the local catalog, then re-run |
 | `freellmpool: no eligible routes — run freellmpool status, then freellmpool update or freellmpool setup as directed` | exit 3: cold pool, follow the named command |
 | `freellmpool: all allowances exhausted — wait for reset (see freellmpool quota)` | exit 3: quotas spent, wait for reset |
+| `freellmpool: allowance definitions changed — affected routes fail closed until reset (see freellmpool quota)` | exit 3: config changed, old accounting must expire; detail in `freellmpool quota` |
 | `freellmpool: agent-start requires the managed router (unset FREELLMPOOL_LEGACY_ROUTER)` | exit 3: unset the legacy flag |
 | `freellmpool: provider registry unreadable — cannot judge routes (reinstall or clear the policy bundle)` | exit 3: registry broken, reinstall or clear the bundle |
 | `freellmpool: verification found no tool-capable route (see verify output above); run the named command, or wait and re-run` | exit 3: no tool route verified |

@@ -352,6 +352,29 @@ def test_benchmark_mixed_rejects(monkeypatch, capsys):
     assert "unknown provider 'NOSUCH'" in capsys.readouterr().err
 
 
+# --- G40 T6 bench banner counts the probed set ---
+
+def _g40_bench_pool(monkeypatch):
+    from freellmpool.router import Pool
+    pool = Pool([_provider("groq"), _provider("cerebras"), _provider("openrouter")], env={})
+    monkeypatch.setattr(Pool, "from_default_config", lambda **kwargs: pool)
+    monkeypatch.setattr("freellmpool.benchmark.benchmark", lambda *a, **k: [])
+
+
+def test_g40_bench_banner_counts_filtered_providers(monkeypatch, capsys):
+    from freellmpool.cli import main
+    _g40_bench_pool(monkeypatch)
+    assert main(["benchmark", "-p", "groq"]) == 0
+    assert "Benchmarking 1 providers" in capsys.readouterr().err
+
+
+def test_g40_bench_banner_counts_all_without_filter(monkeypatch, capsys):
+    from freellmpool.cli import main
+    _g40_bench_pool(monkeypatch)
+    assert main(["benchmark"]) == 0
+    assert "Benchmarking 3 providers" in capsys.readouterr().err
+
+
 # --- conf run (P24-P28, P51) ---
 
 def _conf_args(*extra):

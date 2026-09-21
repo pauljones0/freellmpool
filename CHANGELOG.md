@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+- Conflict-quota honesty: `agent-start` refuses changed allowance definitions
+  with their own message (plus a WARNING when usable routes remain) instead of
+  misreporting them as exhausted, quota surfaces render those rows as
+  `remaining=CONFLICT` with the change reason and retry hint, and the
+  `benchmark` banner counts the probed (post-filter) providers.
 - One-command install: run the fork with `uvx --from <repo-tarball-URL>`
   (no checkout, no PyPI claim); route-needing CLI commands refresh missing
   discovery state once on first run (`FREELLMPOOL_NO_AUTO_DISCOVERY=1`

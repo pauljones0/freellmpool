@@ -54,6 +54,16 @@ def test_managed_listings_follow_refresh_and_expose_allowances(tmp_path):
     assert "alpha/free" not in str(_call_tool(pool, {"name": "free_llm_models"}))
 
 
+def test_g40_genuine_spend_carries_no_conflict_key(tmp_path):
+    pool = make_pool(tmp_path, ids=("alpha",), capacity=1)
+    pool.ask("hi")
+    rows = pool.managed_status()["allowances"]
+    exhausted = [row for row in rows if row.get("remaining") == 0]
+    assert exhausted
+    for row in exhausted:
+        assert "definition_status" not in row
+
+
 @pytest.mark.parametrize("path,body", [
     ("/v1/chat/completions", {"model": "auto", "messages": [{"role": "user", "content": "hi"}]}),
     ("/v1/chat/completions", {"model": "auto", "messages": [{"role": "user", "content": "hi"}], "stream": True}),
