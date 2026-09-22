@@ -84,6 +84,11 @@ that heals only when real tool traffic is being rate-limited: each terminal
 tools-bearing request that exhausts all providers with a 429 records one
 tick — a memory-only increment, never disk I/O on the request path. Text
 requests, non-429 failures, and anything but terminal exhaustion never tick.
+Mid-stream provider `{"error":...}` SSE lines surface as status-carrying
+errors (repo-documented 429 shapes map to 429, everything else to 502 with
+the provider message preserved). SSE truncation events carry a 429-vs-other
+cause instead of one generic signal. Mid-stream 429s still never tick per
+G33.
 The daemon evaluates once a minute and heals only when ≥5 ticks land inside
 a 600-second window (same bounds and cooldowns as above); healthy benches
 and closed gates consume the demand without probing. A steady

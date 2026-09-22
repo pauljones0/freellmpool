@@ -537,3 +537,227 @@ def test_stream_skips_malformed_sse_data_lines():
         )
     )
     assert deltas == ["ok"]
+
+
+def _g41_stream(lines):
+    """Drive stream_call over scripted SSE lines (G41: mid-stream error lines)."""
+
+    def stream_post(url, headers, body, timeout):
+        return 200, iter(lines)
+
+    return C.stream_call(
+        P,
+        "zai-glm-4.7",
+        [{"role": "user", "content": "hi"}],
+        api_key="k",
+        env={},
+        stream_post=stream_post,
+    )
+
+
+def test_g41_midstream_typed_429_line_surfaces_status_and_message():
+    # Mirror the tests/test_vercel_gateway.py:148 envelope.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"type":"rate_limit_exceeded","message":"Rate limit exceeded"}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+    assert exc_info.value.retryable is True
+    assert "Rate limit exceeded" in str(exc_info.value)
+
+
+def test_g41_midstream_numeric_code_429_line_uses_code_hit():
+    # Error sub-object exact per tests/test_health_probe_regressions.py:129-130
+    # (minus top-level request_id, which the mapping never reads).
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"code":"1113","message":'
+            '"Insufficient balance or no resource package. Please recharge."}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+    assert exc_info.value.retryable is True
+    assert "Insufficient balance" in str(exc_info.value)
+
+
+def test_g41_midstream_message_only_429_lines_map_by_marker():
+    # Exact tests/test_proxy.py:1517 shape.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"message":"rate limited"}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+    assert exc_info.value.retryable is True
+    assert "rate limited" in str(exc_info.value)
+    # tests/test_client.py:127 "slow down" variant.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"message":"slow down"}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+    assert exc_info.value.retryable is True
+
+
+def test_g41_midstream_string_429_line_maps_by_marker():
+    # Exact tests/test_client.py:403 shape.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":"slow"}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+    assert "slow" in str(exc_info.value)
+
+
+def test_g41_midstream_int_status_passes_through():
+    # Defensive: no in-repo sample sends int-status-inside-error.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"message":"x","status":503}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 503
+    assert exc_info.value.retryable is True
+    assert '"x"' in str(exc_info.value) or ": x" in str(exc_info.value)
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"message":"y","status":429}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+    assert exc_info.value.retryable is True
+    assert '"y"' in str(exc_info.value) or ": y" in str(exc_info.value)
+
+
+def test_g41_midstream_non_429_lines_fall_to_502_with_message():
+    # Exact tests/test_blocked_verdict.py:110-112 shape, enveloped.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"type":"permission_error","code":"insufficient_scope",'
+            '"message":"Authenticated credential lacks model-listing permission"}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 502
+    assert "model-listing permission" in str(exc_info.value)
+    # Exact tests/test_hardening.py:60 shape.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"message":"bad request"}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 502
+    assert "bad request" in str(exc_info.value)
+
+
+def test_g41_midstream_falsy_error_sentinels_keep_stream_healthy():
+    # Characterization: falsy sentinels must not kill a healthy stream.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"a"}}],"error":null}',
+            'data: {"choices":[{"delta":{"content":"b"}}],"error":{}}',
+            'data: {"choices":[{"delta":{"content":"c"}}],"error":""}',
+            "data: [DONE]",
+        ]
+    )
+    assert list(stream) == ["a", "b", "c"]
+
+
+def test_g41_midstream_both_keys_line_raises_first_and_discards_delta():
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"prior"}}]}',
+            'data: {"choices":[{"delta":{"content":"lost"}}],'
+            '"error":{"type":"rate_limit_exceeded","message":"rate limited"}}',
+        ]
+    )
+    assert next(stream) == "prior"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 429
+
+
+def test_g41_midstream_residual_shapes_fall_to_502():
+    # Exact tests/test_transcription.py:137 shape: unknown short message.
+    stream = _g41_stream(
+        [
+            'data: {"choices":[{"delta":{"content":"partial"}}]}',
+            'data: {"error":{"message":"rl"}}',
+        ]
+    )
+    assert next(stream) == "partial"
+    with pytest.raises(ProviderHTTPError) as exc_info:
+        next(stream)
+    assert exc_info.value.status == 502
+    assert "rl" in str(exc_info.value)
+    # Float and string-numeric statuses are not int passthrough.
+    for status in ("429.0", '"429"'):
+        stream = _g41_stream(
+            [
+                'data: {"choices":[{"delta":{"content":"partial"}}]}',
+                f'data: {{"error":{{"message":"x","status":{status}}}}}',
+            ]
+        )
+        assert next(stream) == "partial"
+        with pytest.raises(ProviderHTTPError) as exc_info:
+            next(stream)
+        assert exc_info.value.status == 502
+        assert '"x"' in str(exc_info.value) or ": x" in str(exc_info.value)
+
+
+def test_g41_midstream_billing_message_only_lines_stay_502_generic():
+    # Shapes mirror tests/test_account_billing_regressions.py:44, which pairs
+    # both with 402: message-only billing text must NOT claim rate_limit_error.
+    for message in (
+        "Insufficient balance. Please recharge.",
+        "No resource package. Please recharge.",
+    ):
+        stream = _g41_stream(
+            [
+                'data: {"choices":[{"delta":{"content":"partial"}}]}',
+                f'data: {{"error":{{"message":"{message}"}}}}',
+            ]
+        )
+        assert next(stream) == "partial"
+        with pytest.raises(ProviderHTTPError) as exc_info:
+            next(stream)
+        assert exc_info.value.status == 502
+        assert message in str(exc_info.value)

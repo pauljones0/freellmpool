@@ -515,6 +515,11 @@ def _task_hint(headers, req: dict) -> object:
     return header if header is not None else req.get("task")
 
 
+def _stream_rate_limited(exc: BaseException) -> bool:
+    """True iff a post-commit stream error is a 429 (either client shape)."""
+    return getattr(exc, "status", None) == 429 or getattr(exc, "client_status", None) == 429
+
+
 def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=(),
                    tick_store: TickStore | None = None):
     # Ring buffer of recently-served (provider, model). Appended from worker
@@ -1098,16 +1103,19 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                     except StopIteration:
                         succeeded = True
                         break
-                    except Exception:  # noqa: BLE001 - upstream failed after commit
+                    except Exception as exc:  # noqa: BLE001 - upstream failed after commit
+                        limited = _stream_rate_limited(exc)
                         try:
                             self._write_named_sse(
                                 "error",
                                 {
                                     "type": "error",
                                     "error": {
-                                        "type": "api_error",
+                                        "type": "rate_limit_error" if limited else "api_error",
                                         "message": (
-                                            "Upstream stream failed; output is incomplete."
+                                            "Upstream rate limit hit mid-stream; output is incomplete."
+                                            if limited
+                                            else "Upstream stream failed; output is incomplete."
                                         ),
                                     },
                                 },
@@ -1574,6 +1582,7 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                 # client and hide the failure. Emit an SSE error event instead (the
                 # recognized streaming-error convention) and record the truncation.
                 # Headers are already sent, so an HTTP error status isn't possible.
+                limited = _stream_rate_limited(exc)
                 pool.metrics.record_failure(
                     f"{provider_id}/{model_name}", f"stream truncated: {exc}"
                 )
@@ -1581,9 +1590,11 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                     err = json.dumps(
                         {
                             "error": {
-                                "message": "upstream stream failed mid-response; output is incomplete",
-                                "type": "upstream_error",
-                                "code": "stream_truncated",
+                                "message": "upstream rate-limited the stream mid-response; output is incomplete"
+                                if limited
+                                else "upstream stream failed mid-response; output is incomplete",
+                                "type": "rate_limit_error" if limited else "upstream_error",
+                                "code": "stream_rate_limited" if limited else "stream_truncated",
                             }
                         }
                     )
@@ -1753,7 +1764,8 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                     except StopIteration:
                         succeeded = True
                         break
-                    except Exception:  # noqa: BLE001 - upstream failed after commit
+                    except Exception as exc:  # noqa: BLE001 - upstream failed after commit
+                        limited = _stream_rate_limited(exc)
                         partial = "".join(text_parts)
                         try:
                             emit(
@@ -1767,9 +1779,11 @@ def make_handler(pool: Pool, api_key: str | None = None, *, allowed_authorities=
                                         created_at=created_at,
                                         status="failed",
                                         error={
-                                            "code": "server_error",
+                                            "code": "rate_limit_exceeded" if limited else "server_error",
                                             "message": (
-                                                "Upstream stream failed; output is incomplete."
+                                                "Upstream rate limit hit mid-stream; output is incomplete."
+                                                if limited
+                                                else "Upstream stream failed; output is incomplete."
                                             ),
                                         },
                                     ),

@@ -537,6 +537,16 @@ def stream_call(
                 continue
             if not isinstance(obj, dict):
                 continue
+            error = obj.get("error")
+            if error:
+                raise _provider_http_error(
+                    HTTPResult(
+                        status=_midstream_error_status(error),
+                        body=obj,
+                        text=line,
+                        headers=None,
+                    )
+                )
             choices = obj.get("choices") or [{}]
             if (
                 not isinstance(choices, list)
@@ -558,6 +568,58 @@ def stream_call(
             )
     finally:
         close()
+
+
+# Grounded 429 signals: each entry is paired with HTTP 429 in-repo.
+# Envelope shape: dict {"error"} with type/code/message
+# (tests/test_blocked_verdict.py:111, tests/test_keys_check.py:576,
+# tests/test_router.py:208, tests/test_vercel_gateway.py:148).
+_MIDSTREAM_429_CODES = frozenset({
+    "rate_limit_exceeded",  # "type" value in a 429 body (:766 row via :148 body,
+                            # tests/test_vercel_gateway.py — row status 429 placed
+                            # into the {"error":{"type":...}} envelope by _Post)
+    "1113",                 # "code" value in a 429 body (tests/test_health_probe_regressions.py:129-130)
+})
+_MIDSTREAM_429_MESSAGE_MARKERS = (
+    "rate limit",           # tests/test_proxy.py:1517, tests/test_context.py:143,
+                            # tests/test_router.py:821, tests/test_managed_runtime.py:149
+    "slow",                 # tests/test_client.py:403/421/437 ("slow"); :127 and
+                            # tests/test_route_health.py:559 ("slow down")
+)
+# DELIBERATELY ABSENT (feasibility M1a): "insufficient balance" /
+# "no resource package" pair with 402 in-repo
+# (tests/test_account_billing_regressions.py:44, statuses [402,429];
+# router.py:171-177 treats both as 402-or-429 billing markers), so
+# message-only billing lines cannot distinguish 402 from 429 and must
+# NOT map to rate_limit_error. They fall to 502 generic with the
+# provider message preserved (honest: the message names the cause).
+
+
+def _midstream_error_status(error: object) -> int:
+    """Map a mid-stream SSE {"error":...} payload to an HTTP status.
+
+    Past commit the HTTP status was 200, so the payload carries no numeric
+    status; map the repo-documented 429 shapes to 429, else 502.
+    """
+    if isinstance(error, dict):
+        status = error.get("status")
+        if isinstance(status, int) and not isinstance(status, bool):
+            return status
+        for key in ("code", "type"):
+            value = error.get(key)
+            if isinstance(value, str) and value.strip().lower() in _MIDSTREAM_429_CODES:
+                return 429
+        message = error.get("message")
+        if isinstance(message, str) and any(
+            marker in message.lower() for marker in _MIDSTREAM_429_MESSAGE_MARKERS
+        ):
+            return 429
+    elif isinstance(error, str):
+        if any(
+            marker in error.lower() for marker in _MIDSTREAM_429_MESSAGE_MARKERS
+        ):
+            return 429
+    return 502
 
 
 def _retryable(status: int) -> bool:

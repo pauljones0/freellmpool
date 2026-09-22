@@ -1677,6 +1677,21 @@ spend); Cloudflare token-verify disambiguation still a follow-up.
 Effort: M (plan-gate iterations + total mapping). Fit: high — closes
 the G29 coverage gap without weakening any G29 guarantee.
 
+## G41 — honest mid-stream proxy failures (Status: complete 2026-09-22, pushed; full gate rc0 3703 passed)
+
+Pain: post-commit provider `{"error":...}` SSE lines vanished into a generic
+502 "stream ended before [DONE]", and all three text-stream handlers emitted
+one generic truncation event with no 429-vs-other cause.
+
+Bet: mid-stream error lines surface as status-carrying errors (grounded 429
+shapes → 429, else 502 with the provider message), SSE truncation carries a
+429-vs-other cause on all three handlers, and mid-stream 429s still never
+tick per G33 (see :1988 — that bound stands unamended).
+
+Execute: plan v5 3xPASS (0 MUSTs) → TDD red-first (§5a 10 client tests +
+§5b 8 proxy tests, offline fixtures); focused suites + heal pins green;
+ruff clean.
+
 ## G40 — conflict-quota honesty on launcher+quota surfaces + bench banner count (Status: complete 2026-09-21, pushed; full gate rc0 3678 passed)
 
 Pain: `AllowanceLedger.status()` fail-closed definition-changed rows to
