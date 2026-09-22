@@ -411,5 +411,36 @@
       }
     ],
     "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-22T05:05:22Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
   }
 ]
