@@ -134,6 +134,53 @@ def test_partial_header_stall_aborts(monkeypatch, tmp_path):
     assert json.loads(path.read_text())["schema"] == 1
 
 
+@pytest.mark.parametrize(
+    ("timeout_type", "budget", "expected_status", "timeout_field", "expected_timeout"), [
+        (httpx.ConnectTimeout, 4.0, "deferred", "connect", 4.0),
+        (httpx.ConnectTimeout, 20.0, "error", "connect", 5.0),
+        (httpx.ReadTimeout, 8.0, "deferred", "read", 8.0),
+        (httpx.ReadTimeout, 20.0, "error", "read", 10.0),
+        (httpx.WriteTimeout, 4.0, "deferred", "write", 4.0),
+        (httpx.WriteTimeout, 20.0, "error", "write", 5.0),
+        (httpx.PoolTimeout, 8.0, "error", "pool", 2.0),
+])
+def test_phase_timeout_at_deadline_preserves_budget_classification(
+        monkeypatch, timeout_type, budget, expected_status, timeout_field,
+        expected_timeout):
+    """The inner HTTPX timeout must not race the absolute-budget verdict."""
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    observed = []
+
+    async def phase_timeout(_client, _url, _headers, timeout, _result, **_kwargs):
+        observed.append(getattr(timeout, timeout_field))
+        raise timeout_type("synthetic deadline race")
+
+    spec = provider("https://example.invalid/catalog")
+    monkeypatch.setattr(d, "_aclient", Client)
+    monkeypatch.setattr(d, "_afetch_page", phase_timeout)
+    attempt = d._aattempt(spec, {}, deadline=time.monotonic() + budget)
+    if expected_status == "deferred":
+        with pytest.raises(d._BudgetExhausted) as exhausted:
+            asyncio.run(attempt)
+        row = exhausted.value.row
+    else:
+        row = asyncio.run(attempt)
+
+    assert observed == [pytest.approx(expected_timeout, abs=0.1)]
+    assert row["status"] == expected_status
+    if expected_status == "deferred":
+        assert row["note"] == d._deferred_page_note(1)
+    else:
+        assert row["note"] == d._NOTE_NETWORK_FAILURE
+
+
 def test_preserved_deferred_keeps_serving(monkeypatch, tmp_path):
     path = tmp_path / "catalog.json"
     old = (time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(time.time() - 3600)))

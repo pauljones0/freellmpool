@@ -67,6 +67,9 @@ account-observations.json*
 account_observations.json*
 *.key.*
 *.pem
+# Public loopback-only TLS fixtures used by the transport regression tests.
+!tests/fixtures/localhost.pem
+!tests/fixtures/localhost_key.pem
 *.sqlite*
 *.db-*
 quota.json*

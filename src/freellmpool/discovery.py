@@ -787,6 +787,19 @@ async def _afetch_page(client: httpx.AsyncClient, url: str, headers: dict[str, s
                           object_pairs_hook=_unique_object)
 
 
+def _timeout_was_capped_by_deadline(error: httpx.TimeoutException,
+                                    remaining: float) -> bool:
+    """Return whether the absolute budget supplied this phase's timeout."""
+    phase_limits = (
+        (httpx.ConnectTimeout, 5.0),
+        (httpx.ReadTimeout, 10.0),
+        (httpx.WriteTimeout, 5.0),
+        (httpx.PoolTimeout, 2.0),
+    )
+    return any(isinstance(error, kind) and remaining <= limit
+               for kind, limit in phase_limits)
+
+
 async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                           result: dict[str, Any], *, deadline: float | None,
                           progress: Callable[..., None] | None = None,
@@ -813,10 +826,11 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                         raise _BudgetExhausted(_deferred_row(now, _deferred_page_note(page)))
                     # PINNED clamp. httpcore's connect phase covers getaddrinfo, so a
                     # resolver stall fails here (error + network note) when
-                    # remaining > 5; wait_for owns shorter horizons. Either way
-                    # the fetch fails fast and loop shutdown abandons the
-                    # executor thread instead of lagging it (G26 closed the
-                    # v5.2 residual).
+                    # remaining > 5. When a phase timeout is capped to the same
+                    # remaining budget, normalize its race with wait_for to the
+                    # deferred budget verdict. Either path fails fast and loop
+                    # shutdown abandons the executor thread instead of lagging it
+                    # (G26 closed the v5.2 residual).
                     request_timeout = httpx.Timeout(connect=min(5.0, remaining), read=min(10.0, remaining),
                                                     write=min(5.0, remaining), pool=min(2.0, remaining))
                     try:
@@ -827,6 +841,11 @@ async def _afetch_attempt(provider: dict[str, Any], context: _AttemptContext,
                                          authenticated=context.authenticated,
                                          supports_public=spec["supports_public"]),
                             timeout=remaining)
+                    except httpx.TimeoutException as error:
+                        if not _timeout_was_capped_by_deadline(error, remaining):
+                            raise
+                        raise _BudgetExhausted(
+                            _deferred_row(now, _deferred_page_note(page))) from None
                     except TimeoutError:
                         raise _BudgetExhausted(_deferred_row(now, _deferred_page_note(page))) from None
                 else:
