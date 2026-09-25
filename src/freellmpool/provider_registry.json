@@ -1722,13 +1722,13 @@
         {
           "id": "terms",
           "url": "https://developers.cloudflare.com/workers-ai/platform/pricing/",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Free Workers AI account: 10000 shared neurons/day reset midnight UTC; free plan hard rejects excess. Paid Workers accounts can bill overage, and specified frontier models require payment.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "17ed9386bea30b2def289c5b48f0d90126d9a8404064c9e041e026e07dd2d3e7"
+            "sha256": "fb76d601de5f02cfa1949cfe16d883b3fbe3f649bab359dcba3c389d91fab9eb"
           }
         },
         {

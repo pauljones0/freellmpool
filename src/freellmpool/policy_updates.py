@@ -281,11 +281,27 @@ def load_policy_status(env: Mapping[str, str]) -> JSON:
 
 
 def _fetch(client: httpx.Client, url: str) -> bytes:
-    with client.stream("GET", url, headers={"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING}, follow_redirects=False) as response:
-        if response.status_code != 200:
-            raise ValueError(f"policy source HTTP {response.status_code}")
-        return bounded_response_bytes(response, _MAX_BYTES,
-                                        deadline=time.monotonic() + _SOURCE_TOTAL_SECONDS)
+    seen = {url}
+    for _ in range(2):
+        with client.stream("GET", url, headers={"Accept": "application/json", "Accept-Encoding": ACCEPT_ENCODING}, follow_redirects=False) as response:
+            if response.status_code not in (301, 302, 303, 307, 308):
+                if response.status_code != 200:
+                    raise ValueError(f"policy source HTTP {response.status_code}")
+                return bounded_response_bytes(response, _MAX_BYTES,
+                                                deadline=time.monotonic() + _SOURCE_TOTAL_SECONDS)
+            location = response.headers.get("location", "")
+        # Tolerate one same-origin canonicalization hop (GitHub API 301s
+        # /repos/<name>/... to /repositories/<id>/...). Anything else —
+        # cross-host, relative, missing, or looping — stays rejected.
+        want = urlsplit(url)
+        got = urlsplit(location)
+        if (not location or not got.hostname or got.scheme != want.scheme
+                or got.hostname.lower() != (want.hostname or "").lower()
+                or location in seen):
+            raise ValueError("policy source redirect rejected")
+        url = location
+        seen.add(url)
+    raise ValueError("policy source redirect rejected")
 
 
 def refresh_policy(env: Mapping[str, str], *, client: httpx.Client | None = None,

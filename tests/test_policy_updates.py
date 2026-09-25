@@ -346,3 +346,59 @@ def test_active_policy_sources_renew_repeatedly_but_public_checks_use_packaged(c
         assert load_registry(env)[pid]["evidence"][0]["checked_at"] == row["checked_at"]
     public = discovery.refresh_evidence({}, [pid], public_only=True, path=tmp_path / "public-evidence.json")
     assert public["providers"][pid][sid]["status"] == "review_required"
+
+
+def _redirect_client(document, location, *, final_status=200, commit="b" * 40):
+    """Mock the GitHub API canonicalizing /repos/.../commits/HEAD (Sept 2025:
+    301 to /repositories/<id>/commits/HEAD) while raw stays direct."""
+    data = json.dumps(document).encode()
+    manifest = {"schema": 1, "revision": 1, "minimum_client_version": "0.13.0",
+                "registry_sha256": hashlib.sha256(data).hexdigest()}
+
+    def respond(request):
+        assert "authorization" not in request.headers
+        if request.url.path.endswith("/commits/HEAD") and "repositories" not in request.url.path:
+            return httpx.Response(301, headers={"location": location})
+        if request.url.host == "api.github.com":
+            return httpx.Response(final_status, json={"sha": commit})
+        assert request.url.host == "raw.githubusercontent.com"
+        if request.url.path.endswith("maintenance/policy-channel.json"):
+            return httpx.Response(200, json=manifest)
+        return httpx.Response(200, content=data)
+
+    return httpx.Client(transport=httpx.MockTransport(respond), follow_redirects=False)
+
+
+def test_same_host_redirect_is_followed_once(channel):
+    packaged, env = channel
+    location = "https://api.github.com/repositories/1358598330/commits/HEAD"
+    with _redirect_client(packaged, location) as client:
+        result = policy.refresh_policy(env, client=client, packaged=packaged)
+    assert result["status"] == "ok"
+    assert result["commit"] == "b" * 40
+    assert policy.load_policy_status(env)["revision"] == 1
+
+
+def test_cross_host_redirect_is_rejected_without_bundle(channel):
+    packaged, env = channel
+    with _redirect_client(packaged, "https://attacker.invalid/commits/HEAD") as client:
+        result = policy.refresh_policy(env, client=client, packaged=packaged)
+    assert result["status"] == "error"
+    assert not Path(env["FREELLMPOOL_POLICY_BUNDLE_FILE"]).exists()
+
+
+def test_relative_and_looping_redirects_are_rejected(channel):
+    packaged, env = channel
+    with _redirect_client(packaged, "/repositories/1358598330/commits/HEAD") as client:
+        assert policy.refresh_policy(env, client=client, packaged=packaged)["status"] == "error"
+    here = "https://api.github.com/repos/pauljones0/freellmpool/commits/HEAD"
+    with _redirect_client(packaged, here) as client:
+        assert policy.refresh_policy(env, client=client, packaged=packaged)["status"] == "error"
+
+
+def test_failed_redirect_target_stays_an_error(channel):
+    packaged, env = channel
+    location = "https://api.github.com/repositories/1358598330/commits/HEAD"
+    with _redirect_client(packaged, location, final_status=500) as client:
+        result = policy.refresh_policy(env, client=client, packaged=packaged)
+    assert result["status"] == "error"
