@@ -1972,11 +1972,41 @@ class _DiscoursePost(_SourceText):
             super().handle_data(data)
 
 
+_VOLATILE_PATTERNS = (
+    # ISO datetimes and build stamps: docs rebuilds must not read as policy drift.
+    (re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?\b"), "<datetime>"),
+    (re.compile(r"\b\d{4}-\d{2}-\d{2}\b"), "<date>"),
+    (re.compile(r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|"
+                r"Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b",
+                re.IGNORECASE), "<date>"),
+    (re.compile(r"\b\d{1,2}\s+(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|"
+                r"Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{4}\b", re.IGNORECASE), "<date>"),
+    # Clock times with an explicit zone marker; bare numbers are never touched.
+    (re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\s*(?:UTC|GMT|[ECMP][SD]T)\b", re.IGNORECASE), "<time>"),
+    # Relative activity stamps ("3 hours ago", "just now").
+    (re.compile(r"\b\d+\s+(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b", re.IGNORECASE), "<ago>"),
+    (re.compile(r"\bjust now\b", re.IGNORECASE), "<ago>"),
+)
+
+
+def _normalize_volatile_text(text: str) -> str:
+    """Mask volatile stamps so rebuilds and clocks do not read as policy drift.
+
+    Only timestamp-shaped spans are masked; every other word still feeds the
+    hash, so a changed price, limit, or restriction changes the digest.
+    """
+    for pattern, replacement in _VOLATILE_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def source_digest(content: bytes, content_type: str, algorithm: str = "visible_text_v1") -> str:
     """Stable, versioned hash: all document text, with whitespace normalized.
 
     JavaScript-only pages with no substantive text must not receive a reviewed
     baseline. A changed visible price, limit, or restriction changes this hash.
+    visible_text_v2 additionally masks volatile build/clock stamps; v1 vectors
+    are pinned by test and must never change.
     """
     decoded = content.decode("utf-8", errors="strict")
     if algorithm == "raw_body_v1":
@@ -2004,13 +2034,15 @@ def source_digest(content: bytes, content_type: str, algorithm: str = "visible_t
         # likes and avatars do not change the documented allowance.
         fields = {key: article.get(key) for key in ("Title", "TitleEn", "Content", "ContentEn", "Status")}
         return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
-    if algorithm != "visible_text_v1":
+    if algorithm not in {"visible_text_v1", "visible_text_v2"}:
         raise ValueError("Unknown source digest algorithm")
     if "html" in content_type.lower():
         parser = _SourceText()
         parser.feed(decoded)
         decoded = " ".join(parser.parts)
     normalized = " ".join(decoded.split())
+    if algorithm == "visible_text_v2":
+        normalized = _normalize_volatile_text(normalized)
     if not normalized:
         raise ValueError("Empty policy source")
     return hashlib.sha256(normalized.encode()).hexdigest()
@@ -2056,6 +2088,8 @@ def check_public_sources(provider_ids: list[str] | None = None, *,
                         record["status"] = "ok"
                         record["sha256"] = source_digest(content, response.headers.get("content-type", ""))
                         record["raw_sha256"] = hashlib.sha256(content).hexdigest()
+                        record["text_v2_sha256"] = source_digest(content, response.headers.get("content-type", ""),
+                                                                "visible_text_v2")
                         record["hash_algorithm"] = "visible_text_v1"
                         if urlsplit(url).hostname in {"modelscope.ai", "www.modelscope.ai"} and "/posts/" in url:
                             record["article_sha256"] = source_digest(content, "text/html", "modelscope_article_v1")
@@ -2088,12 +2122,14 @@ def refresh_evidence(env: dict[str, str], provider_ids: list[str] | None = None,
             baseline = evidence.get("source_hash", {})
             source = sources[evidence["url"]]
             algorithm = baseline.get("algorithm")
-            field = {"raw_body_v1": "raw_sha256", "modelscope_article_v1": "article_sha256", "discourse_first_post_v1": "post_sha256"}.get(algorithm, "sha256")
+            field = {"raw_body_v1": "raw_sha256", "modelscope_article_v1": "article_sha256",
+                       "discourse_first_post_v1": "post_sha256", "visible_text_v2": "text_v2_sha256"}.get(algorithm, "sha256")
             observed_hash = source.get(field)
             status = "review_required"
             if source["status"] != "ok":
                 status = "check_failed"
-            elif (algorithm in {"visible_text_v1", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"}
+            elif (algorithm in {"visible_text_v1", "visible_text_v2", "raw_body_v1", "modelscope_article_v1",
+                                "discourse_first_post_v1"}
                   and baseline.get("sha256") == observed_hash):
                 status = "unchanged"
             observed = datetime.fromisoformat(source["checked_at"])

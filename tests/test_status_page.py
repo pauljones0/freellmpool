@@ -131,6 +131,28 @@ def test_cli_check_fails_on_missing_files(tmp_path: Path) -> None:
     assert main(["status-page", "check", "--docs-dir", str(tmp_path)]) == 1
 
 
+def test_publish_syncs_sitemap_lastmod_to_snapshot_date(tmp_path: Path) -> None:
+    from freellmpool.status_page import sync_sitemap_lastmod
+    sitemap = tmp_path / "sitemap.xml"
+    sitemap.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        '  <url><loc>https://0xzr.github.io/freellmpool/free-tier-status.html</loc>'
+        "<lastmod>2026-09-19</lastmod><priority>0.8</priority></url>\n"
+        '  <url><loc>https://0xzr.github.io/freellmpool/other.html</loc>'
+        "<lastmod>2026-08-01</lastmod><priority>0.5</priority></url>\n"
+        "</urlset>\n")
+    publish_status(tmp_path, ROWS, generated_at="2026-09-25T15:30:00Z", version="0.13.0")
+    text = sitemap.read_text()
+    assert "<lastmod>2026-09-25</lastmod>" in text
+    assert "<lastmod>2026-08-01</lastmod>" in text  # other entries untouched
+    page = (tmp_path / "free-tier-status.html").read_text()
+    assert "2026-09-25" in page  # sitemap date stays visible on the page
+    # Missing sitemap is a no-op for fresh docs dirs.
+    (tmp_path / "sitemap.xml").unlink()
+    assert sync_sitemap_lastmod(tmp_path, "2026-09-26T00:00:00Z") is False
+
+
 def test_validate_published_detects_shape_and_secret_problems(tmp_path: Path) -> None:
     assert validate_published(tmp_path)  # missing files
     (tmp_path / "free-tier-status.html").write_text("<html>no stamp</html>")

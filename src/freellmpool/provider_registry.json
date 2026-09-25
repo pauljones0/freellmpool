@@ -272,8 +272,8 @@
           "claim": "Anonymous testing access has limited per-IP requests; authenticated Public Cloud billing is separate.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "5c3e9be77a973a9fba324203d57939b34c7efbec574380a21683676c0f6d0292"
+            "algorithm": "visible_text_v2",
+            "sha256": "fcf112831b207868620a4a8aed9566afd11aeb9fee162b17500f2c9ae2a6f2cf"
           }
         },
         {
@@ -284,8 +284,8 @@
           "claim": "Listed token prices describe billed usage and do not themselves negate the separately documented anonymous allowance.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "115744fd4e8ecdee0122f467c017b572fd920c015f93907084c3ac6d1ef8fb70"
+            "algorithm": "visible_text_v2",
+            "sha256": "ea427a15c863c4168620bef01b26c6324f47d51a890e70080d1e118b0e5a2bb5"
           }
         }
       ],
@@ -495,8 +495,8 @@
           "claim": "Selected Zen routes are temporarily free; Go is a paid subscription, not an additional recurring free API grant. Recheck model availability and privacy terms.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "5db2c454a61494e2618d3bc7130fd6d312b05eaba276ea303a4c3d73fc51bd57"
+            "algorithm": "visible_text_v2",
+            "sha256": "733dcbc22b7bdd4e52dee357c1166362aa899c825969346fa22029b0279f16b3"
           }
         },
         {
@@ -507,8 +507,8 @@
           "claim": "Open-source limiter groups anonymous IP traffic; deployed numeric quotas are not published. Source implementation is not proof of current deployment configuration.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "a698ea3a0c8b4ac87bd713d043419a7f9d4223d486c3391f30039bb8ed26e8ae"
+            "algorithm": "visible_text_v2",
+            "sha256": "ff7a1793cedc21f43d101091fa16cce81d36b89d2abca3b2da53e0eab57e1ea8"
           }
         }
       ],
@@ -1137,8 +1137,8 @@
           "claim": "Only zero-priced routes qualify; model pricing is checked independently for every operation and chargeable add-ons are excluded.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "d6a21ca32a397944163e00f7ed1c51529c0a441fad6c13a11d47b5056962bf50"
+            "algorithm": "visible_text_v2",
+            "sha256": "e189b7ebd23ed63ae0a56509866cca4dcca486ea579b6704ce8aeebfa9483b24"
           }
         },
         {
@@ -2600,8 +2600,8 @@
           "claim": "Free cloud tier has starter credits, one concurrent request and monthly resets on signup anniversary. Starter credit amount is not publicly quantified. Adding credits unlocks more models and can consume purchased balance after included usage.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "4383d28f4df3886215f81f483a3a8844be93aca43a8540b6dae514839fdeae9c"
+            "algorithm": "visible_text_v2",
+            "sha256": "48973b2f891a0682495ab4e4ac7ea771df24dcf52ba6eae5b87cb9fd3db5a25c"
           }
         },
         {

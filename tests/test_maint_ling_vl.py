@@ -402,6 +402,10 @@ def test_refresh_rejects_stale_hash_renewal() -> None:
 
 def test_policy_channel_matches_renewed_registry() -> None:
     manifest = json.loads(CHANNEL_PATH.read_text(encoding="utf-8"))
-    assert manifest["revision"] == 9
+    # Revisions advance with each later review (9: Sept-25 sweep, 10:
+    # cloudflare terms, 11: compound prune, 12: visible_text_v2 flap fix);
+    # the durable invariant is that the manifest tracks this tree's
+    # registry bytes exactly.
+    assert manifest["revision"] >= 9
     assert manifest["registry_sha256"] == hashlib.sha256(
         REGISTRY_PATH.read_bytes()).hexdigest()

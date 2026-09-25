@@ -212,6 +212,33 @@ def _load_history(path: Path) -> list[dict[str, Any]]:
             and isinstance(entry.get("generated_at"), str)]
 
 
+_SITEMAP_LASTMOD = re.compile(
+    r"(?P<head><url><loc>[^<]*free-tier-status\.html</loc><lastmod>)\d{4}-\d{2}-\d{2}(?P<tail></lastmod>)")
+_DATE_PREFIX = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def sync_sitemap_lastmod(docs_dir: str | Path, generated_at: str) -> bool:
+    """Point the status page's sitemap lastmod at the snapshot date.
+
+    The page always renders ``generated_at`` verbatim, so the synced date
+    stays visible on the page and the sitemap never ages out of the
+    rotating history window. Missing sitemap or entry is a no-op (fresh
+    docs dirs); only the status entry's date digits are touched.
+    """
+    match = _DATE_PREFIX.match(generated_at)
+    if match is None:
+        raise ValueError("generated_at must start with YYYY-MM-DD")
+    sitemap = Path(docs_dir) / "sitemap.xml"
+    if not sitemap.is_file():
+        return False
+    text = sitemap.read_text(encoding="utf-8")
+    updated, count = _SITEMAP_LASTMOD.subn(r"\g<head>" + match.group(0) + r"\g<tail>", text, count=1)
+    if not count:
+        return False
+    sitemap.write_text(updated, encoding="utf-8")
+    return True
+
+
 def publish_status(docs_dir: str | Path, rows: list[HealthRow], *,
                    generated_at: str, version: str) -> tuple[Path, Path]:
     """Write the status page + history into ``docs_dir``; fail closed on secrets."""
@@ -231,6 +258,7 @@ def publish_status(docs_dir: str | Path, rows: list[HealthRow], *,
     history_path = docs / STATUS_HISTORY_NAME
     page_path.write_text(page_text)
     history_path.write_text(history_text)
+    sync_sitemap_lastmod(docs, generated_at)
     errors = validate_published(docs)
     if errors:
         raise ValueError(f"published status shape invalid: {errors}")

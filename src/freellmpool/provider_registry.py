@@ -77,7 +77,7 @@ def evidence_renewal_is_current(
     baseline = source.get("source_hash", {})
     if (not isinstance(baseline, dict) or update.get("status") != "unchanged"
             or update.get("policy_sha256") != digest
-            or baseline.get("algorithm") not in {"visible_text_v1", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"}
+            or baseline.get("algorithm") not in {"visible_text_v1", "visible_text_v2", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"}
             or not isinstance(baseline.get("sha256"), str)
             or re.fullmatch(r"[a-f0-9]{64}", baseline["sha256"]) is None
             or update.get("hash_algorithm") != baseline.get("algorithm")

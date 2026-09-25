@@ -478,7 +478,7 @@ def build_public_report(registry: JSON, catalog: JSON, *, evidence: JSON | None 
             if state == "review_required":
                 baseline_hash = source.get("source_hash", {})
                 has_baseline = (isinstance(baseline_hash.get("sha256"), str) and _HASH.fullmatch(baseline_hash["sha256"])
-                    and baseline_hash.get("algorithm") in {"visible_text_v1", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"})
+                    and baseline_hash.get("algorithm") in {"visible_text_v1", "visible_text_v2", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"})
                 add(_finding(pid, "source_changed" if has_baseline else "source_baseline_needed", sid,
                     before=baseline_hash.get("sha256") if has_baseline else None,
                     after=overlay.get("last_observed_sha256", overlay.get("sha256")), source_url=source["url"]))

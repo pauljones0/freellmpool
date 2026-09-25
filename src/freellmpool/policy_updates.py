@@ -193,7 +193,7 @@ def validate_document(document: JSON, packaged: JSON) -> None:
             if not 0 < lifetime <= 7 * 86400:
                 raise ValueError("policy evidence freshness exceeds review interval")
             digest = source.get("source_hash")
-            if digest is not None and (not isinstance(digest, dict) or digest.get("algorithm") not in {"visible_text_v1", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"} or not _DIGEST.fullmatch(str(digest.get("sha256", "")))):
+            if digest is not None and (not isinstance(digest, dict) or digest.get("algorithm") not in {"visible_text_v1", "visible_text_v2", "raw_body_v1", "modelscope_article_v1", "discourse_first_post_v1"} or not _DIGEST.fullmatch(str(digest.get("sha256", "")))):
                 raise ValueError("invalid policy source digest")
         for row in [*grants.values(), *limits.values()]:
             refs = row.get("evidence_ids", [])

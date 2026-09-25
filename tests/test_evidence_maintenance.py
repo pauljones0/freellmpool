@@ -122,3 +122,58 @@ def test_discourse_policy_post_hash_ignores_related_topic_counts_and_detects_rul
     for invalid in (b"<p>No post</p>", b'<div class="post" itemprop="text">Unclosed'):
         with pytest.raises(ValueError):
             d.source_digest(invalid, "text/html", "discourse_first_post_v1")
+
+
+def test_visible_text_v1_vectors_stay_pinned():
+    pinned = b"<html><main>Free: 10 requests per day. (built 2026-09-25T05:54:54.356Z)</main></html>"
+    assert d.source_digest(pinned, "text/html") == "38b3714e81e1abd4c72cb9ec7e3ad72c970ae9a59430920e6bfc0e6f1e2421ef"
+
+
+def test_visible_text_v2_ignores_build_stamps_but_detects_policy_changes():
+    def page(stamp, allowance):
+        return (f"<html><main>Free: {allowance} requests per day. "
+                f"From the docs graph (built {stamp}), spanning docs.</main></html>").encode()
+    digest = d.source_digest(page("2026-09-25T05:54:54.356Z", "10"), "text/html", "visible_text_v2")
+    assert digest == d.source_digest(page("2026-09-25T15:15:34.887Z", "10"), "text/html", "visible_text_v2")
+    assert digest != d.source_digest(page("2026-09-25T15:15:34.887Z", "100"), "text/html", "visible_text_v2")
+
+
+def test_visible_text_v2_ignores_last_updated_dates_and_relative_times():
+    def page(updated, activity):
+        return (f"<html><main>Free tier. Last updated {updated}. Deployed {activity}.</main></html>").encode()
+    digest = d.source_digest(page("September 8, 2026", "3 hours ago"), "text/html", "visible_text_v2")
+    assert digest == d.source_digest(page("September 25, 2026", "10 hours ago"), "text/html", "visible_text_v2")
+    assert digest == d.source_digest(page("2026-09-25", "just now"), "text/html", "visible_text_v2")
+    assert digest != d.source_digest(page("2026-09-25", "just now").replace(b"Free tier", b"Paid tier"),
+                                     "text/html", "visible_text_v2")
+
+
+def test_visible_text_v2_unknown_algorithm_still_rejected():
+    import pytest
+    with pytest.raises(ValueError):
+        d.source_digest(b"<main>Free</main>", "text/html", "visible_text_v9")
+
+
+def test_refresh_evidence_v2_ignores_stamp_drift_but_blocks_policy_change(monkeypatch, tmp_path):
+    before = "<html><main>Free: 10 requests per day. (built 2026-09-25T05:54:54.356Z)</main></html>"
+    now = datetime.now(UTC)
+    provider = {"id": "example", "grants": [{"capacity": 10}], "evidence": [{
+        "id": "terms", "url": "https://provider.example/pricing", "status": "official",
+        "checked_at": (now - timedelta(days=8)).isoformat(),
+        "expires_at": (now - timedelta(days=1)).isoformat(),
+        "source_hash": {"algorithm": "visible_text_v2",
+                        "sha256": d.source_digest(before.encode(), "text/html", "visible_text_v2")}}]}
+    path = tmp_path / "registry.json"
+    path.write_text(json.dumps({"schema": 1, "providers": [provider]}))
+    monkeypatch.setattr(registry_module, "REGISTRY_PATH", path)
+    env = {"FREELLMPOOL_EVIDENCE_FILE": str(tmp_path / "evidence.json")}
+    stamp_only = before.replace("2026-09-25T05:54:54.356Z", "2026-09-26T01:02:03.004Z")
+    mock_source(monkeypatch, stamp_only)
+    result = d.refresh_evidence(env)
+    assert result["providers"]["example"]["terms"]["status"] == "unchanged"
+    # Separate evidence file: a changed page after a good renewal keeps the
+    # last good row visible with last_status set, by design.
+    env2 = {"FREELLMPOOL_EVIDENCE_FILE": str(tmp_path / "evidence2.json")}
+    mock_source(monkeypatch, stamp_only.replace("10 requests", "100 requests"))
+    result = d.refresh_evidence(env2)
+    assert result["providers"]["example"]["terms"]["status"] == "review_required"
