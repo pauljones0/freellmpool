@@ -267,25 +267,25 @@
         {
           "id": "terms",
           "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Anonymous testing access has limited per-IP requests; authenticated Public Cloud billing is separate.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "17c3c792a2edb32e6d003cc88f68bac5d34d5be623028a4e97325c48354cd5c2"
+            "sha256": "5c3e9be77a973a9fba324203d57939b34c7efbec574380a21683676c0f6d0292"
           }
         },
         {
           "id": "pricing",
           "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-billing",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Listed token prices describe billed usage and do not themselves negate the separately documented anonymous allowance.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "b3bac801d888252a14ef9b33c3cd7aebaec5ec9876d9f8b1eeb4ec0b2159da1a"
+            "sha256": "115744fd4e8ecdee0122f467c017b572fd920c015f93907084c3ac6d1ef8fb70"
           }
         }
       ],
@@ -375,13 +375,13 @@
         {
           "id": "terms",
           "url": "https://kilo.ai/docs/gateway/authentication",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Anonymous free models are allowed; 200 requests/hour/IP applies across free requests, not once per model or API key.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "2ffcfcf9738e610e54a3d251273c329c6465b07e1832849a2ed245517c44f355"
+            "sha256": "7929a3d278785805a7478b64d2624fbc91803c6b1b3f059c90299621e1e94c86"
           }
         },
         {
@@ -490,25 +490,25 @@
         {
           "id": "terms",
           "url": "https://opencode.ai/docs/zen",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Selected Zen routes are temporarily free; Go is a paid subscription, not an additional recurring free API grant. Recheck model availability and privacy terms.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "bcdc42e1c73ade194b1d6ff17445d008407d5fe5a47bac2684ff6f0d76202c70"
+            "sha256": "5db2c454a61494e2618d3bc7130fd6d312b05eaba276ea303a4c3d73fc51bd57"
           }
         },
         {
           "id": "limiter",
           "url": "https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Open-source limiter groups anonymous IP traffic; deployed numeric quotas are not published. Source implementation is not proof of current deployment configuration.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "581f2f6ba915d14fe4b1923548acf99b087eea36d3e3529cecdca460cd2cb1a7"
+            "sha256": "a698ea3a0c8b4ac87bd713d043419a7f9d4223d486c3391f30039bb8ed26e8ae"
           }
         }
       ],
@@ -762,37 +762,37 @@
         {
           "id": "terms",
           "url": "https://console.groq.com/docs/billing-faqs",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "The Free organization plan is distinct from the billable Developer plan. Adding a payment method upgrades to Developer; paid balances do not preserve a free request price.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "4cdb46e1f700505cd5dc99ab3a60a7fae4a146577fae60d5dbdd87bc1bc5d761"
+            "sha256": "386717a7b89a70e3f3fed4a0d4e5cd96831708ef621d2e4fef4bb648ade78db0"
           }
         },
         {
           "id": "limits",
           "url": "https://console.groq.com/docs/rate-limits",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Limits apply by organization and model. Request headers are daily requests; token headers are tokens/minute. Exact limits are account-specific; daily reset timezone is undocumented.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "6ea925ca546471b5f094b430e2344369bbd1eab5dc40062236e713b006de8fb7"
+            "sha256": "d3862f3e4f047c34905760b463ace2ce40369872eb0159d1563743b64ab7eed2"
           }
         },
         {
           "id": "speech_billing",
           "url": "https://console.groq.com/docs/speech-to-text",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Speech-to-text has a 10-second minimum billed length; reserve this floor conservatively with the audio quota.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "f42c3b879fa705a8af1142cee6660275747c6880e71af06edac98740b476806e"
+            "sha256": "28eedbd0af45d6187c49c28eeff4f59576775ec94263c0239981472d3cfac7b5"
           }
         }
       ],
@@ -1138,25 +1138,25 @@
         {
           "id": "terms",
           "url": "https://vercel.com/docs/ai-gateway/pricing",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Only zero-priced routes qualify; model pricing is checked independently for every operation and chargeable add-ons are excluded.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "19c8bba745493eb873178e2daef2be5706854fb190899f9eff41f2050cc211a2"
+            "sha256": "d6a21ca32a397944163e00f7ed1c51529c0a441fad6c13a11d47b5056962bf50"
           }
         },
         {
           "id": "catalog",
           "url": "https://ai-gateway.vercel.sh/v1/models",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Public catalog lists prices per token and modality/capability metadata. Zero price must cover every relevant operation.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "0cc3b4bcf7382cbb0b25196d890e3602df2a25582f9edea691e9461eee8bf1b1"
+            "sha256": "1645c74670af7a5aa2dca541f327b357d38c2967075cf4c6499551d1f3e80c82"
           }
         }
       ],
@@ -1378,13 +1378,13 @@
         {
           "id": "pricing",
           "url": "https://openrouter.ai/docs/guides/routing/provider-selection",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Free requests should use exact free variants and provider.max_price zero to prevent paid provider fallback; billable plug-ins remain excluded.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "f8a9b9a377cc97a3aa6a33bba12723674f0d29bb30a94f6dd0cf31180b533869"
+            "sha256": "61065c754e180b0e277388057e1b78aaa60e5bb257d629656536d663fc5474b2"
           }
         }
       ],
@@ -1544,37 +1544,37 @@
         {
           "id": "terms",
           "url": "https://ai.google.dev/gemini-api/docs/pricing",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Only selected model operations have a free tier; paid project billing does not inherit free pricing. Models listing is not pricing or account entitlement.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "561303312ab491ff4d78fe3b0fd04b401d6491be4c89ee735bc19e2a3e29b47a"
+            "sha256": "b638c2e3c5cc0ed58b6c16d6656e9c5d52c3b1beb3738f45159f008ddecf0557"
           }
         },
         {
           "id": "limits",
           "url": "https://ai.google.dev/gemini-api/docs/rate-limits",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Rate limits are per project, not key; input TPM and requests have separate limits. Daily requests reset at midnight America/Los_Angeles. Exact current limits appear in AI Studio.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "b9bfe4986f3613b17da6952600f359d9a65e3515da208b0cae4211c6fd1d08a2"
+            "sha256": "e8c425f16cb47e71d378c1c294019498b0079461137bbc6107ff7e6be7e07511"
           }
         },
         {
           "id": "auth",
           "url": "https://ai.google.dev/gemini-api/docs/api-key",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "September 2026 standard API-key retirement requires current AI Studio authorization keys, bound to service accounts. Auth migration errors must not be labeled quota exhaustion.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "354178211285fca77b55e2066742d963b78001c4641dc71be4984c801e46b7d7"
+            "sha256": "b4443b1399446eff6f72b23e9e7852b9d4e8734b0e060a70110d4f5a4f3aa243"
           }
         }
       ],
@@ -1734,13 +1734,13 @@
         {
           "id": "catalog",
           "url": "https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Account-specific model search requires Workers AI read/write permission and pagination. Model price conversion and paid-required exclusions need separate reviewed evidence.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "5079d33455ecad10d4a2968a7333a3430b3f5efffa2c2c2992a90835f254e0e4"
+            "sha256": "f67fbcd483b73a25748b52251709e48af3d88e090a4ebe0005527d886c0e5db5"
           }
         }
       ],
@@ -2261,13 +2261,13 @@
         {
           "id": "limits",
           "url": "https://docs.mistral.ai/api/endpoint/beta/admin/billing",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Optional admin-key GET /admin/rate-limit, /admin/spend-limit and /admin/usage expose limits/usage. An inference key need not have admin permissions; forbidden admin access leaves limits unknown.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "08892b8f522260359ebfc7fca0afbcbe63ec92016d23bcbe97a5d6d3ee89cfde"
+            "sha256": "db6c40c802e2f27532fbe7271dab3412b371c466989943e37d61b806d1a0c1fc"
           }
         }
       ],
@@ -2377,25 +2377,25 @@
         {
           "id": "terms",
           "url": "https://docs.cohere.com/v2/docs/rate-limits",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Trial/evaluation keys have 1000 shared API calls/month and model-specific endpoint rates; production keys are paid even when their rate caps look similar. Trial is recurring monthly evaluation allowance, not a signup balance.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "fbe34f81914cd56a0163feeb1d2bc26070a8dbc5dde2e38227fa954e169e484a"
+            "sha256": "935b86e808d63273928d33d3fe74f0e92d2f4a9c163119679ba8a90be290d0b9"
           }
         },
         {
           "id": "catalog",
           "url": "https://docs.cohere.com/reference/list-models",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Native model listing supports page_size up to 1000, page_token and next_page_token; endpoints and deprecation metadata determine supported operations.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "787be5786f9c7771ce3fb568985655d140250bd1d4bcd12e307dc90d4a21f542"
+            "sha256": "717011e35c61b661d60b74dcaf600a74baf24dbb6bba661795760c04fc0d665e"
           }
         }
       ],
@@ -2601,13 +2601,13 @@
         {
           "id": "terms",
           "url": "https://ollama.com/pricing",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
+          "checked_at": "2026-09-25T00:00:00+00:00",
+          "expires_at": "2026-10-02T00:00:00+00:00",
           "claim": "Free cloud tier has starter credits, one concurrent request and monthly resets on signup anniversary. Starter credit amount is not publicly quantified. Adding credits unlocks more models and can consume purchased balance after included usage.",
           "status": "verified",
           "source_hash": {
             "algorithm": "visible_text_v1",
-            "sha256": "743d3cb5ba12eae33e02d019a7e532a3f4ae94133363841e2541078388ecc438"
+            "sha256": "4383d28f4df3886215f81f483a3a8844be93aca43a8540b6dae514839fdeae9c"
           }
         },
         {

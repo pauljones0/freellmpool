@@ -34,7 +34,7 @@ interface. The setup story has been rebuilt end to end (goals G1–G5 in
   chain, Bandit/pip-audit/zizmor/CodeQL gates, the evidence process, and
   the ToS posture. Docs: `docs/TRUST.md`.
 
-Current catalog: 15 providers, 139 enabled chat routes, 139 cataloged
+Current catalog: 15 providers, 138 enabled chat routes, 138 cataloged
 chat models (enforced by `scripts/check-counts`, so the docs can't drift).
 
 Honest caveats, up front:

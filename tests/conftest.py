@@ -18,6 +18,8 @@ def isolate_operator_state(tmp_path, monkeypatch):
     Explicit env={} callers bypass environment overrides, so their Path.home()
     fallback must also be temporary. HOME itself remains unchanged. Individual
     tests can still override paths through their own monkeypatch calls.
+    Ambient XDG_CONFIG_HOME is dropped so the XDG fallback also resolves
+    under the patched temporary home instead of the operator's config dir.
     """
     temporary_home = tmp_path / "_operator_home"
     temporary_home.mkdir()
@@ -46,6 +48,9 @@ def isolate_operator_state(tmp_path, monkeypatch):
     # Let reports follow DATA_DIR so a test's explicit data-root override wins.
     monkeypatch.delenv("FREELLMPOOL_REPORT_DIR", raising=False)
     monkeypatch.delenv("FREELLMPOOL_REPORTS_DIR", raising=False)
+    # The XDG fallback reads ambient state; drop it so sandboxed Path.home()
+    # wins for every caller, including explicit env={} lookups (G23 #13).
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     # First-run discovery bootstrap stays off: the suite must never touch the network.
     monkeypatch.setenv("FREELLMPOOL_NO_AUTO_DISCOVERY", "1")
     monkeypatch.setenv("FREELLMPOOL_DATA_DIR", str(state))

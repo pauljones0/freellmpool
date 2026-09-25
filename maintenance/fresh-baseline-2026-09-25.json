@@ -1,0 +1,950 @@
+{
+  "baseline_status": "ok",
+  "checked_at": "2026-09-25T06:05:58.714900+00:00",
+  "findings": [
+    {
+      "after": true,
+      "before": false,
+      "code": "model_added",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "d052bd155f830a9204ba359eb07dae22b9fdde72dd9e652da5fb17595a9cf1c3",
+      "id": "aion:model_added:0a61e69548483bad",
+      "kind": "review",
+      "provider": "aion",
+      "status": "open",
+      "subject": "aion-labs/aion-3.5-mini",
+      "summary": "A model was added; review its current grant and capabilities."
+    },
+    {
+      "after": true,
+      "before": false,
+      "code": "model_added",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "bab2a7f9bb4624ff252385a4be3b1bb8b2ceb7b38a403aa0ef92992c96a881a7",
+      "id": "aion:model_added:f8982c4efeb76197",
+      "kind": "review",
+      "provider": "aion",
+      "status": "open",
+      "subject": "aion-labs/aion-3.5",
+      "summary": "A model was added; review its current grant and capabilities."
+    },
+    {
+      "after": "f67fbcd483b73a25748b52251709e48af3d88e090a4ebe0005527d886c0e5db5",
+      "before": "5079d33455ecad10d4a2968a7333a3430b3f5efffa2c2c2992a90835f254e0e4",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "2f59e29f9a41bd0742959d78dfc08df45050097a8c38ada7e5c5990669e85020",
+      "id": "cloudflare:source_changed:652f55016243bf1b",
+      "kind": "review",
+      "provider": "cloudflare",
+      "source_url": "https://developers.cloudflare.com/api/resources/ai/subresources/models/methods/list/",
+      "status": "open",
+      "subject": "catalog",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": "935b86e808d63273928d33d3fe74f0e92d2f4a9c163119679ba8a90be290d0b9",
+      "before": "fbe34f81914cd56a0163feeb1d2bc26070a8dbc5dde2e38227fa954e169e484a",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "f2668348d9147d0828747f546e2d9fb45b4feb0b15042dbb3bfe55e54aac45b6",
+      "id": "cohere:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "cohere",
+      "source_url": "https://docs.cohere.com/v2/docs/rate-limits",
+      "status": "open",
+      "subject": "terms",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": "717011e35c61b661d60b74dcaf600a74baf24dbb6bba661795760c04fc0d665e",
+      "before": "787be5786f9c7771ce3fb568985655d140250bd1d4bcd12e307dc90d4a21f542",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "b5cb075985b54507d342f33561875d9455ea858e04c34d8b463b5b5765722c0c",
+      "id": "cohere:source_changed:652f55016243bf1b",
+      "kind": "review",
+      "provider": "cohere",
+      "source_url": "https://docs.cohere.com/reference/list-models",
+      "status": "open",
+      "subject": "catalog",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": "b638c2e3c5cc0ed58b6c16d6656e9c5d52c3b1beb3738f45159f008ddecf0557",
+      "before": "561303312ab491ff4d78fe3b0fd04b401d6491be4c89ee735bc19e2a3e29b47a",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "f2506744f982b0eb5020d6d5a2ec02133057cca75936807d610a0dfde2f44fac",
+      "id": "gemini:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "gemini",
+      "source_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "status": "open",
+      "subject": "terms",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "c02a9407c4b7812182ef120a7cd297f34a91e59605fd63447b50c4ed1f5a62a6",
+      "id": "gemini:source_expired:51d2361f4faea3bc",
+      "kind": "incident",
+      "provider": "gemini",
+      "status": "open",
+      "subject": "terms",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "limit_source_review",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "9b9bea78aba89a0f2c4b04fb4b6fa492b28d07d8bc7276fc14fa0950b9927c65",
+      "id": "groq:limit_source_review:5c4c1964340aca5b",
+      "kind": "review",
+      "provider": "groq",
+      "status": "open",
+      "subject": "provider",
+      "summary": "The official limit table needs a parser or evidence review."
+    },
+    {
+      "after": "d3862f3e4f047c34905760b463ace2ce40369872eb0159d1563743b64ab7eed2",
+      "before": "6ea925ca546471b5f094b430e2344369bbd1eab5dc40062236e713b006de8fb7",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "b0673dcb415f7c66e356aa3df0dbc5f1b7bcfe09c5e51f6a361ec5a56c05d8fc",
+      "id": "groq:source_changed:8a46fd6fc3d79d41",
+      "kind": "review",
+      "provider": "groq",
+      "source_url": "https://console.groq.com/docs/rate-limits",
+      "status": "open",
+      "subject": "limits",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "8ccb942f923d264e0683428cd9a7b59a9126a3fc0c3458ada077cda63125cc7f",
+      "id": "groq:source_expired:8a46fd6fc3d79d41",
+      "kind": "incident",
+      "provider": "groq",
+      "status": "open",
+      "subject": "limits",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "af3e45e3d478e2a77cc8339b82a0f9af850009194bccb84947c6e8797f87acd9",
+      "id": "kilo:model_removed:078ae181461e4c24",
+      "kind": "review",
+      "provider": "kilo",
+      "status": "open",
+      "subject": "deepseek/deepseek-v4-flash-0731:free",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "dbac78b9da6b5a50863bc3a385e72006cb974f752da42f7dbcbc2cc483986600",
+      "id": "kilo:model_removed:5a58272935b4d4a3",
+      "kind": "review",
+      "provider": "kilo",
+      "status": "open",
+      "subject": "inclusionai/ling-3.0-flash-vl:free",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": true,
+      "before": false,
+      "code": "model_added",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "a835a2b72be459e5aa4c62372929f7586885eba07c880ef7628f87642a36e6e0",
+      "id": "modelscope:model_added:b746f77976a9ea59",
+      "kind": "review",
+      "provider": "modelscope",
+      "status": "open",
+      "subject": "Qwen-Ambassador/Qwen3.8-Omni-Flash",
+      "summary": "A model was added; review its current grant and capabilities."
+    },
+    {
+      "after": true,
+      "before": false,
+      "code": "model_added",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "937046f5e1be2023d8dd856f0a8c2fe616623762ccf92d6df599eb2b8d6293d2",
+      "id": "nvidia:model_added:17567520b81b6487",
+      "kind": "review",
+      "provider": "nvidia",
+      "status": "open",
+      "subject": "deepseek-ai/deepseek-v4.1-flash",
+      "summary": "A model was added; review its current grant and capabilities."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "f8431979d3a0417b0bc5a7de4fcab95ab295f8e578bef0e840b1a8e339c0230a",
+      "id": "nvidia:model_removed:3c80a4a9b90355b6",
+      "kind": "review",
+      "provider": "nvidia",
+      "status": "open",
+      "subject": "deepseek-ai/deepseek-v4-flash-0731",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": "4383d28f4df3886215f81f483a3a8844be93aca43a8540b6dae514839fdeae9c",
+      "before": "743d3cb5ba12eae33e02d019a7e532a3f4ae94133363841e2541078388ecc438",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "d761e7b416a67863f5a1dbd787bd854eb21cec4eecac84041c595e1368967fc0",
+      "id": "ollama:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "ollama",
+      "source_url": "https://ollama.com/pricing",
+      "status": "open",
+      "subject": "terms",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "4a0b51c604df13497453244044b4f65e862957896b531206408894418f153dc2",
+      "id": "ollama:source_expired:51d2361f4faea3bc",
+      "kind": "incident",
+      "provider": "ollama",
+      "status": "open",
+      "subject": "terms",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": "5db2c454a61494e2618d3bc7130fd6d312b05eaba276ea303a4c3d73fc51bd57",
+      "before": "bcdc42e1c73ade194b1d6ff17445d008407d5fe5a47bac2684ff6f0d76202c70",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "80c4cdf6d0b5ad0a35c311af62c13de0204fe9c67fc64358ae8a579c95c7613b",
+      "id": "opencode:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "opencode",
+      "source_url": "https://opencode.ai/docs/zen",
+      "status": "open",
+      "subject": "terms",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": "a698ea3a0c8b4ac87bd713d043419a7f9d4223d486c3391f30039bb8ed26e8ae",
+      "before": "581f2f6ba915d14fe4b1923548acf99b087eea36d3e3529cecdca460cd2cb1a7",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "29654f8f7a4e8495f0c0ade79454ef3a1b22c8ccb1b87933061a2ee72266c439",
+      "id": "opencode:source_changed:cc79c176b387b977",
+      "kind": "review",
+      "provider": "opencode",
+      "source_url": "https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts",
+      "status": "open",
+      "subject": "limiter",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "7df53d9833cf7efd7ed40cefc0c6a54d9249353f5e19ee1dfef6433a3b657aa7",
+      "id": "opencode:source_expired:51d2361f4faea3bc",
+      "kind": "incident",
+      "provider": "opencode",
+      "status": "open",
+      "subject": "terms",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "2dde1a5cbf9be67428dfd0fcd113f57304f4021f4fb6e4c7aebe75370cfd602b",
+      "id": "opencode:source_expired:cc79c176b387b977",
+      "kind": "incident",
+      "provider": "opencode",
+      "status": "open",
+      "subject": "limiter",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "14430156a3144f12bdd55a5fce614fc95f4ffe1ab1d115d7eb456b0de9af5216",
+      "id": "openrouter:model_removed:078ae181461e4c24",
+      "kind": "review",
+      "provider": "openrouter",
+      "status": "open",
+      "subject": "deepseek/deepseek-v4-flash-0731:free",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "5ee4901b03e9b4a2d9b057ff49e8ca80d2215b8358bba35cbbb8c96458afccbc",
+      "id": "openrouter:model_removed:5a58272935b4d4a3",
+      "kind": "review",
+      "provider": "openrouter",
+      "status": "open",
+      "subject": "inclusionai/ling-3.0-flash-vl:free",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": "61065c754e180b0e277388057e1b78aaa60e5bb257d629656536d663fc5474b2",
+      "before": "f8a9b9a377cc97a3aa6a33bba12723674f0d29bb30a94f6dd0cf31180b533869",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "e9d6eee66a222459c944f0dca56f614e1a6604c63353dab3782a111567fdc7f8",
+      "id": "openrouter:source_changed:1e2ea6d9b72e685b",
+      "kind": "review",
+      "provider": "openrouter",
+      "source_url": "https://openrouter.ai/docs/guides/routing/provider-selection",
+      "status": "open",
+      "subject": "pricing",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "c33c6c9557ff8aafe89288d9f23ae23113b84e3c6ea974bb6bd3522c94dd6c50",
+      "id": "openrouter:source_expired:1e2ea6d9b72e685b",
+      "kind": "incident",
+      "provider": "openrouter",
+      "status": "open",
+      "subject": "pricing",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": true,
+      "before": false,
+      "code": "model_added",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "f3f34b8b77128fff4358cc07f3b43f271bafce5c5c24b75fcd7d672cf94a83bf",
+      "id": "ovh:model_added:bb0157d6b13cf734",
+      "kind": "review",
+      "provider": "ovh",
+      "status": "open",
+      "subject": "Qwen3-Embedding-8B",
+      "summary": "A model was added; review its current grant and capabilities."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "27ac8a4a56f14de5ef7fac6ce580c119070e41e857a84c6485e57f2019803721",
+      "id": "ovh:model_removed:27af7c76b6457b76",
+      "kind": "review",
+      "provider": "ovh",
+      "status": "open",
+      "subject": "Qwen3-32B",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": "115744fd4e8ecdee0122f467c017b572fd920c015f93907084c3ac6d1ef8fb70",
+      "before": "b3bac801d888252a14ef9b33c3cd7aebaec5ec9876d9f8b1eeb4ec0b2159da1a",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "88d93b2c815573b94141ca03f71e454137cd6e12acac65b1ccdeb84da4626dea",
+      "id": "ovh:source_changed:1e2ea6d9b72e685b",
+      "kind": "review",
+      "provider": "ovh",
+      "source_url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-billing",
+      "status": "open",
+      "subject": "pricing",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": "5c3e9be77a973a9fba324203d57939b34c7efbec574380a21683676c0f6d0292",
+      "before": "17c3c792a2edb32e6d003cc88f68bac5d34d5be623028a4e97325c48354cd5c2",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "8b9085f3a54cb40c632e4defc2d119360c78eb63858a0ce8b5f611e0ad3c7282",
+      "id": "ovh:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "ovh",
+      "source_url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
+      "status": "open",
+      "subject": "terms",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "1ffbe846707c11c21e376e0ffb5fcade2b07d0ee8904679cdf32e87831cdff7b",
+      "id": "ovh:source_expired:1e2ea6d9b72e685b",
+      "kind": "incident",
+      "provider": "ovh",
+      "status": "open",
+      "subject": "pricing",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "392c947b111a5bfbe611100df5ff0e7c090c2eb6f6204722fb20e5e0a3627e61",
+      "id": "ovh:source_expired:51d2361f4faea3bc",
+      "kind": "incident",
+      "provider": "ovh",
+      "status": "open",
+      "subject": "terms",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "0b51716d576739222b83aec3a49e294322380f0a7aa81079e808d80974c2bc59",
+      "id": "vercel:model_removed:0b92ada6da4aa58b",
+      "kind": "review",
+      "provider": "vercel",
+      "status": "open",
+      "subject": "inclusionai/ling-3.0-flash-vl-free",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": false,
+      "before": true,
+      "code": "model_removed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "0d266b4e021a8accc9994e88fc7d72982f264e25d3f2b84647537bbd39144b4b",
+      "id": "vercel:model_removed:724c2a784624afa2",
+      "kind": "review",
+      "provider": "vercel",
+      "status": "open",
+      "subject": "inclusionai/ling-3.0-flash-vl",
+      "summary": "A model is no longer in the complete free catalog."
+    },
+    {
+      "after": "d6a21ca32a397944163e00f7ed1c51529c0a441fad6c13a11d47b5056962bf50",
+      "before": "19c8bba745493eb873178e2daef2be5706854fb190899f9eff41f2050cc211a2",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "4fc1b59cd096eaa2ac73ef944cbf15cbe027343d7678d639c8f6da6bab79fac9",
+      "id": "vercel:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "vercel",
+      "source_url": "https://vercel.com/docs/ai-gateway/pricing",
+      "status": "open",
+      "subject": "terms",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": "1645c74670af7a5aa2dca541f327b357d38c2967075cf4c6499551d1f3e80c82",
+      "before": "0cc3b4bcf7382cbb0b25196d890e3602df2a25582f9edea691e9461eee8bf1b1",
+      "code": "source_changed",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "166eaff1f0e13f1425880a68baaa8eb501dff7866eac280ec018c2cda01db2d2",
+      "id": "vercel:source_changed:652f55016243bf1b",
+      "kind": "review",
+      "provider": "vercel",
+      "source_url": "https://ai-gateway.vercel.sh/v1/models",
+      "status": "open",
+      "subject": "catalog",
+      "summary": "A reviewed policy source changed and requires review."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "1aac97cb8e22e127c0ce7db04285066a2daf0fd96ef2cc0362115d6329b9f8da",
+      "id": "vercel:source_expired:51d2361f4faea3bc",
+      "kind": "incident",
+      "provider": "vercel",
+      "status": "open",
+      "subject": "terms",
+      "summary": "Reviewed policy evidence is missing or expired."
+    },
+    {
+      "after": null,
+      "before": null,
+      "code": "source_expired",
+      "command": "freellmpool maintenance --refresh",
+      "fingerprint": "e3e6f5bdce9db592a9846ab830ca39f962665be3f87afda4503546914b611f7f",
+      "id": "vercel:source_expired:652f55016243bf1b",
+      "kind": "incident",
+      "provider": "vercel",
+      "status": "open",
+      "subject": "catalog",
+      "summary": "Reviewed policy evidence is missing or expired."
+    }
+  ],
+  "proposals": [],
+  "providers": {
+    "aion": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:46.438102+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:46.438102+00:00",
+        "last_attempt_at": "2026-09-25T06:05:46.438102+00:00",
+        "model_count": 6,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:52.243171+00:00",
+          "expires_at": "2026-10-02T06:05:52.243171+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:52.243171+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "cloudflare": {
+      "catalog": {
+        "checked_at": null,
+        "complete": false,
+        "expires_at": null,
+        "last_attempt_at": null,
+        "model_count": 0,
+        "status": "unsupported"
+      },
+      "coverage": "unsupported",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:56.392786+00:00",
+          "expires_at": "2026-10-02T06:05:56.392786+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:56.392786+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-20T16:05:49.006159+00:00",
+          "expires_at": "2026-09-27T16:05:49.006159+00:00",
+          "id": "catalog",
+          "last_attempt_at": "2026-09-25T06:05:56.514513+00:00",
+          "status": "review_required"
+        }
+      ]
+    },
+    "cohere": {
+      "catalog": {
+        "checked_at": null,
+        "complete": false,
+        "expires_at": null,
+        "last_attempt_at": null,
+        "model_count": 0,
+        "status": "unsupported"
+      },
+      "coverage": "unsupported",
+      "sources": [
+        {
+          "checked_at": "2026-09-20T16:05:50.136508+00:00",
+          "expires_at": "2026-09-27T16:05:50.136508+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:57.318630+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-20T16:05:50.743569+00:00",
+          "expires_at": "2026-09-27T16:05:50.743569+00:00",
+          "id": "catalog",
+          "last_attempt_at": "2026-09-25T06:05:57.606036+00:00",
+          "status": "review_required"
+        }
+      ]
+    },
+    "gemini": {
+      "catalog": {
+        "checked_at": null,
+        "complete": false,
+        "expires_at": null,
+        "last_attempt_at": null,
+        "model_count": 0,
+        "status": "unsupported"
+      },
+      "coverage": "unsupported",
+      "sources": [
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:55.220912+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:55.950968+00:00",
+          "expires_at": "2026-10-02T06:05:55.950968+00:00",
+          "id": "limits",
+          "last_attempt_at": "2026-09-25T06:05:55.950968+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:56.155715+00:00",
+          "expires_at": "2026-10-02T06:05:56.155715+00:00",
+          "id": "auth",
+          "last_attempt_at": "2026-09-25T06:05:56.155715+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "groq": {
+      "catalog": {
+        "checked_at": null,
+        "complete": false,
+        "expires_at": null,
+        "last_attempt_at": null,
+        "model_count": 0,
+        "status": "unsupported"
+      },
+      "coverage": "unsupported",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:51.703462+00:00",
+          "expires_at": "2026-10-02T06:05:51.703462+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:51.703462+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "limits",
+          "last_attempt_at": "2026-09-25T06:05:51.945609+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:52.062280+00:00",
+          "expires_at": "2026-10-02T06:05:52.062280+00:00",
+          "id": "speech_billing",
+          "last_attempt_at": "2026-09-25T06:05:52.062280+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "kilo": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:45.653537+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:45.653537+00:00",
+        "last_attempt_at": "2026-09-25T06:05:45.653537+00:00",
+        "model_count": 20,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:50.386557+00:00",
+          "expires_at": "2026-10-02T06:05:50.386557+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:50.386557+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:50.744870+00:00",
+          "expires_at": "2026-10-02T06:05:50.744870+00:00",
+          "id": "pricing",
+          "last_attempt_at": "2026-09-25T06:05:50.744870+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "llm7": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:44.299625+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:44.299625+00:00",
+        "last_attempt_at": "2026-09-25T06:05:44.299625+00:00",
+        "model_count": 3,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:49.060666+00:00",
+          "expires_at": "2026-10-02T06:05:49.060666+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:49.060666+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:49.487513+00:00",
+          "expires_at": "2026-10-02T06:05:49.487513+00:00",
+          "id": "models",
+          "last_attempt_at": "2026-09-25T06:05:49.487513+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "mistral": {
+      "catalog": {
+        "checked_at": null,
+        "complete": false,
+        "expires_at": null,
+        "last_attempt_at": null,
+        "model_count": 0,
+        "status": "unsupported"
+      },
+      "coverage": "unsupported",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:56.878793+00:00",
+          "expires_at": "2026-10-02T06:05:56.878793+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:56.878793+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:57.186908+00:00",
+          "expires_at": "2026-10-02T06:05:57.186908+00:00",
+          "id": "limits",
+          "last_attempt_at": "2026-09-25T06:05:57.186908+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "modelscope": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:46.605270+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:46.605270+00:00",
+        "last_attempt_at": "2026-09-25T06:05:46.605270+00:00",
+        "model_count": 33,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:52.452896+00:00",
+          "expires_at": "2026-10-02T06:05:52.452896+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:52.452896+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "nvidia": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:48.456710+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:48.456710+00:00",
+        "last_attempt_at": "2026-09-25T06:05:48.456710+00:00",
+        "model_count": 75,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:54.333766+00:00",
+          "expires_at": "2026-10-02T06:05:54.333766+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:54.333766+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "ollama": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:48.847446+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:48.847446+00:00",
+        "last_attempt_at": "2026-09-25T06:05:48.847446+00:00",
+        "model_count": 6,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:57.997501+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-25T06:05:58.220829+00:00",
+          "expires_at": "2026-10-02T06:05:58.220829+00:00",
+          "id": "models",
+          "last_attempt_at": "2026-09-25T06:05:58.220829+00:00",
+          "status": "unchanged"
+        }
+      ]
+    },
+    "opencode": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:46.230909+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:46.230909+00:00",
+        "last_attempt_at": "2026-09-25T06:05:46.230909+00:00",
+        "model_count": 5,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:50.913468+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "limiter",
+          "last_attempt_at": "2026-09-25T06:05:51.152653+00:00",
+          "status": "review_required"
+        }
+      ]
+    },
+    "openrouter": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:48.623502+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:48.623502+00:00",
+        "last_attempt_at": "2026-09-25T06:05:48.623502+00:00",
+        "model_count": 21,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:54.747188+00:00",
+          "expires_at": "2026-10-02T06:05:54.747188+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:54.747188+00:00",
+          "status": "unchanged"
+        },
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "pricing",
+          "last_attempt_at": "2026-09-25T06:05:54.908460+00:00",
+          "status": "review_required"
+        }
+      ]
+    },
+    "ovh": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:44.896216+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:44.896216+00:00",
+        "last_attempt_at": "2026-09-25T06:05:44.896216+00:00",
+        "model_count": 19,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:49.597099+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "pricing",
+          "last_attempt_at": "2026-09-25T06:05:50.142955+00:00",
+          "status": "review_required"
+        }
+      ]
+    },
+    "vercel": {
+      "catalog": {
+        "checked_at": "2026-09-25T06:05:47.964934+00:00",
+        "complete": true,
+        "expires_at": "2026-09-27T06:05:47.964934+00:00",
+        "last_attempt_at": "2026-09-25T06:05:47.964934+00:00",
+        "model_count": 4,
+        "status": "ok"
+      },
+      "coverage": "public",
+      "sources": [
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:53.657359+00:00",
+          "status": "review_required"
+        },
+        {
+          "checked_at": "2026-09-18T00:00:00+00:00",
+          "expires_at": "2026-09-25T00:00:00+00:00",
+          "id": "catalog",
+          "last_attempt_at": "2026-09-25T06:05:54.134267+00:00",
+          "status": "review_required"
+        }
+      ]
+    },
+    "zhipu": {
+      "catalog": {
+        "checked_at": null,
+        "complete": false,
+        "expires_at": null,
+        "last_attempt_at": null,
+        "model_count": 0,
+        "status": "unsupported"
+      },
+      "coverage": "unsupported",
+      "sources": [
+        {
+          "checked_at": "2026-09-25T06:05:57.709855+00:00",
+          "expires_at": "2026-10-02T06:05:57.709855+00:00",
+          "id": "terms",
+          "last_attempt_at": "2026-09-25T06:05:57.709855+00:00",
+          "status": "unchanged"
+        }
+      ]
+    }
+  },
+  "resolutions": [
+    {
+      "code": "source_changed",
+      "fingerprint": "97a79180fa472d3c23d181e302d9e26e6302aa637ed97da4b3d21a7da1d4fa2d",
+      "id": "groq:source_changed:51d2361f4faea3bc",
+      "kind": "review",
+      "provider": "groq",
+      "subject": "terms"
+    },
+    {
+      "code": "source_changed",
+      "fingerprint": "39473571af32da500e643f16d97dfec3a4a9773c66d76c144cf5976fbbed1395",
+      "id": "groq:source_changed:8b74a848cccdc26d",
+      "kind": "review",
+      "provider": "groq",
+      "subject": "speech_billing"
+    },
+    {
+      "code": "catalog_due",
+      "fingerprint": "3833d9d47108bd97b2af64af007c5bc02f240f98b12142fc3b5abf9bced2b3fe",
+      "id": "kilo:catalog_due:5c4c1964340aca5b",
+      "kind": "incident",
+      "provider": "kilo",
+      "subject": "provider"
+    }
+  ],
+  "schema": 1,
+  "source_revision": null,
+  "visibility": "public"
+}

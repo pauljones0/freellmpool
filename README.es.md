@@ -8,12 +8,12 @@
 
 ![demostración de freellmpool tokenmax en terminal](assets/demo.svg)
 
-![139 rutas de chat habilitadas, 15 proveedores catalogados, inicio sin clave cuando está disponible](assets/tokenmax-results.svg)
+![138 rutas de chat habilitadas, 15 proveedores catalogados, inicio sin clave cuando está disponible](assets/tokenmax-results.svg)
 
 freellmpool cataloga 15 proveedores de LLM como grupos distintos que abarcan
 niveles gratuitos recurrentes, endpoints sin clave, pruebas finitas, rutas solo
-por pin y candidatos deshabilitados. Expone 139 rutas de chat habilitadas y
-139 modelos de chat catalogados detrás de un endpoint compatible con OpenAI, y
+por pin y candidatos deshabilitados. Expone 138 rutas de chat habilitadas y
+138 modelos de chat catalogados detrás de un endpoint compatible con OpenAI, y
 agrupa automáticamente solo las rutas habilitadas a las que tienes acceso. Puede
 empezar sin credenciales cuando hay una ruta sin clave habilitada y disponible.
 

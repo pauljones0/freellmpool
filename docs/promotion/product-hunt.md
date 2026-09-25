@@ -32,7 +32,7 @@ freellmpool makes those tiers usable from one local interface:
 - provider failover and local quota tracking
 - keyless start when default keyless routes are available
 
-Current catalog: 15 cataloged providers, 139 enabled chat routes, and 139 cataloged chat
+Current catalog: 15 cataloged providers, 138 enabled chat routes, and 138 cataloged chat
 models.
 
 This is not meant to replace paid frontier models or bypass provider limits. It

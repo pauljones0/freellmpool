@@ -19,6 +19,10 @@ _ORIGINAL_HOME = os.environ.get("HOME")
 def test_default_state_paths_are_temporary_even_with_explicit_empty_env(tmp_path):
     assert Path.home().is_relative_to(tmp_path)
     assert os.environ.get("HOME") == _ORIGINAL_HOME
+    # Deterministic pin: ambient XDG_CONFIG_HOME must not leak into the
+    # sandbox even on machines where the operator has it set (else the
+    # explicit-env assertions below read real operator state).
+    assert "XDG_CONFIG_HOME" not in os.environ
     for path in (
         default_cache_path(),
         default_inventory_path(),

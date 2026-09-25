@@ -27,7 +27,6 @@ models = [
     { name = "Mistral-Small-3.2-24B-Instruct-2506", rpd = 0 },
     { name = "Mistral-Nemo-Instruct-2407", rpd = 0 },
     { name = "Qwen3.6-27B", rpd = 0 },
-    { name = "Qwen3-32B", rpd = 0 },
     { name = "Qwen3.5-9B", rpd = 0 },
     { name = "Qwen2.5-VL-72B-Instruct", rpd = 0 },
     { name = "Mistral-7B-Instruct-v0.3", rpd = 0 },
