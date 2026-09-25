@@ -1,11 +1,17 @@
-"""Automatic server tools must not bypass the selected free grant's exclusions."""
+"""Automatic server tools must not bypass the selected free grant's exclusions.
+
+The enforcement plumbing (_automatic_tool_conflict at snapshot and
+pre-dispatch time) stays as an extension point, but no current grant needs
+a rule: groq/compound and groq/compound-mini (the only known automatic-tools
+models) were shut down 2026-09-21 and pruned from grants. This module pins
+that ordinary models are never held by that gate.
+"""
 
 from dataclasses import replace
 
 import pytest
 from test_managed_runtime import make_pool, successful
 
-from freellmpool.errors import AllProvidersExhausted
 from freellmpool.models import Model
 
 
@@ -30,49 +36,17 @@ def model_pool(tmp_path, monkeypatch, model, *, provider="groq", prohibited=("we
     return pool, calls
 
 
-@pytest.mark.parametrize("model", ["groq/compound", "groq/compound-mini"])
-@pytest.mark.parametrize("path", ["automatic", "pinned", "stream"])
-def test_compound_is_held_before_dispatch_when_automatic_tools_conflict(tmp_path, monkeypatch, model, path):
-    pool, calls = model_pool(tmp_path, monkeypatch, model)
-    snapshot = pool.snapshot()
-    assert snapshot.routes == ()
-    assert "automatic built-in tools" in snapshot.providers[0]["reason"]
-    assert "paid access" not in snapshot.providers[0]["reason"]
-    with pytest.raises(AllProvidersExhausted):
-        if path == "stream":
-            list(pool.stream_chat([{"role": "user", "content": "fixture"}], model=model))
-        else:
-            pool.ask("fixture", **({"model": model} if path == "pinned" else {}))
-    assert not calls
-    assert pool.ledger.summary()["reservations"] == 0
-
-
-@pytest.mark.parametrize("model,provider,prohibited", [
-    ("openai/gpt-oss-120b", "groq", ["web_search", "paid_tools"]),
-    ("openai/gpt-oss-20b", "groq", ["web_search", "paid_tools"]),
-    ("llama-3.3-70b-versatile", "groq", ["web_search", "paid_tools"]),
-    ("groq/compound", "alpha", ["web_search", "paid_tools"]),
-    ("groq/compound", "groq", ["byok_fallback"]),
+@pytest.mark.parametrize("model", [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile",
 ])
 @pytest.mark.parametrize("streaming", [False, True])
-def test_guard_preserves_models_without_the_exact_builtin_conflict(tmp_path, monkeypatch, model, provider, prohibited, streaming):
-    pool, calls = model_pool(tmp_path, monkeypatch, model, provider=provider, prohibited=prohibited)
+def test_guard_holds_no_current_model(tmp_path, monkeypatch, model, streaming):
+    pool, calls = model_pool(tmp_path, monkeypatch, model)
     if streaming:
         assert list(pool.stream_chat([{"role": "user", "content": "fixture"}], model=model))[1] == "OK"
     else:
         assert pool.ask("fixture", model=model).text == "OK"
     assert len(calls) == 1
     assert "tools" not in calls[0][2]
-
-
-@pytest.mark.parametrize("prohibited", [["web_search"], ["paid_tools"]])
-@pytest.mark.parametrize("streaming", [False, True])
-def test_pre_dispatch_recheck_also_enforces_builtin_conflict(tmp_path, monkeypatch, prohibited, streaming):
-    pool, calls = model_pool(tmp_path, monkeypatch, "groq/compound", prohibited=())
-    route = pool.snapshot().routes[0]
-    route.grant["prohibited_addons"] = prohibited
-    transport = pool._stream_for(route, {}) if streaming else pool._post_for(route, {})
-    with pytest.raises(ValueError, match="automatic built-in tools"):
-        transport("https://groq.test/v1/chat/completions", {}, {"model": route.model, "messages": [], "max_tokens": 16}, 1)
-    assert not calls
-    assert pool.ledger.summary()["reservations"] == 0

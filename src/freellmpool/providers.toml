@@ -67,9 +67,7 @@ key_env = "GROQ_API_KEY"
 models = [
     { name = "openai/gpt-oss-120b", rpd = 1000 },
     { name = "openai/gpt-oss-20b", rpd = 1000 },
-    { name = "groq/compound", rpd = 250 },
     { name = "qwen/qwen3.8-27b", rpd = 1000, context = 131042, auto = false },
-    { name = "groq/compound-mini", rpd = 250 },
 ]
 
 [[provider]]

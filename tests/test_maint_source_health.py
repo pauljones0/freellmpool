@@ -40,7 +40,6 @@ from pathlib import Path
 from typing import Any
 
 from freellmpool import maintenance as m
-from freellmpool.limit_sources import _proposals
 from freellmpool.provider_registry import (
     evidence_renewal_is_current,
     load_registry,
@@ -332,30 +331,20 @@ def test_140_groq_limits_refresh_renews_hash_and_window_only() -> None:
                                        "sha256": GROQ_LIMITS_AFTER}
     assert evidence["checked_at"] == REFRESH_CHECKED_AT
     assert evidence["expires_at"] == REFRESH_EXPIRES_AT
-    # No grant or capacity change rides along: compound capacities stay
-    # pinned byte-for-byte by test_140_compound_capacities... below and
-    # keep firing under the separate #79 limit review.
+    # No other capacity change rides along with the hash renewal.
 
 
-def test_140_compound_capacities_stay_documented_not_guessed() -> None:
+def test_140_compound_capacities_removed_with_dead_models() -> None:
     spec = _provider("groq")
     assert "groq/compound" not in LIVE_GROQ_FREE_TABLE
     assert "groq/compound-mini" not in LIVE_GROQ_FREE_TABLE
     assert len(LIVE_GROQ_FREE_TABLE) == 10
-    # Reviewed capacities are preserved byte-for-byte: absence from the live
-    # table never authorizes invented numbers, and removal is a separate
-    # capacity review, not a source-hash renewal.
-    capacities = {rule["id"]: rule.get("model_capacities", {}) for rule in spec["limits"]}
-    assert capacities["rpm"]["groq/compound"] == 30
-    assert capacities["tpm"]["groq/compound"] == 70000
-    assert capacities["rpd"]["groq/compound"] == 250
-    assert capacities["rpm"]["groq/compound-mini"] == 30
-    try:
-        _proposals(spec, LIVE_GROQ_FREE_TABLE)
-    except ValueError as exc:
-        assert str(exc) == "Reviewed models absent from the free table"
-    else:
-        raise AssertionError("absent reviewed models must require review")
+    # Groq shut both models down 2026-09-21 (deprecation log) and removed
+    # them from the free table, so the capacity review completed by REMOVING
+    # their reviewed capacities (resolves #79) instead of preserving them.
+    for rule in spec["limits"]:
+        assert "groq/compound" not in rule.get("model_capacities", {})
+        assert "groq/compound-mini" not in rule.get("model_capacities", {})
 
 
 def test_renewed_report_keeps_only_expected_findings() -> None:
@@ -424,6 +413,9 @@ def test_refresh_rejects_stale_hash_renewal() -> None:
 
 def test_policy_channel_matches_renewed_registry() -> None:
     manifest = json.loads(CHANNEL_PATH.read_text(encoding="utf-8"))
-    assert manifest["revision"] == 9
+    # Revisions advance with each later review (9: Sept-25 sweep, 10:
+    # cloudflare terms, 11: compound prune); the durable invariant is that
+    # the manifest tracks this tree's registry bytes exactly.
+    assert manifest["revision"] >= 9
     assert manifest["registry_sha256"] == hashlib.sha256(
         REGISTRY_PATH.read_bytes()).hexdigest()

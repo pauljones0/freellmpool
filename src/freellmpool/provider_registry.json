@@ -601,8 +601,6 @@
           "model_capacities": {
             "canopylabs/orpheus-arabic-saudi": 10,
             "canopylabs/orpheus-v1-english": 10,
-            "groq/compound": 30,
-            "groq/compound-mini": 30,
             "meta-llama/llama-prompt-guard-2-22m": 30,
             "meta-llama/llama-prompt-guard-2-86m": 30,
             "openai/gpt-oss-120b": 30,
@@ -635,8 +633,6 @@
           "model_capacities": {
             "canopylabs/orpheus-arabic-saudi": 1200,
             "canopylabs/orpheus-v1-english": 1200,
-            "groq/compound": 70000,
-            "groq/compound-mini": 70000,
             "meta-llama/llama-prompt-guard-2-22m": 15000,
             "meta-llama/llama-prompt-guard-2-86m": 15000,
             "openai/gpt-oss-120b": 8000,
@@ -667,8 +663,6 @@
           "model_capacities": {
             "canopylabs/orpheus-arabic-saudi": 100,
             "canopylabs/orpheus-v1-english": 100,
-            "groq/compound": 250,
-            "groq/compound-mini": 250,
             "meta-llama/llama-prompt-guard-2-22m": 14400,
             "meta-llama/llama-prompt-guard-2-86m": 14400,
             "openai/gpt-oss-120b": 1000,

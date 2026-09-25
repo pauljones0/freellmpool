@@ -183,14 +183,12 @@ def _warning_text(provider_id: str, eligible: int, status: str) -> str:
 
 
 def _automatic_tool_conflict(provider_id: str, model: str, grant: JSON) -> str:
-    # Compound enables server-side tools by default. Its documented allowlist
-    # does not establish empty-list semantics, so we cannot promise no tools.
-    # https://console.groq.com/docs/compound/built-in-tools
-    # GPT-OSS tools require an explicit tools entry and do not share this default.
-    if provider_id == "groq" and model in {"groq/compound", "groq/compound-mini"}:
-        prohibited = grant.get("prohibited_addons", [])
-        if "web_search" in prohibited or "paid_tools" in prohibited:
-            return "automatic built-in tools conflict with this grant's excluded add-ons; no verified tool-disable contract"
+    # Extension point: models that enable server-side tools by default with
+    # no verified tool-disable contract must be held when the grant excludes
+    # those add-ons. No current grant needs it: groq/compound and
+    # groq/compound-mini (the only known cases) were shut down 2026-09-21
+    # and pruned from grants. Re-add a rule here if such a model returns.
+    _ = (provider_id, model, grant)
     return ""
 
 
