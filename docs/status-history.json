@@ -1,316 +1,6 @@
 [
   {
     "freellmpool": "0.14.3",
-    "generated_at": "2026-09-19T20:46:53Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-20T04:58:50Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-20T11:31:52Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-20T16:12:50Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-20T20:53:37Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-21T05:03:53Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-21T12:56:54Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-21T22:01:23Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-22T05:05:22Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
-    "generated_at": "2026-09-22T11:46:24Z",
-    "rows": [
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "llm7"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "ovh"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "kilo"
-      },
-      {
-        "latency_ms": null,
-        "note": "complete model discovery needed; run freellmpool update",
-        "status": "skipped",
-        "target": "opencode"
-      }
-    ],
-    "schema": 1
-  },
-  {
-    "freellmpool": "0.14.3",
     "generated_at": "2026-09-22T17:01:11Z",
     "rows": [
       {
@@ -343,6 +33,316 @@
   {
     "freellmpool": "0.14.3",
     "generated_at": "2026-09-22T21:24:08Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-23T04:51:02Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-23T11:45:53Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-23T17:09:45Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-23T21:33:54Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-24T04:59:05Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-24T11:54:27Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-24T17:16:50Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-24T21:34:47Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-25T05:03:29Z",
+    "rows": [
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "llm7"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "ovh"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "kilo"
+      },
+      {
+        "latency_ms": null,
+        "note": "complete model discovery needed; run freellmpool update",
+        "status": "skipped",
+        "target": "opencode"
+      }
+    ],
+    "schema": 1
+  },
+  {
+    "freellmpool": "0.14.3",
+    "generated_at": "2026-09-25T11:57:03Z",
     "rows": [
       {
         "latency_ms": null,
