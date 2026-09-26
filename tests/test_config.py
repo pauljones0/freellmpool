@@ -77,6 +77,7 @@ def test_packaged_catalog_omits_retired_github_models():
 
 def test_packaged_catalog_omits_modelscope_and_pruned_minimax():
     assert "modelscope" not in {provider.id for provider in load_catalog()}
+    assert "aion" not in {provider.id for provider in load_catalog()}
     nvidia = {model.name for model in next(p for p in load_catalog() if p.id == "nvidia").models}
     assert "minimaxai/minimax-m3" not in nvidia  # free endpoint gone from NIM page + catalog
     assert {

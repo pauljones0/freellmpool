@@ -78,8 +78,6 @@ and do not send provider keys or create recurring attention items.
 | OpenCode | No reviewed account allowance endpoint |
 | OpenRouter | Monetary key telemetry; free-request allowance and local accounting remain separate |
 | Groq | Remaining RPD/TPM is observed from normal response headers |
-| Aion | No reviewed account quota endpoint |
-| ModelScope | Remaining requests are observed from normal response headers; reset binding remains unverified |
 | Vercel | Credit balance telemetry; free allocation and zero model prices are checked independently |
 | NVIDIA | No reviewed account quota endpoint |
 | Gemini | Requires verified OAuth/project binding and `serviceusage.quotas.get` for quota configuration |

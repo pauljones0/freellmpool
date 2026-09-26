@@ -24,7 +24,7 @@ from freellmpool.client import HTTPResult
 from freellmpool.config import load_catalog
 from freellmpool.provider_registry import load_registry
 
-ELIGIBLE = {"openrouter", "nvidia", "vercel", "aion"}
+ELIGIBLE = {"openrouter", "nvidia", "vercel"}
 
 
 def _quota_env(monkeypatch: pytest.MonkeyPatch, tmp_path, name: str = "quota.json"):
@@ -172,7 +172,7 @@ def test_canary_403_denied_vs_mitigated_blocked(monkeypatch, capsys, tmp_path):
 
 def test_canary_402_denied(monkeypatch, capsys, tmp_path):
     rc, envelope, _, _ = _canary_verdict(
-        monkeypatch, capsys, tmp_path, "aion", fake_post(status=402))
+        monkeypatch, capsys, tmp_path, "nvidia", fake_post(status=402))
     assert rc == 0
     row = envelope["rows"][0]
     assert row["verdict"] == "denied" and "billing" in row["note"]
@@ -203,14 +203,14 @@ def test_canary_404_names_drift_and_3xx_is_error(monkeypatch, capsys, tmp_path):
 def test_canary_408_and_504_are_deferred(monkeypatch, capsys, tmp_path):
     for status in (408, 504):
         rc, envelope, _, _ = _canary_verdict(
-            monkeypatch, capsys, tmp_path, "aion", fake_post(status=status))
+            monkeypatch, capsys, tmp_path, "nvidia", fake_post(status=status))
         assert rc == 0
         assert envelope["rows"][0]["verdict"] == "deferred"
 
 
 def test_canary_429_ignores_retry_after(monkeypatch, capsys, tmp_path):
     rc, envelope, _, _ = _canary_verdict(
-        monkeypatch, capsys, tmp_path, "aion",
+        monkeypatch, capsys, tmp_path, "nvidia",
         fake_post(status=429, headers={"retry-after": "120"}))
     assert rc == 0
     assert envelope["rows"][0]["verdict"] == "rate_limited"

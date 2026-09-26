@@ -829,138 +829,6 @@
       }
     },
     {
-      "id": "aion",
-      "display_name": "Aion Labs",
-      "region": "international",
-      "api_base_url": "https://api.aionlabs.ai/v1",
-      "credential_env": "AION_API_KEY",
-      "discovery": {
-        "url": "https://api.aionlabs.ai/v1/models",
-        "auth": "bearer",
-        "parser": "aion",
-        "pagination": "none",
-        "supports_public": true,
-        "catalog_ttl_seconds": 86400,
-        "max_pages": 100,
-        "headers": {},
-        "params": {},
-        "auth_note": "September 5 credentialless GET returned the same catalog schema. Listing cannot validate the inference key or account tier."
-      },
-      "grants": [
-        {
-          "id": "free",
-          "kind": "recurring_quota",
-          "status": "conditional",
-          "model_selector": {
-            "kind": "all",
-            "models": []
-          },
-          "required_account_tier": "free",
-          "requires_account_evidence": true,
-          "paid_overage_possible": false,
-          "hard_free_boundary": true,
-          "allowed_modalities": [
-            "chat"
-          ],
-          "prohibited_addons": [
-            "web_search",
-            "paid_tools",
-            "paid_fallback",
-            "byok_fallback"
-          ],
-          "evidence_ids": [
-            "terms"
-          ]
-        }
-      ],
-      "limits": [
-        {
-          "id": "rpm",
-          "grant_ids": [
-            "free"
-          ],
-          "scope": "account",
-          "scope_keys": [
-            "account_ref"
-          ],
-          "metric": "requests",
-          "algorithm": "rolling",
-          "capacity": 15,
-          "window_seconds": 60,
-          "timezone": null,
-          "anchor": null,
-          "evidence_ids": [
-            "terms"
-          ]
-        },
-        {
-          "id": "tpm",
-          "grant_ids": [
-            "free"
-          ],
-          "scope": "account",
-          "scope_keys": [
-            "account_ref"
-          ],
-          "metric": "total_tokens",
-          "algorithm": "rolling",
-          "capacity": 20000,
-          "window_seconds": 60,
-          "timezone": null,
-          "anchor": null,
-          "evidence_ids": [
-            "terms"
-          ]
-        },
-        {
-          "id": "tpd",
-          "grant_ids": [
-            "free"
-          ],
-          "scope": "account",
-          "scope_keys": [
-            "account_ref"
-          ],
-          "metric": "total_tokens",
-          "algorithm": "unknown",
-          "capacity": 20000,
-          "window_seconds": 86400,
-          "timezone": null,
-          "anchor": null,
-          "evidence_ids": [
-            "terms"
-          ]
-        }
-      ],
-      "evidence": [
-        {
-          "id": "terms",
-          "url": "https://www.aionlabs.ai/docs/rate-limits/",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
-          "claim": "Free tier: 15 RPM, 20000 TPM and 20000 daily tokens. Any credit top-up moves to a paid tier; larger paid limits are not larger free allowances.",
-          "status": "verified",
-          "source_hash": {
-            "algorithm": "visible_text_v1",
-            "sha256": "07b9d03ca08356fa51bb006f99be1aaacd469ec663bb341f6597b286604bf32b"
-          }
-        }
-      ],
-      "setup": {
-        "signup_url": "https://www.aionlabs.ai/",
-        "key_url": "https://www.aionlabs.ai/",
-        "steps": [
-          "Create an account and an API key through the Aion console.",
-          "Confirm the account has the Free tier and has not been upgraded by a credit top-up."
-        ],
-        "required_env": [
-          "AION_API_KEY"
-        ]
-      },
-      "restrictions": [],
-      "default_enabled": true
-    },
-    {
       "id": "vercel",
       "display_name": "Vercel AI Gateway",
       "region": "international",
@@ -2521,6 +2389,11 @@
       "id": "modelscope",
       "reason": "Removed 2026-09-25: no queryable free-model list exists (/v1/models records carry no free markers) and listed-model entitlement is account/route-dependent (HTTP 403 on catalog-listed models).",
       "source_url": "https://api-inference.modelscope.cn/v1/models"
+    },
+    {
+      "id": "aion",
+      "reason": "Removed 2026-09-26 per owner verification that Aion withdrew free models (account-level; published pricing still advertised a $0 tier at removal time and inference returned HTTP 502 on all routes for 3+ hours; catalog listing cannot validate free entitlement).",
+      "source_url": "https://api.aionlabs.ai/v1/models"
     }
   ]
 }

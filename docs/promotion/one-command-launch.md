@@ -15,7 +15,7 @@ uvx --from https://github.com/pauljones0/freellmpool/archive/refs/heads/main.tar
 ```
 
 No checkout, no API keys when a keyless provider is up — the first run
-discovers free routes automatically. 14 reviewed providers, 132 chat
+discovers free routes automatically. 13 reviewed providers, 128 chat
 routes, strict-free routing (never a silent paid fallback), and every
 allowance traces to an official source ([trust notes](../TRUST.md)).
 

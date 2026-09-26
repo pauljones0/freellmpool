@@ -70,13 +70,6 @@ Compose will explicitly load it.
 1. <https://ollama.com/settings/keys> → **Create key**.
 2. `export OLLAMA_API_KEY=...`
 
-### Aion Labs — *20K free tokens/day, no card*
-1. <https://api.aionlabs.ai> → create an account and API key.
-2. `export AION_API_KEY=...`
-
-   The free account tier is 15 requests/minute and 20,000 tokens/day. The
-   allowance is shared across Aion's priced models and renews daily.
-
 ### Vercel AI Gateway — *verified zero-price routes*
 1. <https://vercel.com/ai-gateway> → create or select a free Hobby team.
 2. Complete Vercel's customer verification. As of the 2026-08-23 live check,
@@ -171,7 +164,7 @@ verdicts). Slot 1 is the bare var (`GROQ_API_KEY`), slot N > 1 is `VAR_N`.
 `freellmpool keys check --canary` sends ONE single-shot chat completion
 (`max_tokens=16`, thinking floor disabled, no retries) per otherwise
 `unsupported` slot to a registry-pinned free model, for **OpenRouter,
-NVIDIA, Vercel, Aion, ModelScope**. The flag IS consent: this spends
+NVIDIA, Vercel**. The flag IS consent: this spends
 real quota — every dispatched attempt is recorded in quota, including
 failures (only connect-phase failures, where nothing was sent, are not
 recorded). The allowance ledger is never touched. Listing-checkable

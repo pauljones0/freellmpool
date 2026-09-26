@@ -115,17 +115,6 @@ OVH_BOOTSTRAP_CHAT = [
     "Mistral-7B-Instruct-v0.3", "gpt-oss-20b", "Qwen3-Coder-30B-A3B-Instruct",
 ]
 
-AION_ROWS: list[dict[str, Any]] = [
-    {"id": "aion-labs/aion-3.5", "context_length": 262144, "max_completion_tokens": 32768,
-     "architecture": {"modality": "text->text"},
-     "pricing": {"prompt": "0.0000030000", "completion": "0.0000060000",
-                 "input_cache_read": "0.0000007500"}},
-    {"id": "aion-labs/aion-3.5-mini", "context_length": 262144,
-     "max_completion_tokens": 32768, "architecture": {"modality": "text->text"},
-     "pricing": {"prompt": "0.0000007000", "completion": "0.0000014000",
-                 "input_cache_read": "0.0000001800"}},
-]
-
 NVIDIA_ROWS: list[dict[str, Any]] = [
     {"id": "deepseek-ai/deepseek-v4.1-flash", "object": "model",
      "owned_by": "deepseek-ai", "created": 735790403},
@@ -403,24 +392,15 @@ def test_132_134_nvidia_flash_rotation_is_discovery_handled() -> None:
     assert not [name for name in names if "deepseek" in name.lower()]
 
 
-def test_135_136_aion_35_models_admitted_with_account_gate_intact() -> None:
-    spec = _registry("aion")
-    assert spec["grants"][0]["model_selector"] == {"kind": "all", "models": []}
-    assert spec["grants"][0]["requires_account_evidence"] is True
-    models = d.normalize_models("aion", {"models": AION_ROWS})
-    assert {model["id"] for model in models} == {
-        "aion-labs/aion-3.5", "aion-labs/aion-3.5-mini"}
-    for model in models:
-        assert model["modalities"] == ["chat"]
-        # Nonzero list prices do not block a recurring_quota grant: the free
-        # allowance is account-scoped, not price-scoped.
-        assert fp.model_matches_grant(spec["grants"][0], model) is True
-    assert len(d.free_catalog_models(spec, models)) == 2
-    now = _in_window_now("aion")
-    for model in models:
-        denied = fp.admit(spec, model, {}, modality="chat", now=now)
-        assert denied.allowed is False
-        assert "needs verification" in denied.reason
+def test_135_136_aion_withdrawn_owner_verified_free_models_gone() -> None:
+    # Issues #135/#136 reviewed the 3.5 pair under the all-chat grant; the
+    # provider was then withdrawn entirely per owner verification that
+    # Aion removed free models, so the findings' subjects no longer ship.
+    registry = load_registry()
+    assert "aion" not in registry
+    packaged = json.loads(Path("src/freellmpool/provider_registry.json").read_text())
+    tombstone = next(t for t in packaged["tombstones"] if t["id"] == "aion")
+    assert "owner verification" in tombstone["reason"]
 
 
 def test_cloudflare_deepseek_exclusions_survive_the_rotation() -> None:

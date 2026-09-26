@@ -243,7 +243,7 @@ an unknown unit until the provider's scale can be verified; no reset is inferred
 from its separate activity-report window.
 A mixed monetary balance is not the remaining free allocation. These reads do **not**
 currently establish the scope and reset needed to import new routing limits.
-Existing Groq and ModelScope response-header observations continue to constrain
+Existing Groq response-header observations continue to constrain
 the shared runtime ledger. Other applications' usage can remain unknown. Exact
 API contracts and per-provider limitations are in
 [account observations](account-observations.md).

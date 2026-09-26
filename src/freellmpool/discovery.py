@@ -498,7 +498,7 @@ def _modalities(provider_id: str, row: dict[str, Any]) -> tuple[list[str], bool]
 
 
 def _raw_rows(provider_id: str, body: dict[str, Any]) -> list[Any]:
-    key = "models" if provider_id in {"gemini", "cohere", "ollama", "aion"} else "data"
+    key = "models" if provider_id in {"gemini", "cohere", "ollama"} else "data"
     if provider_id == "cloudflare":
         if body.get("success") is False:
             raise ValueError("Catalog API reported failure")
@@ -1525,7 +1525,6 @@ CANARY_TARGETS: dict[str, str] = {
     "openrouter": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
     "nvidia": "nvidia/nemotron-3-super-120b-a12b",
     "vercel": "poolside/laguna-s-2.1-free",
-    "aion": "aion-labs/aion-2.0",
 }
 CANARY_MAX_TOKENS = 16
 CANARY_TIMEOUT_SECONDS = 20.0

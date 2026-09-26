@@ -8,8 +8,8 @@ registry polish. Use this pack when posting externally.
 These facts describe the 0.13.0 GitHub and PyPI release. The fork
 relaunch (`relaunch.md`, goals G1–G5: one-command install, MCP context
 diet, $0 setup guide, free embeddings/RAG, Claude Code compat, trust
-page) supersedes them where they differ — same catalog (14 providers,
-132 enabled chat routes, 132 cataloged chat models), install from
+page) supersedes them where they differ — same catalog (13 providers,
+128 enabled chat routes, 128 cataloged chat models), install from
 source (no PyPI/container on this fork).
 
 - Repository: <https://github.com/0xzr/freellmpool>
@@ -21,7 +21,7 @@ source (no PyPI/container on this fork).
 - Interfaces: CLI, Python library, OpenAI-compatible proxy, experimental
   Anthropic-compatible proxy path, and MCP server.
 - Audio: OpenAI-compatible speech-to-text through the transcription endpoint.
-- Released catalog: 14 cataloged providers, 132 enabled chat routes, 132
+- Released catalog: 13 cataloged providers, 128 enabled chat routes, 128
   cataloged chat models.
 - Strongest visual assets:
   - `assets/social-preview.png`

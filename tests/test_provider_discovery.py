@@ -12,7 +12,7 @@ from freellmpool.provider_registry import load_registry
 
 def test_registry_covers_audited_groups_with_independent_evidence():
     registry = load_registry()
-    assert len(registry) == 15
+    assert len(registry) == 14
     assert "github" not in registry
     for key, row in registry.items():
         assert row["id"] == key
@@ -74,7 +74,7 @@ def test_unknown_fee_overrides_free_hint_and_marks_uncertainty():
 
 
 def test_cached_input_price_alias_is_preserved():
-    rows = d.normalize_models("aion", {"models": [{"id": "m", "pricing": {
+    rows = d.normalize_models("cohere", {"models": [{"name": "m", "endpoints": ["chat"], "pricing": {
         "prompt": "0", "completion": "0", "input_cache_read": "0.0000002"}}]})
     assert rows[0]["pricing"]["input_cache_reads"] == "0.0000002"
     assert rows[0]["is_free"] is False
@@ -111,10 +111,10 @@ def test_gemini_modalities_do_not_grant_chat_to_embeddings():
     assert rows[1]["context"] == 1234
 
 
-def test_aion_native_listing_uses_models_array():
-    rows = d.normalize_models("aion", {"models": [{"id": "aion-labs/aion-2.0",
+def test_cohere_native_listing_uses_models_array():
+    rows = d.normalize_models("cohere", {"models": [{"name": "m", "endpoints": ["chat"],
         "context_length": 131072, "pricing": {"prompt": "0.0000008", "completion": "0.0000016"}}]})
-    assert rows[0]["id"] == "aion-labs/aion-2.0"
+    assert rows[0]["id"] == "m"
     assert rows[0]["pricing"]["input"] == "0.0000008"
 
 
@@ -254,11 +254,11 @@ def test_default_public_refresh_uses_separate_path(monkeypatch, tmp_path):
     assert private.with_name("public-discovery.json").exists()
 
 
-@pytest.mark.parametrize("provider_id", ["aion", "nvidia"])
+@pytest.mark.parametrize("provider_id", ["ollama", "nvidia"])
 def test_observed_public_lists_never_claim_to_validate_an_api_key(monkeypatch, tmp_path, provider_id):
     def responder(request):
         assert "authorization" not in request.headers
-        key = "models" if provider_id == "aion" else "data"
+        key = "models" if provider_id == "ollama" else "data"
         return httpx.Response(200, json={key: [{"id": "m"}]})
     transport(monkeypatch, responder)
     result = d.refresh_catalog({}, [provider_id], public_only=True, path=tmp_path / "d.json")
@@ -359,8 +359,6 @@ def test_every_registry_parser_has_nonbillable_listing_fixture(provider_id):
         body = {"models": [{"name": "m", "endpoints": ["chat"]}]}
     elif provider_id == "ollama":
         body = {"models": [{"name": "m"}]}
-    elif provider_id == "aion":
-        body = {"models": [{"id": "m"}]}
     elif provider_id == "cloudflare":
         body = {"success": True, "result": [{"id": "opaque", "name": "m", "task": {"name": "Text Generation"}}]}
     else:

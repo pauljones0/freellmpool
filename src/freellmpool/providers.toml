@@ -71,19 +71,6 @@ models = [
 ]
 
 [[provider]]
-id = "aion"
-label = "Aion Labs"
-adapter = "openai"
-base_url = "https://api.aionlabs.ai/v1"
-key_env = "AION_API_KEY"
-models = [
-    { name = "aion-labs/aion-2.0", rpd = 0, context = 131072 },
-    { name = "aion-labs/aion-3.0", rpd = 0, context = 131072 },
-    { name = "aion-labs/aion-3.0-mini", rpd = 0, context = 131072 },
-    { name = "aion-labs/aion-rp-llama-3.1-8b", rpd = 0, context = 32768 },
-]
-
-[[provider]]
 id = "vercel"
 label = "Vercel AI Gateway"
 adapter = "openai"
