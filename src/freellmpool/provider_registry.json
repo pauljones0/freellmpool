@@ -266,26 +266,26 @@
       "evidence": [
         {
           "id": "terms",
-          "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started",
-          "checked_at": "2026-09-25T00:00:00+00:00",
-          "expires_at": "2026-10-02T00:00:00+00:00",
+          "url": "https://raw.githubusercontent.com/ovh/ovhcloud-docs/HEAD/docs/en/guides/public-cloud/ai-machine-learning/ai-endpoints-getting-started.mdx",
+          "checked_at": "2026-09-26T00:00:00+00:00",
+          "expires_at": "2026-10-03T00:00:00+00:00",
           "claim": "Anonymous testing access has limited per-IP requests; authenticated Public Cloud billing is separate.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v2",
-            "sha256": "fcf112831b207868620a4a8aed9566afd11aeb9fee162b17500f2c9ae2a6f2cf"
+            "algorithm": "visible_text_v1",
+            "sha256": "f8432756fea4e07ce2001ec6d4338e16501fec4e0a988b7f7bd268877476f4a8"
           }
         },
         {
           "id": "pricing",
-          "url": "https://docs.ovhcloud.com/en/guides/public-cloud/ai-machine-learning/ai-endpoints-billing",
-          "checked_at": "2026-09-25T00:00:00+00:00",
-          "expires_at": "2026-10-02T00:00:00+00:00",
-          "claim": "Listed token prices describe billed usage and do not themselves negate the separately documented anonymous allowance.",
+          "url": "https://raw.githubusercontent.com/ovh/ovhcloud-docs/HEAD/docs/en/guides/public-cloud/ai-machine-learning/ai-endpoints-billing.mdx",
+          "checked_at": "2026-09-26T00:00:00+00:00",
+          "expires_at": "2026-10-03T00:00:00+00:00",
+          "claim": "Billing and lifecycle documentation describes paid account billing, separate from the documented anonymous per-IP allowance.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v2",
-            "sha256": "ea427a15c863c4168620bef01b26c6324f47d51a890e70080d1e118b0e5a2bb5"
+            "algorithm": "visible_text_v1",
+            "sha256": "8281687f8b6e272e6a128f36f3addc32646e6eafff0be6568c7ee4493c79ca05"
           }
         }
       ],
@@ -501,14 +501,14 @@
         },
         {
           "id": "limiter",
-          "url": "https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts",
-          "checked_at": "2026-09-25T00:00:00+00:00",
-          "expires_at": "2026-10-02T00:00:00+00:00",
+          "url": "https://raw.githubusercontent.com/anomalyco/opencode/dev/packages/console/app/src/routes/zen/util/ipRateLimiter.ts",
+          "checked_at": "2026-09-26T00:00:00+00:00",
+          "expires_at": "2026-10-03T00:00:00+00:00",
           "claim": "Open-source limiter groups anonymous IP traffic; deployed numeric quotas are not published. Source implementation is not proof of current deployment configuration.",
           "status": "verified",
           "source_hash": {
-            "algorithm": "visible_text_v2",
-            "sha256": "ff7a1793cedc21f43d101091fa16cce81d36b89d2abca3b2da53e0eab57e1ea8"
+            "algorithm": "visible_text_v1",
+            "sha256": "1501933cf12b280620d97b0d714747c442ab7969dacf5265a4ddaefbb0322d8a"
           }
         }
       ],

@@ -21,6 +21,14 @@ All notable changes to this project are documented here. The format is based on
   to current observed text, and block Groq qwen3.6-27b with its stale
   capacities removed after it left the official free table.
 
+## [0.14.6] — evidence source hardening
+
+- Point chrome-coupled evidence at stable raw sources: the opencode
+  limiter at the raw TypeScript file and OVH terms/pricing at the
+  ovhcloud-docs markdown sources. Raw bytes change only on genuine
+  edits, ending nav/chrome flapping (policy revision 15, minimum
+  client 0.14.6).
+
 ## [0.14.5] — provider removal
 
 - Remove Aion Labs per owner verification that free models were
