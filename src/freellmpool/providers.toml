@@ -84,21 +84,6 @@ models = [
 ]
 
 [[provider]]
-id = "modelscope"
-label = "ModelScope API Inference"
-adapter = "openai"
-base_url = "https://api-inference.modelscope.cn/v1"
-key_env = "MODELSCOPE_API_KEY"
-models = [
-    { name = "MiniMax/MiniMax-M3", rpd = 200 },
-    { name = "Qwen/Qwen3.5-27B", rpd = 200 },
-    { name = "Qwen/Qwen3.5-35B-A3B", rpd = 200 },
-    { name = "stepfun-ai/Step-3.7-Flash", rpd = 200 },
-    { name = "Tencent-Hunyuan/Hy3", rpd = 200 },
-    { name = "ZhipuAI/GLM-5.2", rpd = 200 },
-]
-
-[[provider]]
 id = "vercel"
 label = "Vercel AI Gateway"
 adapter = "openai"
@@ -118,13 +103,15 @@ models = [
     { name = "nvidia/nemotron-3-super-120b-a12b", rpd = 0 },
     { name = "meta/llama-3.2-11b-vision-instruct", rpd = 0 },
     { name = "meta/llama-3.2-90b-vision-instruct", rpd = 0 },
-    { name = "minimaxai/minimax-m3", rpd = 0 },
     { name = "mistralai/mistral-nemotron", rpd = 0 },
     { name = "nvidia/nemotron-3-nano-30b-a3b", rpd = 0 },
     { name = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning", rpd = 0 },
     { name = "openai/gpt-oss-20b", rpd = 0 },
     { name = "nvidia/nemotron-3-ultra-550b-a55b", rpd = 0 },
     { name = "poolside/laguna-xs-2.1", rpd = 0 },
+    { name = "nvidia/nemotron-3.5-lightning-30b-a3b", rpd = 0 },
+    { name = "google/gemma-4-31b-it", rpd = 0 },
+    { name = "google/diffusiongemma-26b-a4b-it", rpd = 0 },
 ]
 
 [[provider]]

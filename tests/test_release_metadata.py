@@ -20,7 +20,7 @@ def test_release_metadata_versions_match_package() -> None:
     demo = (ROOT / "assets" / "demo.svg").read_text()
     legacy = (ROOT / "docs/legacy-0.13-guide.md").read_text()
 
-    assert version == "0.14.3"
+    assert version == "0.14.4"
     assert __version__ == version
     legacy_version = "0.13.0"
     assert server["version"] == legacy_version

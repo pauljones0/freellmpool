@@ -1526,7 +1526,6 @@ CANARY_TARGETS: dict[str, str] = {
     "nvidia": "nvidia/nemotron-3-super-120b-a12b",
     "vercel": "poolside/laguna-s-2.1-free",
     "aion": "aion-labs/aion-2.0",
-    "modelscope": "MiniMax/MiniMax-M3",
 }
 CANARY_MAX_TOKENS = 16
 CANARY_TIMEOUT_SECONDS = 20.0

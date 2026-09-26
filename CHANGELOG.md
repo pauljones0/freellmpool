@@ -21,6 +21,16 @@ All notable changes to this project are documented here. The format is based on
   to current observed text, and block Groq qwen3.6-27b with its stale
   capacities removed after it left the official free table.
 
+## [0.14.4] — provider removal
+
+- Remove ModelScope: no queryable free-model list exists (the
+  `/v1/models` records carry no free markers) and listed-model
+  entitlement is account/route-dependent, so the provider row is
+  tombstoned and its 6 grants, canary target, header accounting, and
+  docs are withdrawn (policy revision 13, minimum client 0.14.4).
+- NVIDIA: grant live-probed Nemotron 3.5 Lightning, Gemma 4 31B, and
+  DiffusionGemma 26B; prune MiniMax M3 whose free endpoint is gone.
+
 ## [0.14.3] — security hardening
 
 - Redact and cap upstream error text before it can reach proxy/MCP

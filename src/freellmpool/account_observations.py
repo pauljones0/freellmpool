@@ -64,7 +64,6 @@ _UNSUPPORTED = {
     "opencode": "No reviewed account allowance endpoint; anonymous usage outside this gateway is unknown.",
     "groq": "Remaining RPD/TPM are observed from normal response headers; account metrics API requires Enterprise access.",
     "aion": "No reviewed account quota endpoint; documented capacities and local accounting remain separate.",
-    "modelscope": "Remaining request counts are observed from normal response headers; account reset time remains unverified.",
     "nvidia": "No reviewed account quota endpoint; a successful model listing does not reveal account limits.",
     "gemini": "Quota configuration requires Google OAuth, serviceusage.quotas.get and verified project binding; an API key alone is insufficient.",
     "cloudflare": "Restricted billing usage requires verified access, Workers AI neuron mapping and reporting freshness before quota import.",

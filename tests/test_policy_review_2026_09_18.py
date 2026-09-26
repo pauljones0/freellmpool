@@ -17,11 +17,11 @@ def packaged_registry():
     return json.loads(REGISTRY_PATH.read_text())
 
 
-def test_modelscope_evidence_uses_canonical_posts_url():
+def test_modelscope_removed_and_tombstoned_no_free_model_query():
     registry = packaged_registry()
-    provider = next(p for p in registry["providers"] if p["id"] == "modelscope")
-    urls = [source["url"] for source in provider["evidence"]]
-    assert urls == ["https://modelscope.ai/posts/434362"]
+    assert "modelscope" not in {p["id"] for p in registry["providers"]}
+    tombstone = next(t for t in registry["tombstones"] if t["id"] == "modelscope")
+    assert "no queryable free-model list" in tombstone["reason"]
 
 
 def test_modelscope_article_digest_computed_for_posts_url(monkeypatch):

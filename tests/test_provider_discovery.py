@@ -12,7 +12,7 @@ from freellmpool.provider_registry import load_registry
 
 def test_registry_covers_audited_groups_with_independent_evidence():
     registry = load_registry()
-    assert len(registry) == 16
+    assert len(registry) == 15
     assert "github" not in registry
     for key, row in registry.items():
         assert row["id"] == key
@@ -254,7 +254,7 @@ def test_default_public_refresh_uses_separate_path(monkeypatch, tmp_path):
     assert private.with_name("public-discovery.json").exists()
 
 
-@pytest.mark.parametrize("provider_id", ["aion", "modelscope", "nvidia"])
+@pytest.mark.parametrize("provider_id", ["aion", "nvidia"])
 def test_observed_public_lists_never_claim_to_validate_an_api_key(monkeypatch, tmp_path, provider_id):
     def responder(request):
         assert "authorization" not in request.headers

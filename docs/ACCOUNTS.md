@@ -77,14 +77,6 @@ Compose will explicitly load it.
    The free account tier is 15 requests/minute and 20,000 tokens/day. The
    allowance is shared across Aion's priced models and renews daily.
 
-### ModelScope API Inference — *2,000 free calls/day*
-1. <https://modelscope.cn/my/myaccesstoken> → create a long-lived access token.
-2. `export MODELSCOPE_API_KEY=...`
-
-   API-Inference-enabled models receive dynamic free quotas: currently 2,000
-   calls/day in total and up to 200 calls/day for one model. Availability and
-   per-model caps can change with platform capacity.
-
 ### Vercel AI Gateway — *verified zero-price routes*
 1. <https://vercel.com/ai-gateway> → create or select a free Hobby team.
 2. Complete Vercel's customer verification. As of the 2026-08-23 live check,

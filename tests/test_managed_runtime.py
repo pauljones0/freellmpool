@@ -320,21 +320,6 @@ def test_model_and_bound_account_caps_tighten_reviewed_allowances(tmp_path):
     assert pool.snapshot().routes[0].limits[0].capacity == 30
 
 
-def test_modelscope_remaining_headers_block_next_dispatch(tmp_path):
-    pool = make_pool(tmp_path, ids=("modelscope",), capacity=100)
-    spec = pool._registry_override["modelscope"]
-    spec["limits"][0]["id"] = "daily_account"
-    route = pool.snapshot().routes[0]
-    pool._headers(route, {"modelscope-ratelimit-requests-remaining": "0", "modelscope-ratelimit-requests-limit": "2000"})
-    calls = []
-    pool._post = lambda *args: calls.append(args)
-    with pytest.raises(AllProvidersExhausted) as error:
-        pool.ask("hi")
-    assert error.value.client_status == 429
-    assert error.value.retry_after > 86400
-    assert not calls
-
-
 def test_wav_transcription_reserves_audio_seconds_and_rejects_unmeasured_audio(tmp_path):
     pool = make_pool(tmp_path, ids=("alpha",), capacity=100)
     pool._registry_override["alpha"]["limits"].append({"id": "ash", "scope": "model", "metric": "audio_seconds",

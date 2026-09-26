@@ -128,7 +128,7 @@ def test_checkable_set_equality_tripwire():
 @pytest.mark.parametrize("pid,expected", [
     ("groq", True), ("gemini", True), ("cloudflare", True),
     ("openrouter", False), ("nvidia", False), ("aion", False),
-    ("modelscope", False), ("ollama", False), ("vercel", False),
+    ("ollama", False), ("vercel", False),
     ("llm7", False), ("kilo", False), ("ovh", False), ("opencode", False),
 ])
 def test_is_listing_checkable_registry_spot(pid, expected):

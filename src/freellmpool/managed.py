@@ -650,22 +650,6 @@ class ManagedPool(Pool):
 
     def _headers(self, route: Route, headers: Mapping[str, object] | None, reservation: str | None = None) -> None:
         normalized = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
-        if route.provider.id == "modelscope":
-            for family, rule_id in (("requests", "daily_account"), ("model-requests", "daily_model")):
-                try:
-                    remaining = float(normalized[f"modelscope-ratelimit-{family}-remaining"])
-                    capacity = float(normalized[f"modelscope-ratelimit-{family}-limit"])
-                    if not 0 <= remaining <= capacity or not math.isfinite(capacity):
-                        continue
-                    for limit in route.limits:
-                        if limit.key.endswith(f":{rule_id}"):
-                            # No official reset header/timezone: retain this
-                            # tighter observation for a conservative 25h horizon.
-                            self.ledger.observe_remaining(limit.key, remaining,
-                                                          reset_at=self._wall_clock() + 25 * 3600,
-                                                          reservation=reservation)
-                except (KeyError, ValueError, TypeError):
-                    continue
         if route.provider.id != "groq":
             return
         for family, rule_id in (("requests", "rpd"), ("tokens", "tpm")):

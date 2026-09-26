@@ -75,6 +75,17 @@ def test_packaged_catalog_omits_retired_github_models():
     assert "github" not in {embedder.id for embedder in load_embedders()}
 
 
+def test_packaged_catalog_omits_modelscope_and_pruned_minimax():
+    assert "modelscope" not in {provider.id for provider in load_catalog()}
+    nvidia = {model.name for model in next(p for p in load_catalog() if p.id == "nvidia").models}
+    assert "minimaxai/minimax-m3" not in nvidia  # free endpoint gone from NIM page + catalog
+    assert {
+        "nvidia/nemotron-3.5-lightning-30b-a3b",
+        "google/gemma-4-31b-it",
+        "google/diffusiongemma-26b-a4b-it",
+    } <= nvidia  # live-probed 2026-09-25
+
+
 def test_keyless_providers_always_configured():
     # OVH (auth=none) and LLM7 (key_optional) are usable with an empty env.
     catalog = load_catalog()

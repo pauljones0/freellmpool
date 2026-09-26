@@ -14,5 +14,4 @@ def test_opencode_pool_excludes_application_only_spark():
 
 def test_modelscope_does_not_claim_review_of_javascript_shell():
     registry = json.loads((Path(__file__).parents[1] / 'src/freellmpool/provider_registry.json').read_text())
-    provider = next(p for p in registry['providers'] if p['id'] == 'modelscope')
-    assert all('modelscope.cn/docs/' not in source['url'] for source in provider['evidence'])
+    assert 'modelscope' not in {p['id'] for p in registry['providers']}

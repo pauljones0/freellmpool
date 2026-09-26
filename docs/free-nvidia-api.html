@@ -43,13 +43,17 @@ find free elsewhere.</p>
 <ul>
 <li><code>nvidia/nemotron-3-super-120b-a12b</code> — NVIDIA's own reasoning-tuned model.</li>
 <li><code>nvidia/nemotron-3-ultra-550b-a55b</code> — a larger Nemotron route.</li>
-<li><code>minimaxai/minimax-m3</code> — MiniMax's current hosted route.</li>
+<li><code>nvidia/nemotron-3.5-lightning-30b-a3b</code> — fast 30B agentic MoE (live-probed).</li>
+<li><code>google/gemma-4-31b-it</code> — dense 31B reasoning route (live-probed).</li>
+<li><code>google/diffusiongemma-26b-a4b-it</code> — diffusion-based text route (live-probed).</li>
 <li><code>openai/gpt-oss-20b</code> — a smaller GPT-OSS route.</li>
 </ul>
 <p>Use the live <a href="https://integrate.api.nvidia.com/v1/models">hosted model listing</a>
 and <code>freellmpool models -p nvidia</code> together. Listed candidates are not
-automatically trusted: newly observed V4, Muse, Kimi K3, and Nemotron 3.5 routes
-remain disabled pending credentialed completion canaries.</p>
+automatically trusted: DeepSeek V4.1-Flash hangs, Muse Glimmer and Kimi K3
+return 502s, and MiniMax M3's free endpoint is gone, so those routes stay
+unlisted. Riva Translate echoes prompts instead of chatting and is excluded
+as a wrong-modality endpoint.</p>
 
 <h2>Get a key and call it</h2>
 <pre><code>curl https://integrate.api.nvidia.com/v1/chat/completions \

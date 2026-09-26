@@ -961,129 +961,6 @@
       "default_enabled": true
     },
     {
-      "id": "modelscope",
-      "display_name": "ModelScope API Inference",
-      "region": "international",
-      "api_base_url": "https://api-inference.modelscope.ai/v1",
-      "credential_env": "MODELSCOPE_API_KEY",
-      "discovery": {
-        "url": "https://api-inference.modelscope.ai/v1/models",
-        "auth": "bearer",
-        "parser": "modelscope",
-        "pagination": "none",
-        "supports_public": true,
-        "catalog_ttl_seconds": 86400,
-        "max_pages": 100,
-        "headers": {},
-        "params": {},
-        "auth_note": "September 5 credentialless GET returned the same catalog schema. Listing cannot validate the inference key or account tier."
-      },
-      "grants": [
-        {
-          "id": "free",
-          "kind": "recurring_quota",
-          "status": "conditional",
-          "model_selector": {
-            "kind": "all",
-            "models": []
-          },
-          "required_account_tier": "bound_free",
-          "requires_account_evidence": true,
-          "paid_overage_possible": false,
-          "hard_free_boundary": true,
-          "allowed_modalities": [
-            "chat"
-          ],
-          "prohibited_addons": [
-            "web_search",
-            "paid_tools",
-            "paid_fallback",
-            "byok_fallback"
-          ],
-          "evidence_ids": [
-            "terms"
-          ]
-        }
-      ],
-      "limits": [
-        {
-          "id": "daily_account",
-          "grant_ids": [
-            "free"
-          ],
-          "scope": "account",
-          "scope_keys": [
-            "account_ref"
-          ],
-          "metric": "requests",
-          "algorithm": "unknown",
-          "capacity": 2000,
-          "window_seconds": 86400,
-          "timezone": null,
-          "anchor": null,
-          "evidence_ids": [
-            "terms"
-          ]
-        },
-        {
-          "id": "daily_model",
-          "grant_ids": [
-            "free"
-          ],
-          "scope": "model",
-          "scope_keys": [
-            "account_ref",
-            "model_id"
-          ],
-          "metric": "requests",
-          "algorithm": "unknown",
-          "capacity": 200,
-          "window_seconds": 86400,
-          "timezone": null,
-          "anchor": null,
-          "evidence_ids": [
-            "terms"
-          ],
-          "maximum_documented": 200,
-          "capacity_note": "Conservative documented upper ceiling, not guaranteed availability; response remaining/model limits may tighten it."
-        }
-      ],
-      "evidence": [
-        {
-          "id": "terms",
-          "url": "https://modelscope.ai/posts/434362",
-          "checked_at": "2026-09-18T00:00:00+00:00",
-          "expires_at": "2026-09-25T00:00:00+00:00",
-          "claim": "International ModelScope editor guide: bind Alibaba Cloud account; 2000 shared daily requests, dynamic at most 200/model/day. ModelScope-hosted API inference is distinct from paid third-party providers.",
-          "status": "verified",
-          "source_hash": {
-            "algorithm": "modelscope_article_v1",
-            "sha256": "878ed760e09e6d74e7464bf56b77e4ad36f9bdeecb47fe440db2c84b22c7c60a"
-          },
-          "maintenance_note": "Hash complete embedded article Content/ContentEn, titles and publication status; ignore views/likes. Never renew from a page title alone."
-        }
-      ],
-      "setup": {
-        "signup_url": "https://modelscope.ai/register",
-        "key_url": "https://modelscope.ai/my/myaccesstoken",
-        "steps": [
-          "Register at the international ModelScope site and verify email.",
-          "Bind your Alibaba Cloud account at https://modelscope.ai/my/settings/account.",
-          "Create an access token and choose API Inference models with ModelScope as the serving provider.",
-          "Do not substitute the mainland .cn endpoint or paid DashScope models automatically."
-        ],
-        "required_env": [
-          "MODELSCOPE_API_KEY"
-        ]
-      },
-      "restrictions": [],
-      "default_enabled": true,
-      "header_semantics": {
-        "modelscope-ratelimit-requests-remaining": "daily_account",
-        "modelscope-ratelimit-model-requests-remaining": "daily_model"
-      }
-    },
-    {
       "id": "vercel",
       "display_name": "Vercel AI Gateway",
       "region": "international",
@@ -2639,6 +2516,11 @@
       "id": "github",
       "reason": "GitHub Models retired July 30, 2026.",
       "source_url": "https://docs.github.com/en/github-models"
+    },
+    {
+      "id": "modelscope",
+      "reason": "Removed 2026-09-25: no queryable free-model list exists (/v1/models records carry no free markers) and listed-model entitlement is account/route-dependent (HTTP 403 on catalog-listed models).",
+      "source_url": "https://api-inference.modelscope.cn/v1/models"
     }
   ]
 }

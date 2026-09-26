@@ -8,11 +8,11 @@ This is the former README, retained for historical API/plugin instructions and d
 
 ![freellmpool tokenmax terminal demo](../assets/demo.svg)
 
-![136 enabled chat routes, 15 LLM providers cataloged, keyless start when available](../assets/tokenmax-results.svg)
+![132 enabled chat routes, 14 LLM providers cataloged, keyless start when available](../assets/tokenmax-results.svg)
 
-freellmpool catalogs 15 LLM providers as distinct groups spanning recurring
+freellmpool catalogs 14 LLM providers as distinct groups spanning recurring
 free tiers, keyless endpoints, finite trials, pin-only routes, and disabled
-candidates. It exposes 136 enabled chat routes and 136 cataloged chat models,
+candidates. It exposes 132 enabled chat routes and 132 cataloged chat models,
 and automatically pools only
 enabled routes you can access behind one OpenAI-compatible endpoint — as a CLI,
 a Python library, or a local proxy. It can start without credentials when an
@@ -701,7 +701,7 @@ deployment.
 
 **Is there a free, OpenAI-compatible LLM API gateway?** Yes — freellmpool is a
 free, MIT-licensed gateway that exposes one OpenAI-compatible endpoint over the
-enabled routes you can access. Its 15 cataloged provider groups span recurring
+enabled routes you can access. Its 14 cataloged provider groups span recurring
 free tiers, keyless endpoints, finite trials, pin-only routes, and disabled
 candidates. `pip install freellmpool` and point any OpenAI client at the local
 proxy.
@@ -729,7 +729,7 @@ capacity; availability and terms remain provider-specific.
 
 ## Featured in
 
-- Community videos (Spanish, by lytohlg AI): ["Accede a 18 modelos de IA GRATIS con 1 solo comando"](https://www.youtube.com/watch?v=1UfIlWoedho) and ["Prueba 18 IAs GRATIS sin API key en 30 segundos"](https://www.youtube.com/watch?v=oaM_E92WVGQ) (from an earlier catalog; freellmpool now catalogs 15 providers).
+- Community videos (Spanish, by lytohlg AI): ["Accede a 18 modelos de IA GRATIS con 1 solo comando"](https://www.youtube.com/watch?v=1UfIlWoedho) and ["Prueba 18 IAs GRATIS sin API key en 30 segundos"](https://www.youtube.com/watch?v=oaM_E92WVGQ) (from an earlier catalog; freellmpool now catalogs 14 providers).
 - Directory: [FreeLLM Pool on MCP Market](https://mcpmarket.com/server/freellm-pool).
 
 ## Contributing

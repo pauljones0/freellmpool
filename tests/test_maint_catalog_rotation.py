@@ -115,11 +115,6 @@ OVH_BOOTSTRAP_CHAT = [
     "Mistral-7B-Instruct-v0.3", "gpt-oss-20b", "Qwen3-Coder-30B-A3B-Instruct",
 ]
 
-MS_ROW_OMNI: dict[str, Any] = {
-    "id": "Qwen-Ambassador/Qwen3.8-Omni-Flash", "object": "", "owned_by": "system",
-    "created": 1789744694,
-}
-
 AION_ROWS: list[dict[str, Any]] = [
     {"id": "aion-labs/aion-3.5", "context_length": 262144, "max_completion_tokens": 32768,
      "architecture": {"modality": "text->text"},
@@ -316,19 +311,15 @@ def test_cli_reports_closable_batch_with_zero_exit(tmp_path: Path) -> None:
     assert quiet == 0
 
 
-def test_121_modelscope_omni_flash_admitted_under_reviewed_all_grant() -> None:
-    spec = _registry("modelscope")
-    assert spec["grants"][0]["model_selector"] == {"kind": "all", "models": []}
-    (model,) = d.normalize_models("modelscope", {"data": [MS_ROW_OMNI]})
-    assert model["modalities"] == ["chat"]
-    assert model["pricing"] == {}
-    assert fp.model_matches_grant(spec["grants"][0], model) is True
-    assert d.free_catalog_models(spec, [model]) == [model]
-    # Catalog visibility is not runtime eligibility: the conditional grant still
-    # demands verified bound_free account evidence before inference.
-    denied = fp.admit(spec, model, {}, modality="chat", now=_in_window_now("modelscope"))
-    assert denied.allowed is False
-    assert "needs verification" in denied.reason
+def test_121_modelscope_withdrawn_no_free_model_query() -> None:
+    # Issue #121 reviewed Omni-Flash under the all-chat grant; the provider
+    # was then withdrawn entirely (no queryable free-model list, 403s on
+    # catalog-listed models), so the finding's subject no longer ships.
+    registry = load_registry()
+    assert "modelscope" not in registry
+    packaged = json.loads(Path("src/freellmpool/provider_registry.json").read_text())
+    tombstone = next(t for t in packaged["tombstones"] if t["id"] == "modelscope")
+    assert "no queryable free-model list" in tombstone["reason"]
 
 
 def test_125_ovh_embedding_matches_only_the_free_embedding_grant() -> None:

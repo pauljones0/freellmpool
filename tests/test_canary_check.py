@@ -24,7 +24,7 @@ from freellmpool.client import HTTPResult
 from freellmpool.config import load_catalog
 from freellmpool.provider_registry import load_registry
 
-ELIGIBLE = {"openrouter", "nvidia", "vercel", "aion", "modelscope"}
+ELIGIBLE = {"openrouter", "nvidia", "vercel", "aion"}
 
 
 def _quota_env(monkeypatch: pytest.MonkeyPatch, tmp_path, name: str = "quota.json"):
@@ -210,7 +210,7 @@ def test_canary_408_and_504_are_deferred(monkeypatch, capsys, tmp_path):
 
 def test_canary_429_ignores_retry_after(monkeypatch, capsys, tmp_path):
     rc, envelope, _, _ = _canary_verdict(
-        monkeypatch, capsys, tmp_path, "modelscope",
+        monkeypatch, capsys, tmp_path, "aion",
         fake_post(status=429, headers={"retry-after": "120"}))
     assert rc == 0
     assert envelope["rows"][0]["verdict"] == "rate_limited"
